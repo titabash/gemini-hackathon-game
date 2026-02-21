@@ -56,7 +56,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     ├── widgetbook/       # UIコンポーネントカタログ
     ├── patrol/           # E2Eテスト
     ├── polar/            # Polar.sh決済統合
-    └── onesignal/        # OneSignal通知統合
+    ├── onesignal/        # OneSignal通知統合
+    ├── flame/            # Flame ゲームエンジン + flame_riverpod
+    └── genui/            # genui Generative UI SDK
 ```
 
 ## Domain Documentation
@@ -93,6 +95,8 @@ Full-stack application boilerplate with Flutter multi-platform frontend and back
 | **Code Generation**    | build_runner (Freezed, Riverpod, Drift, slang)       |
 | **Backend**            | FastAPI (Python), Supabase Edge Functions (Deno)     |
 | **Database**           | PostgreSQL, Drizzle ORM, pgvector                    |
+| **Game Engine**        | Flame 1.35.1, flame_riverpod 5.5.2                  |
+| **Generative UI**      | genui 0.7.0 (A2UI Protocol, SSE)                     |
 | **Auth**               | Supabase Flutter Client                              |
 
 **MANDATORY**: すべてのユーザー向けテキストは多言語対応（i18n）必須。詳細は `.claude/skills/i18n/` を参照。
@@ -124,6 +128,8 @@ frontend/
 │   │   ├── api/          # HTTP client (Dio + Retrofit)
 │   │   ├── auth/         # Authentication
 │   │   ├── i18n/         # Internationalization (slang)
+│   │   ├── game/         # Flame game engine (FlameGame + Riverpod)
+│   │   ├── genui/        # genui Generative UI SDK (SSE + A2UI)
 │   │   ├── polar/        # Polar.sh payment integration
 │   │   ├── notification/ # OneSignal push notifications
 │   │   └── utils/        # Utilities (Logger, constants)

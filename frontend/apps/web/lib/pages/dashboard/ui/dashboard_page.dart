@@ -24,26 +24,16 @@ class DashboardPage extends ConsumerWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Icon(
-                Icons.dashboard,
-                size: 80,
-                color: Colors.blue,
-              ),
+              const Icon(Icons.dashboard, size: 80, color: Colors.blue),
               const SizedBox(height: 32),
               const Text(
                 'ダッシュボード',
-                style: TextStyle(
-                  fontSize: 32,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
               const Text(
                 '認証が必要なページです',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
+                style: TextStyle(fontSize: 16, color: Colors.grey),
               ),
               const SizedBox(height: 32),
               Card(
@@ -62,10 +52,7 @@ class DashboardPage extends ConsumerWidget {
                       const SizedBox(height: 16),
                       _buildInfoRow('メールアドレス', currentUser?.email ?? 'N/A'),
                       _buildInfoRow('ユーザーID', currentUser?.id ?? 'N/A'),
-                      _buildInfoRow(
-                        '作成日時',
-                        currentUser?.createdAt ?? 'N/A',
-                      ),
+                      _buildInfoRow('作成日時', currentUser?.createdAt ?? 'N/A'),
                     ],
                   ),
                 ),
@@ -117,12 +104,7 @@ class DashboardPage extends ConsumerWidget {
               ),
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontSize: 16),
-            ),
-          ),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 16))),
         ],
       ),
     );

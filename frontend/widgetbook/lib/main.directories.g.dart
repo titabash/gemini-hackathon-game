@@ -46,11 +46,11 @@ final directories = <_widgetbook.WidgetbookNode>[
                             .disabledAppButton,
                   ),
                 ],
-              )
+              ),
             ],
-          )
+          ),
         ],
-      )
+      ),
     ],
-  )
+  ),
 ];

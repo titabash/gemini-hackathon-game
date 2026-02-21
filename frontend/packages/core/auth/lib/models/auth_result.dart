@@ -18,20 +18,13 @@ class AuthResult<T> with _$AuthResult<T> {
   bool get isFailure => this is _Failure<T>;
 
   /// データを取得（失敗時はnull）
-  T? get dataOrNull => when(
-        success: (data) => data,
-        failure: (_) => null,
-      );
+  T? get dataOrNull => when(success: (data) => data, failure: (_) => null);
 
   /// エラーを取得（成功時はnull）
-  AuthException? get exceptionOrNull => when(
-        success: (_) => null,
-        failure: (exception) => exception,
-      );
+  AuthException? get exceptionOrNull =>
+      when(success: (_) => null, failure: (exception) => exception);
 
   /// データを取得（失敗時は例外をスロー）
-  T get data => when(
-        success: (data) => data,
-        failure: (exception) => throw exception,
-      );
+  T get data =>
+      when(success: (data) => data, failure: (exception) => throw exception);
 }

@@ -12,9 +12,7 @@ void main() {
     tags: ['smoke', 'mobile'],
     ($) async {
       // Step 1: Launch app with clean state
-      await $.pumpWidgetAndSettle(
-        const App(),
-      );
+      await $.pumpWidgetAndSettle(const App());
 
       // Step 2: Wait for app to load (Patrol handles this automatically with pumpAndSettle)
       // Verify that home page elements are visible

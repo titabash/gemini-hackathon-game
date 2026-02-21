@@ -25,10 +25,7 @@ class SendOtp extends _$SendOtp {
       Logger.error('Failed to send OTP', e, st);
       state = AsyncError(e, st);
       return AuthResult.failure(
-        AuthException(
-          message: 'OTPの送信に失敗しました',
-          originalException: e,
-        ),
+        AuthException(message: 'OTPの送信に失敗しました', originalException: e),
       );
     }
   }

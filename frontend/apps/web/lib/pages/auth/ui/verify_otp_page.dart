@@ -9,10 +9,7 @@ import '../../../features/auth/ui/otp_input_field.dart';
 
 /// OTP検証ページ
 class VerifyOtpPage extends ConsumerWidget {
-  const VerifyOtpPage({
-    required this.email,
-    super.key,
-  });
+  const VerifyOtpPage({required this.email, super.key});
 
   final String email;
 
@@ -23,9 +20,7 @@ class VerifyOtpPage extends ConsumerWidget {
     final isLoading = verifyOtpState.isLoading;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('認証コード確認'),
-      ),
+      appBar: AppBar(title: const Text('認証コード確認')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
@@ -43,19 +38,13 @@ class VerifyOtpPage extends ConsumerWidget {
                 const SizedBox(height: 32),
                 const Text(
                   '認証コードを入力',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   '$email に送信された認証コードを入力してください',
-                  style: const TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
@@ -98,10 +87,9 @@ class VerifyOtpPage extends ConsumerWidget {
 
   Future<void> _handleVerifyOtp(BuildContext context, WidgetRef ref) async {
     final token = ref.read(verifyOtpTokenProvider);
-    final result = await ref.read(verifyOtpProvider.notifier).call(
-          email: email,
-          token: token,
-        );
+    final result = await ref
+        .read(verifyOtpProvider.notifier)
+        .call(email: email, token: token);
 
     if (!context.mounted) return;
 

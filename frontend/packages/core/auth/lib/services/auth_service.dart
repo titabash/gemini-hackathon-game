@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart'
     hide AuthState, AuthException;
-import 'package:supabase_flutter/supabase_flutter.dart' as supabase
+import 'package:supabase_flutter/supabase_flutter.dart'
+    as supabase
     show AuthException;
 import '../models/auth_exception.dart';
 import '../models/auth_result.dart';
@@ -28,9 +29,7 @@ class AuthService {
       );
       return const AuthResult.success(null);
     } on supabase.AuthException catch (e) {
-      return AuthResult.failure(
-        AuthException.fromSupabaseAuth(e),
-      );
+      return AuthResult.failure(AuthException.fromSupabaseAuth(e));
     } catch (e) {
       return AuthResult.failure(AuthException.fromError(e));
     }
@@ -62,9 +61,7 @@ class AuthService {
 
       return AuthResult.success(response.session!);
     } on supabase.AuthException catch (e) {
-      return AuthResult.failure(
-        AuthException.fromSupabaseAuth(e),
-      );
+      return AuthResult.failure(AuthException.fromSupabaseAuth(e));
     } catch (e) {
       return AuthResult.failure(AuthException.fromError(e));
     }
@@ -73,19 +70,12 @@ class AuthService {
   /// OTPを再送信
   ///
   /// [email] 送信先のメールアドレス
-  Future<AuthResult<void>> resendOtp({
-    required String email,
-  }) async {
+  Future<AuthResult<void>> resendOtp({required String email}) async {
     try {
-      await _authClient.resend(
-        type: OtpType.email,
-        email: email,
-      );
+      await _authClient.resend(type: OtpType.email, email: email);
       return const AuthResult.success(null);
     } on supabase.AuthException catch (e) {
-      return AuthResult.failure(
-        AuthException.fromSupabaseAuth(e),
-      );
+      return AuthResult.failure(AuthException.fromSupabaseAuth(e));
     } catch (e) {
       return AuthResult.failure(AuthException.fromError(e));
     }
@@ -97,9 +87,7 @@ class AuthService {
       await _authClient.signOut();
       return const AuthResult.success(null);
     } on supabase.AuthException catch (e) {
-      return AuthResult.failure(
-        AuthException.fromSupabaseAuth(e),
-      );
+      return AuthResult.failure(AuthException.fromSupabaseAuth(e));
     } catch (e) {
       return AuthResult.failure(AuthException.fromError(e));
     }
@@ -112,18 +100,13 @@ class AuthService {
 
       if (response == null) {
         return const AuthResult.failure(
-          AuthException(
-            message: 'No active session',
-            code: 'no_session',
-          ),
+          AuthException(message: 'No active session', code: 'no_session'),
         );
       }
 
       return AuthResult.success(response);
     } on supabase.AuthException catch (e) {
-      return AuthResult.failure(
-        AuthException.fromSupabaseAuth(e),
-      );
+      return AuthResult.failure(AuthException.fromSupabaseAuth(e));
     } catch (e) {
       return AuthResult.failure(AuthException.fromError(e));
     }
@@ -145,9 +128,7 @@ class AuthService {
 
       return AuthResult.success(response.session!);
     } on supabase.AuthException catch (e) {
-      return AuthResult.failure(
-        AuthException.fromSupabaseAuth(e),
-      );
+      return AuthResult.failure(AuthException.fromSupabaseAuth(e));
     } catch (e) {
       return AuthResult.failure(AuthException.fromError(e));
     }

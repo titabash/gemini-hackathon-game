@@ -3,7 +3,7 @@ description: Flutter frontend monorepo workspace
 publish_to: none
 
 environment:
-  sdk: ^3.6.0
+  sdk: ^3.11.0
 
 # Workspace 定義
 workspace:
@@ -15,6 +15,8 @@ workspace:
   - packages/core/api
   - packages/core/polar
   - packages/core/notification
+  - packages/core/game
+  - packages/core/genui
   - widgetbook
 
 dev_dependencies:

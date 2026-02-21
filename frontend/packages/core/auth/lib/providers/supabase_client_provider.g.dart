@@ -26,15 +26,15 @@ final class SupabaseClientProvider
   ///
   /// アプリ全体で共有されるSupabaseクライアントインスタンス
   SupabaseClientProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'supabaseClientProvider',
-          isAutoDispose: false,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'supabaseClientProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$supabaseClientHash();
@@ -72,15 +72,15 @@ final class AuthClientProvider
     with $Provider<GoTrueClient> {
   /// GoTrueClient（認証専用クライアント）を提供するProvider
   AuthClientProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'authClientProvider',
-          isAutoDispose: false,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'authClientProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$authClientHash();
@@ -118,15 +118,15 @@ final class AuthServiceProvider
     with $Provider<AuthService> {
   /// AuthServiceを提供するProvider
   AuthServiceProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'authServiceProvider',
-          isAutoDispose: false,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'authServiceProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$authServiceHash();

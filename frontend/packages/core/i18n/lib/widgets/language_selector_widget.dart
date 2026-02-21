@@ -35,8 +35,9 @@ class LanguageSelectorWidget extends ConsumerWidget {
                       Text(
                         localeInfo.nativeName,
                         style: TextStyle(
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.normal,
                         ),
                       ),
                       Text(
@@ -46,8 +47,9 @@ class LanguageSelectorWidget extends ConsumerWidget {
                           color: Theme.of(
                             context,
                           ).colorScheme.onSurface.withValues(alpha: 0.6),
-                          fontWeight:
-                              isSelected ? FontWeight.w500 : FontWeight.normal,
+                          fontWeight: isSelected
+                              ? FontWeight.w500
+                              : FontWeight.normal,
                         ),
                       ),
                     ],

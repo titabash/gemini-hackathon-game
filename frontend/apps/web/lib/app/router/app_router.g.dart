@@ -26,15 +26,15 @@ final class AppRouterProvider
   ///
   /// 認証状態に基づいてルーティングを制御
   AppRouterProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'appRouterProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'appRouterProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$appRouterHash();
@@ -58,4 +58,4 @@ final class AppRouterProvider
   }
 }
 
-String _$appRouterHash() => r'b5b44dff5374d68fdb983bada78771da6c4b9d80';
+String _$appRouterHash() => r'7cf1ce4dfe2cd22ade61029189003fe81e24beef';

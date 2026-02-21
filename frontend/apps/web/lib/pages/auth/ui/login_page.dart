@@ -17,9 +17,7 @@ class LoginPage extends ConsumerWidget {
     final isLoading = sendOtpState.isLoading;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('ログイン'),
-      ),
+      appBar: AppBar(title: const Text('ログイン')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
@@ -29,27 +27,17 @@ class LoginPage extends ConsumerWidget {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Icon(
-                  Icons.lock_outline,
-                  size: 80,
-                  color: Colors.blue,
-                ),
+                const Icon(Icons.lock_outline, size: 80, color: Colors.blue),
                 const SizedBox(height: 32),
                 const Text(
                   'メールアドレスでログイン',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 const Text(
                   'メールアドレスを入力すると、認証コードをお送りします',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey,
-                  ),
+                  style: TextStyle(fontSize: 14, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),

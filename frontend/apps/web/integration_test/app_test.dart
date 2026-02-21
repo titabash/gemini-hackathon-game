@@ -15,15 +15,12 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   group('App Basic Integration Tests', () {
-    testWidgets('App launches successfully and displays home page',
-        (WidgetTester tester) async {
+    testWidgets('App launches successfully and displays home page', (
+      WidgetTester tester,
+    ) async {
       // アプリケーションを起動（実際のmain関数を実行）
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       // ウィジェットツリーが構築されるまで待機
@@ -38,14 +35,11 @@ void main() {
       expect(materialApp.title, isNotEmpty);
     });
 
-    testWidgets('i18n (Internationalization) works correctly',
-        (WidgetTester tester) async {
+    testWidgets('i18n (Internationalization) works correctly', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       await tester.pumpAndSettle();

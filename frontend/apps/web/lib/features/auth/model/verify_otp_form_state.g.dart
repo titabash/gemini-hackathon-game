@@ -18,15 +18,15 @@ final class VerifyOtpTokenProvider
     extends $NotifierProvider<VerifyOtpToken, String> {
   /// OTP検証フォームのトークン状態管理
   VerifyOtpTokenProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'verifyOtpTokenProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'verifyOtpTokenProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$verifyOtpTokenHash();
@@ -54,8 +54,14 @@ abstract class _$VerifyOtpToken extends $Notifier<String> {
   @override
   void runBuild() {
     final ref = this.ref as $Ref<String, String>;
-    final element = ref.element as $ClassProviderElement<
-        AnyNotifier<String, String>, String, Object?, Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<String, String>,
+              String,
+              Object?,
+              Object?
+            >;
     element.handleCreate(ref, build);
   }
 }
@@ -72,15 +78,15 @@ final class VerifyOtpTokenErrorProvider
     with $Provider<String?> {
   /// トークンのバリデーション
   VerifyOtpTokenErrorProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'verifyOtpTokenErrorProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'verifyOtpTokenErrorProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$verifyOtpTokenErrorHash();
@@ -115,18 +121,19 @@ final isVerifyOtpFormValidProvider = IsVerifyOtpFormValidProvider._();
 /// フォーム全体の有効性
 
 final class IsVerifyOtpFormValidProvider
-    extends $FunctionalProvider<bool, bool, bool> with $Provider<bool> {
+    extends $FunctionalProvider<bool, bool, bool>
+    with $Provider<bool> {
   /// フォーム全体の有効性
   IsVerifyOtpFormValidProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'isVerifyOtpFormValidProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'isVerifyOtpFormValidProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$isVerifyOtpFormValidHash();

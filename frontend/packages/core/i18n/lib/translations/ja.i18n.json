@@ -57,6 +57,24 @@
     "en": "英語",
     "ja": "日本語"
   },
+  "game": {
+    "title": "ゲーム",
+    "start": "ゲーム開始",
+    "pause": "一時停止",
+    "resume": "再開",
+    "gameOver": "ゲームオーバー",
+    "score": "スコア: {n}",
+    "restart": "リスタート",
+    "loading": "ゲームを読み込み中..."
+  },
+  "genui": {
+    "title": "AIチャット",
+    "inputHint": "メッセージを入力...",
+    "send": "送信",
+    "emptyState": "会話を始めましょう",
+    "error": "メッセージの送信に失敗しました",
+    "processing": "考え中..."
+  },
   "error": {
     "generic": "エラーが発生しました",
     "network": "ネットワークエラー",

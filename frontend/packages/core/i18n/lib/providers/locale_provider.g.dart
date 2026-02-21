@@ -15,15 +15,15 @@ final localeProvider = LocaleNotifierProvider._();
 final class LocaleNotifierProvider
     extends $NotifierProvider<LocaleNotifier, AppLocale> {
   LocaleNotifierProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'localeProvider',
-          isAutoDispose: false,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'localeProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$localeNotifierHash();
@@ -49,8 +49,14 @@ abstract class _$LocaleNotifier extends $Notifier<AppLocale> {
   @override
   void runBuild() {
     final ref = this.ref as $Ref<AppLocale, AppLocale>;
-    final element = ref.element as $ClassProviderElement<
-        AnyNotifier<AppLocale, AppLocale>, AppLocale, Object?, Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AppLocale, AppLocale>,
+              AppLocale,
+              Object?,
+              Object?
+            >;
     element.handleCreate(ref, build);
   }
 }
@@ -59,17 +65,18 @@ abstract class _$LocaleNotifier extends $Notifier<AppLocale> {
 final currentLocaleProvider = CurrentLocaleProvider._();
 
 final class CurrentLocaleProvider
-    extends $FunctionalProvider<Locale, Locale, Locale> with $Provider<Locale> {
+    extends $FunctionalProvider<Locale, Locale, Locale>
+    with $Provider<Locale> {
   CurrentLocaleProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'currentLocaleProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'currentLocaleProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$currentLocaleHash();
@@ -99,17 +106,18 @@ String _$currentLocaleHash() => r'5bd343ba928a7517b8acef2bfc903340b01611d7';
 final currentLanguageCodeProvider = CurrentLanguageCodeProvider._();
 
 final class CurrentLanguageCodeProvider
-    extends $FunctionalProvider<String, String, String> with $Provider<String> {
+    extends $FunctionalProvider<String, String, String>
+    with $Provider<String> {
   CurrentLanguageCodeProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'currentLanguageCodeProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'currentLanguageCodeProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$currentLanguageCodeHash();
@@ -140,17 +148,18 @@ String _$currentLanguageCodeHash() =>
 final isCurrentLanguageProvider = IsCurrentLanguageFamily._();
 
 final class IsCurrentLanguageProvider
-    extends $FunctionalProvider<bool, bool, bool> with $Provider<bool> {
-  IsCurrentLanguageProvider._(
-      {required IsCurrentLanguageFamily super.from,
-      required String super.argument})
-      : super(
-          retry: null,
-          name: r'isCurrentLanguageProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    extends $FunctionalProvider<bool, bool, bool>
+    with $Provider<bool> {
+  IsCurrentLanguageProvider._({
+    required IsCurrentLanguageFamily super.from,
+    required String super.argument,
+  }) : super(
+         retry: null,
+         name: r'isCurrentLanguageProvider',
+         isAutoDispose: true,
+         dependencies: null,
+         $allTransitiveDependencies: null,
+       );
 
   @override
   String debugGetCreateSourceHash() => _$isCurrentLanguageHash();
@@ -170,10 +179,7 @@ final class IsCurrentLanguageProvider
   @override
   bool create(Ref ref) {
     final argument = this.argument as String;
-    return isCurrentLanguage(
-      ref,
-      argument,
-    );
+    return isCurrentLanguage(ref, argument);
   }
 
   /// {@macro riverpod.override_with_value}
@@ -200,17 +206,15 @@ String _$isCurrentLanguageHash() => r'66982bcbdb8c64ad38b3c27e64407b49dafb4c56';
 final class IsCurrentLanguageFamily extends $Family
     with $FunctionalFamilyOverride<bool, String> {
   IsCurrentLanguageFamily._()
-      : super(
-          retry: null,
-          name: r'isCurrentLanguageProvider',
-          dependencies: null,
-          $allTransitiveDependencies: null,
-          isAutoDispose: true,
-        );
+    : super(
+        retry: null,
+        name: r'isCurrentLanguageProvider',
+        dependencies: null,
+        $allTransitiveDependencies: null,
+        isAutoDispose: true,
+      );
 
-  IsCurrentLanguageProvider call(
-    String languageCode,
-  ) =>
+  IsCurrentLanguageProvider call(String languageCode) =>
       IsCurrentLanguageProvider._(argument: languageCode, from: this);
 
   @override

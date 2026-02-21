@@ -15,21 +15,25 @@ final authStateProvider = AuthStateNotifierProvider._();
 
 /// AuthStateNotifierのProvider
 
-final class AuthStateNotifierProvider extends $FunctionalProvider<
-    AuthStateNotifier,
-    AuthStateNotifier,
-    AuthStateNotifier> with $Provider<AuthStateNotifier> {
+final class AuthStateNotifierProvider
+    extends
+        $FunctionalProvider<
+          AuthStateNotifier,
+          AuthStateNotifier,
+          AuthStateNotifier
+        >
+    with $Provider<AuthStateNotifier> {
   /// AuthStateNotifierのProvider
   AuthStateNotifierProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'authStateProvider',
-          isAutoDispose: false,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'authStateProvider',
+        isAutoDispose: false,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$authStateNotifierHash();
@@ -37,8 +41,8 @@ final class AuthStateNotifierProvider extends $FunctionalProvider<
   @$internal
   @override
   $ProviderElement<AuthStateNotifier> $createElement(
-          $ProviderPointer pointer) =>
-      $ProviderElement(pointer);
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
   AuthStateNotifier create(Ref ref) {

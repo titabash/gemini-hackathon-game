@@ -5,8 +5,8 @@ publish_to: none
 resolution: workspace
 
 environment:
-  sdk: ^3.6.0
-  flutter: ^3.27.0
+  sdk: ^3.11.0
+  flutter: ^3.41.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -29,6 +29,8 @@ dependencies:
   core_auth:
   core_api:
   core_polar:
+  core_game:
+  core_genui:
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.

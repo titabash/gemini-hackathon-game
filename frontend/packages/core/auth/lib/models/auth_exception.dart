@@ -20,10 +20,7 @@ class AuthException implements Exception {
     if (error is AuthException) {
       return error;
     }
-    return AuthException(
-      message: error.toString(),
-      originalException: error,
-    );
+    return AuthException(message: error.toString(), originalException: error);
   }
 
   final String message;
@@ -43,27 +40,28 @@ class AuthException implements Exception {
 
 class InvalidEmailException extends AuthException {
   const InvalidEmailException()
-      : super(message: 'Invalid email address', code: 'invalid_email');
+    : super(message: 'Invalid email address', code: 'invalid_email');
 }
 
 class InvalidOtpException extends AuthException {
   const InvalidOtpException()
-      : super(message: 'Invalid or expired OTP code', code: 'invalid_otp');
+    : super(message: 'Invalid or expired OTP code', code: 'invalid_otp');
 }
 
 class SessionExpiredException extends AuthException {
   const SessionExpiredException()
-      : super(message: 'Session has expired', code: 'session_expired');
+    : super(message: 'Session has expired', code: 'session_expired');
 }
 
 class NetworkException extends AuthException {
   const NetworkException()
-      : super(
-            message: 'Network error occurred. Please check your connection',
-            code: 'network_error');
+    : super(
+        message: 'Network error occurred. Please check your connection',
+        code: 'network_error',
+      );
 }
 
 class UnknownAuthException extends AuthException {
   const UnknownAuthException()
-      : super(message: 'An unknown error occurred', code: 'unknown');
+    : super(message: 'An unknown error occurred', code: 'unknown');
 }

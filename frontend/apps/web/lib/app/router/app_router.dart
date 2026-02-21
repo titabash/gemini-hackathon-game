@@ -5,6 +5,7 @@ import '../../pages/home/ui/home_page.dart';
 import '../../pages/auth/ui/login_page.dart';
 import '../../pages/auth/ui/verify_otp_page.dart';
 import '../../pages/dashboard/ui/dashboard_page.dart';
+import '../../pages/game/ui/game_page.dart';
 import 'auth_notifier.dart';
 
 part 'app_router.g.dart';
@@ -61,11 +62,13 @@ GoRouter appRouter(Ref ref) {
         name: 'dashboard',
         builder: (context, state) => const DashboardPage(),
       ),
-    ],
-    errorBuilder: (context, state) => Scaffold(
-      body: Center(
-        child: Text('Error: ${state.error}'),
+      GoRoute(
+        path: '/game',
+        name: 'game',
+        builder: (context, state) => const GamePage(),
       ),
-    ),
+    ],
+    errorBuilder: (context, state) =>
+        Scaffold(body: Center(child: Text('Error: ${state.error}'))),
   );
 }

@@ -40,12 +40,12 @@ class CounterWidget extends HookConsumerWidget {
               child: Text(
                 '${counter.value}',
                 style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                      color: counter.value > 10
-                          ? Colors.red
-                          : counter.value < 0
-                              ? Colors.blue
-                              : null,
-                    ),
+                  color: counter.value > 10
+                      ? Colors.red
+                      : counter.value < 0
+                      ? Colors.blue
+                      : null,
+                ),
               ),
             );
           },

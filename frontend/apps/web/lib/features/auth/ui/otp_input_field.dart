@@ -25,9 +25,7 @@ class OtpInputField extends ConsumerWidget {
       ),
       keyboardType: TextInputType.number,
       maxLength: 6,
-      inputFormatters: [
-        FilteringTextInputFormatter.digitsOnly,
-      ],
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
       autofillHints: const [AutofillHints.oneTimeCode],
     );
   }

@@ -17,9 +17,7 @@ void main() {
     skip: true, // Mark as skipped until auth screens are ready
     ($) async {
       // Step 1: Launch app
-      await $.pumpWidgetAndSettle(
-        const App(),
-      );
+      await $.pumpWidgetAndSettle(const App());
 
       // Step 2: Navigate to login screen (update selector when implemented)
       // await $.tap(find.text('Login'));

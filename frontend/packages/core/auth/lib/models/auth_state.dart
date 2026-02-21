@@ -18,10 +18,7 @@ sealed class AuthState with _$AuthState {
     if (session == null) {
       return const AuthState.unauthenticated();
     }
-    return AuthState.authenticated(
-      user: session.user,
-      session: session,
-    );
+    return AuthState.authenticated(user: session.user, session: session);
   }
 
   const AuthState._();
@@ -31,15 +28,15 @@ sealed class AuthState with _$AuthState {
 
   /// ユーザー情報を取得
   User? get user => switch (this) {
-        _Authenticated(user: final user) => user,
-        _Unauthenticated() => null,
-      };
+    _Authenticated(user: final user) => user,
+    _Unauthenticated() => null,
+  };
 
   /// セッション情報を取得
   Session? get session => switch (this) {
-        _Authenticated(session: final session) => session,
-        _Unauthenticated() => null,
-      };
+    _Authenticated(session: final session) => session,
+    _Unauthenticated() => null,
+  };
 
   /// アクセストークンを取得
   String? get accessToken => session?.accessToken;

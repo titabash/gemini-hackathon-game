@@ -46,6 +46,8 @@ class Translations with BaseTranslations<AppLocale, Translations> {
 	late final TranslationsCommonEn common = TranslationsCommonEn.internal(_root);
 	late final TranslationsSettingsEn settings = TranslationsSettingsEn.internal(_root);
 	late final TranslationsLanguageEn language = TranslationsLanguageEn.internal(_root);
+	late final TranslationsGameEn game = TranslationsGameEn.internal(_root);
+	late final TranslationsGenuiEn genui = TranslationsGenuiEn.internal(_root);
 	late final TranslationsErrorEn error = TranslationsErrorEn.internal(_root);
 }
 
@@ -226,6 +228,66 @@ class TranslationsLanguageEn {
 	String get ja => 'Japanese';
 }
 
+// Path: game
+class TranslationsGameEn {
+	TranslationsGameEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Game'
+	String get title => 'Game';
+
+	/// en: 'Start Game'
+	String get start => 'Start Game';
+
+	/// en: 'Pause'
+	String get pause => 'Pause';
+
+	/// en: 'Resume'
+	String get resume => 'Resume';
+
+	/// en: 'Game Over'
+	String get gameOver => 'Game Over';
+
+	/// en: 'Score: {n}'
+	String get score => 'Score: {n}';
+
+	/// en: 'Restart'
+	String get restart => 'Restart';
+
+	/// en: 'Loading game...'
+	String get loading => 'Loading game...';
+}
+
+// Path: genui
+class TranslationsGenuiEn {
+	TranslationsGenuiEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'AI Chat'
+	String get title => 'AI Chat';
+
+	/// en: 'Type a message...'
+	String get inputHint => 'Type a message...';
+
+	/// en: 'Send'
+	String get send => 'Send';
+
+	/// en: 'Start a conversation'
+	String get emptyState => 'Start a conversation';
+
+	/// en: 'Failed to send message'
+	String get error => 'Failed to send message';
+
+	/// en: 'Thinking...'
+	String get processing => 'Thinking...';
+}
+
 // Path: error
 class TranslationsErrorEn {
 	TranslationsErrorEn.internal(this._root);
@@ -320,6 +382,20 @@ extension on Translations {
 			'settings.changeLanguage' => 'Change Language',
 			'language.en' => 'English',
 			'language.ja' => 'Japanese',
+			'game.title' => 'Game',
+			'game.start' => 'Start Game',
+			'game.pause' => 'Pause',
+			'game.resume' => 'Resume',
+			'game.gameOver' => 'Game Over',
+			'game.score' => 'Score: {n}',
+			'game.restart' => 'Restart',
+			'game.loading' => 'Loading game...',
+			'genui.title' => 'AI Chat',
+			'genui.inputHint' => 'Type a message...',
+			'genui.send' => 'Send',
+			'genui.emptyState' => 'Start a conversation',
+			'genui.error' => 'Failed to send message',
+			'genui.processing' => 'Thinking...',
 			'error.generic' => 'An error occurred',
 			'error.network' => 'Network error',
 			'error.notFound' => 'Not found',

@@ -17,15 +17,15 @@ final sendOtpProvider = SendOtpProvider._();
 final class SendOtpProvider extends $AsyncNotifierProvider<SendOtp, void> {
   /// OTP送信処理
   SendOtpProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'sendOtpProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'sendOtpProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$sendOtpHash();
@@ -45,11 +45,14 @@ abstract class _$SendOtp extends $AsyncNotifier<void> {
   @override
   void runBuild() {
     final ref = this.ref as $Ref<AsyncValue<void>, void>;
-    final element = ref.element as $ClassProviderElement<
-        AnyNotifier<AsyncValue<void>, void>,
-        AsyncValue<void>,
-        Object?,
-        Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<AsyncValue<void>, void>,
+              AsyncValue<void>,
+              Object?,
+              Object?
+            >;
     element.handleCreate(ref, build);
   }
 }

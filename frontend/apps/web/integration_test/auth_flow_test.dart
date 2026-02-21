@@ -18,8 +18,9 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   group('Authentication Flow Integration Tests', () {
-    testWidgets('Complete login flow with email/password',
-        (WidgetTester tester) async {
+    testWidgets('Complete login flow with email/password', (
+      WidgetTester tester,
+    ) async {
       // Note: このテストは認証機能の実装に合わせて調整が必要です
       //
       // 推奨アプローチ:
@@ -32,9 +33,7 @@ void main() {
           // overrides: [
           //   supabaseProvider.overrideWithValue(FakeSupabaseClient()),
           // ],
-          child: TranslationProvider(
-            child: const App(),
-          ),
+          child: TranslationProvider(child: const App()),
         ),
       );
 
@@ -55,11 +54,7 @@ void main() {
       // 3. ダッシュボードへリダイレクトされることを確認
 
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       await tester.pumpAndSettle();
@@ -75,11 +70,7 @@ void main() {
       // 4. 認証が必要なページにアクセスできないことを確認
 
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       await tester.pumpAndSettle();
@@ -96,18 +87,15 @@ void main() {
       // 3. ログインページに留まることを確認
 
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       await tester.pumpAndSettle();
     });
 
-    testWidgets('Handle network errors during authentication',
-        (WidgetTester tester) async {
+    testWidgets('Handle network errors during authentication', (
+      WidgetTester tester,
+    ) async {
       // Note: ネットワークエラーのハンドリングテスト
       //
       // 実装例:
@@ -116,11 +104,7 @@ void main() {
       // 3. 適切なエラーメッセージが表示されることを確認
 
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       await tester.pumpAndSettle();

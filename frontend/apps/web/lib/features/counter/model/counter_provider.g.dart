@@ -15,15 +15,15 @@ final counterProvider = CounterNotifierProvider._();
 final class CounterNotifierProvider
     extends $NotifierProvider<CounterNotifier, CounterModel> {
   CounterNotifierProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'counterProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'counterProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$counterNotifierHash();
@@ -49,11 +49,14 @@ abstract class _$CounterNotifier extends $Notifier<CounterModel> {
   @override
   void runBuild() {
     final ref = this.ref as $Ref<CounterModel, CounterModel>;
-    final element = ref.element as $ClassProviderElement<
-        AnyNotifier<CounterModel, CounterModel>,
-        CounterModel,
-        Object?,
-        Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<CounterModel, CounterModel>,
+              CounterModel,
+              Object?,
+              Object?
+            >;
     element.handleCreate(ref, build);
   }
 }

@@ -58,6 +58,24 @@
     "en": "English",
     "ja": "Japanese"
   },
+  "game": {
+    "title": "Game",
+    "start": "Start Game",
+    "pause": "Pause",
+    "resume": "Resume",
+    "gameOver": "Game Over",
+    "score": "Score: {n}",
+    "restart": "Restart",
+    "loading": "Loading game..."
+  },
+  "genui": {
+    "title": "AI Chat",
+    "inputHint": "Type a message...",
+    "send": "Send",
+    "emptyState": "Start a conversation",
+    "error": "Failed to send message",
+    "processing": "Thinking..."
+  },
   "error": {
     "generic": "An error occurred",
     "network": "Network error",

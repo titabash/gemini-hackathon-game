@@ -16,11 +16,7 @@ void main() {
   group('Navigation Integration Tests', () {
     testWidgets('Navigate between public routes', (WidgetTester tester) async {
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       await tester.pumpAndSettle();
@@ -40,19 +36,16 @@ void main() {
       // }
     });
 
-    testWidgets('Unauthenticated users are redirected from protected routes',
-        (WidgetTester tester) async {
+    testWidgets('Unauthenticated users are redirected from protected routes', (
+      WidgetTester tester,
+    ) async {
       // Note: このテストは認証機能が実装された後に有効化してください
       //
       // 未認証状態でダッシュボードにアクセスを試みる
       // → ログインページにリダイレクトされることを確認
 
       await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: const App(),
-          ),
-        ),
+        ProviderScope(child: TranslationProvider(child: const App())),
       );
 
       await tester.pumpAndSettle();

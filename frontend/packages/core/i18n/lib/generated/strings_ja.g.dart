@@ -45,6 +45,8 @@ class TranslationsJa extends Translations with BaseTranslations<AppLocale, Trans
 	@override late final _TranslationsCommonJa common = _TranslationsCommonJa._(_root);
 	@override late final _TranslationsSettingsJa settings = _TranslationsSettingsJa._(_root);
 	@override late final _TranslationsLanguageJa language = _TranslationsLanguageJa._(_root);
+	@override late final _TranslationsGameJa game = _TranslationsGameJa._(_root);
+	@override late final _TranslationsGenuiJa genui = _TranslationsGenuiJa._(_root);
 	@override late final _TranslationsErrorJa error = _TranslationsErrorJa._(_root);
 }
 
@@ -145,6 +147,38 @@ class _TranslationsLanguageJa extends TranslationsLanguageEn {
 	@override String get ja => '日本語';
 }
 
+// Path: game
+class _TranslationsGameJa extends TranslationsGameEn {
+	_TranslationsGameJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'ゲーム';
+	@override String get start => 'ゲーム開始';
+	@override String get pause => '一時停止';
+	@override String get resume => '再開';
+	@override String get gameOver => 'ゲームオーバー';
+	@override String get score => 'スコア: {n}';
+	@override String get restart => 'リスタート';
+	@override String get loading => 'ゲームを読み込み中...';
+}
+
+// Path: genui
+class _TranslationsGenuiJa extends TranslationsGenuiEn {
+	_TranslationsGenuiJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'AIチャット';
+	@override String get inputHint => 'メッセージを入力...';
+	@override String get send => '送信';
+	@override String get emptyState => '会話を始めましょう';
+	@override String get error => 'メッセージの送信に失敗しました';
+	@override String get processing => '考え中...';
+}
+
 // Path: error
 class _TranslationsErrorJa extends TranslationsErrorEn {
 	_TranslationsErrorJa._(TranslationsJa root) : this._root = root, super.internal(root);
@@ -221,6 +255,20 @@ extension on TranslationsJa {
 			'settings.changeLanguage' => '言語を変更',
 			'language.en' => '英語',
 			'language.ja' => '日本語',
+			'game.title' => 'ゲーム',
+			'game.start' => 'ゲーム開始',
+			'game.pause' => '一時停止',
+			'game.resume' => '再開',
+			'game.gameOver' => 'ゲームオーバー',
+			'game.score' => 'スコア: {n}',
+			'game.restart' => 'リスタート',
+			'game.loading' => 'ゲームを読み込み中...',
+			'genui.title' => 'AIチャット',
+			'genui.inputHint' => 'メッセージを入力...',
+			'genui.send' => '送信',
+			'genui.emptyState' => '会話を始めましょう',
+			'genui.error' => 'メッセージの送信に失敗しました',
+			'genui.processing' => '考え中...',
 			'error.generic' => 'エラーが発生しました',
 			'error.network' => 'ネットワークエラー',
 			'error.notFound' => '見つかりません',

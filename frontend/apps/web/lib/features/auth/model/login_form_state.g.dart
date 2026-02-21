@@ -17,15 +17,15 @@ final loginEmailProvider = LoginEmailProvider._();
 final class LoginEmailProvider extends $NotifierProvider<LoginEmail, String> {
   /// ログインフォームのメールアドレス状態管理
   LoginEmailProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'loginEmailProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'loginEmailProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$loginEmailHash();
@@ -53,8 +53,14 @@ abstract class _$LoginEmail extends $Notifier<String> {
   @override
   void runBuild() {
     final ref = this.ref as $Ref<String, String>;
-    final element = ref.element as $ClassProviderElement<
-        AnyNotifier<String, String>, String, Object?, Object?>;
+    final element =
+        ref.element
+            as $ClassProviderElement<
+              AnyNotifier<String, String>,
+              String,
+              Object?,
+              Object?
+            >;
     element.handleCreate(ref, build);
   }
 }
@@ -71,15 +77,15 @@ final class LoginEmailErrorProvider
     with $Provider<String?> {
   /// メールアドレスのバリデーション
   LoginEmailErrorProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'loginEmailErrorProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'loginEmailErrorProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$loginEmailErrorHash();
@@ -113,18 +119,19 @@ final isLoginFormValidProvider = IsLoginFormValidProvider._();
 /// フォーム全体の有効性
 
 final class IsLoginFormValidProvider
-    extends $FunctionalProvider<bool, bool, bool> with $Provider<bool> {
+    extends $FunctionalProvider<bool, bool, bool>
+    with $Provider<bool> {
   /// フォーム全体の有効性
   IsLoginFormValidProvider._()
-      : super(
-          from: null,
-          argument: null,
-          retry: null,
-          name: r'isLoginFormValidProvider',
-          isAutoDispose: true,
-          dependencies: null,
-          $allTransitiveDependencies: null,
-        );
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'isLoginFormValidProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
 
   @override
   String debugGetCreateSourceHash() => _$isLoginFormValidHash();

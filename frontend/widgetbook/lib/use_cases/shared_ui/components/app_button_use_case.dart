@@ -11,10 +11,7 @@ import 'package:shared_ui/shared_ui.dart';
 )
 Widget defaultAppButton(BuildContext context) {
   return Center(
-    child: AppButton(
-      text: 'Click me',
-      onPressed: () {},
-    ),
+    child: AppButton(text: 'Click me', onPressed: () {}),
   );
 }
 
@@ -26,10 +23,7 @@ Widget defaultAppButton(BuildContext context) {
 )
 Widget disabledAppButton(BuildContext context) {
   return const Center(
-    child: AppButton(
-      text: 'Disabled Button',
-      onPressed: null,
-    ),
+    child: AppButton(text: 'Disabled Button', onPressed: null),
   );
 }
 
@@ -48,9 +42,7 @@ Widget customStyleAppButton(BuildContext context) {
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       ),
     ),
   );

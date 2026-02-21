@@ -18,9 +18,7 @@ void main() {
         true, // Mark as skipped until auth screens are ready (equivalent to 'wip' in Maestro)
     ($) async {
       // Step 1: Launch app and clear state
-      await $.pumpWidgetAndSettle(
-        const App(),
-      );
+      await $.pumpWidgetAndSettle(const App());
 
       // Step 2: Navigate to login screen (update selector when implemented)
       // await $.tap(find.text('Login'));

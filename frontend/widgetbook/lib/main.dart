@@ -38,14 +38,8 @@ class WidgetbookApp extends StatelessWidget {
         // Theme Addon
         MaterialThemeAddon(
           themes: [
-            WidgetbookTheme(
-              name: 'Light',
-              data: AppTheme.lightTheme,
-            ),
-            WidgetbookTheme(
-              name: 'Dark',
-              data: AppTheme.darkTheme,
-            ),
+            WidgetbookTheme(name: 'Light', data: AppTheme.lightTheme),
+            WidgetbookTheme(name: 'Dark', data: AppTheme.darkTheme),
           ],
         ),
         // Localization Addon
@@ -59,11 +53,7 @@ class WidgetbookApp extends StatelessWidget {
           initialLocale: AppLocale.en.flutterLocale,
         ),
         // Text Scale Addon
-        TextScaleAddon(
-          min: 0.85,
-          max: 2.0,
-          initialScale: 1.0,
-        ),
+        TextScaleAddon(min: 0.85, max: 2.0, initialScale: 1.0),
         // Grid Addon for alignment
         GridAddon(100),
       ],

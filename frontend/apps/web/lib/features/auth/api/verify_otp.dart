@@ -37,10 +37,7 @@ class VerifyOtp extends _$VerifyOtp {
       Logger.error('Failed to verify OTP', e, st);
       state = AsyncError(e, st);
       return AuthResult.failure(
-        AuthException(
-          message: 'OTPの検証に失敗しました',
-          originalException: e,
-        ),
+        AuthException(message: 'OTPの検証に失敗しました', originalException: e),
       );
     }
   }
