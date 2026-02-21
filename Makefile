@@ -346,11 +346,13 @@ migrate-status:
 	fi
 
 # データベースシードコマンド
+# supabase/seed.sql を既存DBに追加投入する（DBリセットなし）
+# ON CONFLICT DO NOTHING により既存データがあってもエラーにならない
 .PHONY: seed
 seed:
-	@echo "⚠️  Warning: Seed functionality requires manual implementation"
-	@echo "Please create seed scripts in drizzle/config/ directory as .sql files"
-	@echo "and run 'make migrate-dev' to apply them via migrate:custom script"
+	@echo "🌱 Applying seed data (supabase/seed.sql)..."
+	npx dotenvx run -f env/migration/local.env -- bash -c 'psql "$$DATABASE_URL" -f supabase/seed.sql'
+	@echo "✅ Seed data applied!"
 
 # ロールバックコマンド
 .PHONY: rollback
@@ -364,17 +366,21 @@ rollback:
 	@exit 1
 
 # データベースリセットコマンド
+# supabase db reset がマイグレーション適用 + seed.sql 実行を行うため、
+# その後は post-migration SQL とモデル生成のみ実行する（migrate-dev の再実行は不要）
 .PHONY: db-reset
 db-reset:
 	@echo "⚠️  Warning: This will drop and recreate the database!"
 	@echo "Press Ctrl+C to cancel, or wait 5 seconds to continue..."
 	@sleep 5
-	# Supabaseを停止して再起動（ENV=localの場合のみ）
 	@if [ -z "${ENV}" ] || [ "${ENV}" = "local" ]; then \
 		echo "🔄 Resetting Supabase database..."; \
 		npx dotenvx run -f env/backend/local.env -- supabase db reset; \
-		echo "🚀 Re-applying migrations..."; \
-		make migrate-dev; \
+		echo "🔧 Applying post-migration SQL (functions, triggers)..."; \
+		cd drizzle && npx dotenvx run -f ../env/migration/local.env -- bun run migrate:post; \
+		echo "🔧 Generating database types..."; \
+		make build-model; \
+		echo "✅ Database reset complete!"; \
 	else \
 		echo "❌ db-reset is only available for local environment"; \
 		exit 1; \

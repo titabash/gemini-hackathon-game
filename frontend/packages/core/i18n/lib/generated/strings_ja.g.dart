@@ -40,13 +40,16 @@ class TranslationsJa extends Translations with BaseTranslations<AppLocale, Trans
 
 	// Translations
 	@override late final _TranslationsAppJa app = _TranslationsAppJa._(_root);
-	@override late final _TranslationsHomeJa home = _TranslationsHomeJa._(_root);
-	@override late final _TranslationsCounterJa counter = _TranslationsCounterJa._(_root);
 	@override late final _TranslationsCommonJa common = _TranslationsCommonJa._(_root);
+	@override late final _TranslationsAuthJa auth = _TranslationsAuthJa._(_root);
+	@override late final _TranslationsOnboardingJa onboarding = _TranslationsOnboardingJa._(_root);
 	@override late final _TranslationsSettingsJa settings = _TranslationsSettingsJa._(_root);
 	@override late final _TranslationsLanguageJa language = _TranslationsLanguageJa._(_root);
+	@override late final _TranslationsScenarioListJa scenarioList = _TranslationsScenarioListJa._(_root);
+	@override late final _TranslationsScenarioDetailJa scenarioDetail = _TranslationsScenarioDetailJa._(_root);
 	@override late final _TranslationsGameJa game = _TranslationsGameJa._(_root);
 	@override late final _TranslationsGenuiJa genui = _TranslationsGenuiJa._(_root);
+	@override late final _TranslationsTrpgJa trpg = _TranslationsTrpgJa._(_root);
 	@override late final _TranslationsErrorJa error = _TranslationsErrorJa._(_root);
 }
 
@@ -57,36 +60,8 @@ class _TranslationsAppJa extends TranslationsAppEn {
 	final TranslationsJa _root; // ignore: unused_field
 
 	// Translations
-	@override String get title => 'Flutter デモ';
-	@override String get name => 'Flutter ボイラープレート';
-}
-
-// Path: home
-class _TranslationsHomeJa extends TranslationsHomeEn {
-	_TranslationsHomeJa._(TranslationsJa root) : this._root = root, super.internal(root);
-
-	final TranslationsJa _root; // ignore: unused_field
-
-	// Translations
-	@override String get title => 'Flutter デモホームページ';
-	@override String get message => 'ボタンを押した回数：';
-}
-
-// Path: counter
-class _TranslationsCounterJa extends TranslationsCounterEn {
-	_TranslationsCounterJa._(TranslationsJa root) : this._root = root, super.internal(root);
-
-	final TranslationsJa _root; // ignore: unused_field
-
-	// Translations
-	@override String get increment => '増やす';
-	@override String get decrement => '減らす';
-	@override String get reset => 'リセット';
-	@override late final _TranslationsCounterTooltipJa tooltip = _TranslationsCounterTooltipJa._(_root);
-	@override String value({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('ja'))(n,
-		zero: 'まだ押されていません',
-		other: '{n}回',
-	);
+	@override String get title => 'ゲームサービス';
+	@override String get name => 'ゲームサービス';
 }
 
 // Path: common
@@ -120,6 +95,55 @@ class _TranslationsCommonJa extends TranslationsCommonEn {
 	@override String get retry => '再試行';
 }
 
+// Path: auth
+class _TranslationsAuthJa extends TranslationsAuthEn {
+	_TranslationsAuthJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get login => 'ログイン';
+	@override String get loginWithEmail => 'メールアドレスでログイン';
+	@override String get loginDescription => 'メールアドレスを入力すると、認証コードをお送りします';
+	@override String get sendCode => '認証コードを送信';
+	@override String get backToHome => 'ホームに戻る';
+	@override String get verifyCode => '認証コード確認';
+	@override String get enterCode => '認証コードを入力';
+	@override String enterCodeDescription({required Object email}) => '${email} に送信された認証コードを入力してください';
+	@override String get loginButton => 'ログイン';
+	@override String get resendCode => '認証コードを再送信';
+	@override String get changeEmail => 'メールアドレスを変更';
+	@override String codeSent({required Object email}) => '${email} に認証コードを送信しました';
+	@override String codeResent({required Object email}) => '${email} に認証コードを再送信しました';
+	@override String get loginSuccess => 'ログインしました';
+}
+
+// Path: onboarding
+class _TranslationsOnboardingJa extends TranslationsOnboardingEn {
+	_TranslationsOnboardingJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'プロフィール設定';
+	@override String get description => 'ユニークなアカウント名を設定してはじめましょう';
+	@override String get accountName => 'アカウント名';
+	@override String get accountNameHint => '例: alice_smith';
+	@override String get accountNameHelper => '3〜20文字、小文字英数字とアンダースコアのみ';
+	@override String get displayName => '表示名';
+	@override String get displayNameHint => '例: Alice Smith';
+	@override String get displayNameHelper => '任意。他のユーザーに表示される名前です';
+	@override String get complete => '設定を完了';
+	@override String get completing => '設定中...';
+	@override String get accountNameRequired => 'アカウント名は必須です';
+	@override String get accountNameTooShort => '3文字以上で入力してください';
+	@override String get accountNameTooLong => '20文字以内で入力してください';
+	@override String get accountNameInvalidFormat => '小文字英数字とアンダースコアのみ使用できます';
+	@override String get accountNameTemporary => 'アカウント名を設定してください';
+	@override String get accountNameTaken => 'このアカウント名は既に使用されています';
+	@override String get success => 'プロフィール設定が完了しました！';
+}
+
 // Path: settings
 class _TranslationsSettingsJa extends TranslationsSettingsEn {
 	_TranslationsSettingsJa._(TranslationsJa root) : this._root = root, super.internal(root);
@@ -147,6 +171,33 @@ class _TranslationsLanguageJa extends TranslationsLanguageEn {
 	@override String get ja => '日本語';
 }
 
+// Path: scenarioList
+class _TranslationsScenarioListJa extends TranslationsScenarioListEn {
+	_TranslationsScenarioListJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get title => 'ゲーム一覧';
+	@override String get empty => 'まだゲームがありません';
+	@override String get emptyDescription => '新しいシナリオが追加されるまでお待ちください';
+	@override String get error => 'ゲームの読み込みに失敗しました';
+	@override String get logout => 'ログアウト';
+}
+
+// Path: scenarioDetail
+class _TranslationsScenarioDetailJa extends TranslationsScenarioDetailEn {
+	_TranslationsScenarioDetailJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get play => 'プレイする';
+	@override String get startingGame => 'ゲームを開始中...';
+	@override String get startError => 'ゲームの開始に失敗しました';
+	@override String get description => '説明';
+}
+
 // Path: game
 class _TranslationsGameJa extends TranslationsGameEn {
 	_TranslationsGameJa._(TranslationsJa root) : this._root = root, super.internal(root);
@@ -162,6 +213,7 @@ class _TranslationsGameJa extends TranslationsGameEn {
 	@override String get score => 'スコア: {n}';
 	@override String get restart => 'リスタート';
 	@override String get loading => 'ゲームを読み込み中...';
+	@override String get backToList => 'ゲーム一覧に戻る';
 }
 
 // Path: genui
@@ -177,6 +229,33 @@ class _TranslationsGenuiJa extends TranslationsGenuiEn {
 	@override String get emptyState => '会話を始めましょう';
 	@override String get error => 'メッセージの送信に失敗しました';
 	@override String get processing => '考え中...';
+}
+
+// Path: trpg
+class _TranslationsTrpgJa extends TranslationsTrpgEn {
+	_TranslationsTrpgJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get chooseAction => '行動を選択してください';
+	@override String get freeInput => 'または自由に行動を記述...';
+	@override String get rollCheck => '判定チェック';
+	@override String rollDifficulty({required Object n}) => '難易度: ${n}';
+	@override String rollSuccess({required Object text}) => '成功時: ${text}';
+	@override String rollFailure({required Object text}) => '失敗時: ${text}';
+	@override String get rollButton => 'ダイスを振る';
+	@override String get clarifyTitle => 'GMから確認があります';
+	@override String get repairTitle => '矛盾が検出されました';
+	@override String repairContradiction({required Object text}) => '問題: ${text}';
+	@override String repairFix({required Object text}) => '修正案: ${text}';
+	@override String get repairAccept => '修正を受け入れる';
+	@override String get repairReject => '拒否する';
+	@override String get continueButton => '続ける';
+	@override String get inputHint => '何をしますか？';
+	@override String get send => '送信';
+	@override String get emptyState => '冒険が始まります...';
+	@override String get processing => 'GMが考えています...';
 }
 
 // Path: error
@@ -195,17 +274,6 @@ class _TranslationsErrorJa extends TranslationsErrorEn {
 	@override String get timeout => 'タイムアウト';
 }
 
-// Path: counter.tooltip
-class _TranslationsCounterTooltipJa extends TranslationsCounterTooltipEn {
-	_TranslationsCounterTooltipJa._(TranslationsJa root) : this._root = root, super.internal(root);
-
-	final TranslationsJa _root; // ignore: unused_field
-
-	// Translations
-	@override String get increment => '増やす';
-	@override String get decrement => '減らす';
-}
-
 /// The flat map containing all translations for locale <ja>.
 /// Only for edge cases! For simple maps, use the map function of this library.
 ///
@@ -214,16 +282,8 @@ class _TranslationsCounterTooltipJa extends TranslationsCounterTooltipEn {
 extension on TranslationsJa {
 	dynamic _flatMapFunction(String path) {
 		return switch (path) {
-			'app.title' => 'Flutter デモ',
-			'app.name' => 'Flutter ボイラープレート',
-			'home.title' => 'Flutter デモホームページ',
-			'home.message' => 'ボタンを押した回数：',
-			'counter.increment' => '増やす',
-			'counter.decrement' => '減らす',
-			'counter.reset' => 'リセット',
-			'counter.tooltip.increment' => '増やす',
-			'counter.tooltip.decrement' => '減らす',
-			'counter.value' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('ja'))(n, zero: 'まだ押されていません', other: '{n}回', ), 
+			'app.title' => 'ゲームサービス',
+			'app.name' => 'ゲームサービス',
 			'common.save' => '保存',
 			'common.cancel' => 'キャンセル',
 			'common.delete' => '削除',
@@ -246,6 +306,37 @@ extension on TranslationsJa {
 			'common.clear' => 'クリア',
 			'common.refresh' => '更新',
 			'common.retry' => '再試行',
+			'auth.login' => 'ログイン',
+			'auth.loginWithEmail' => 'メールアドレスでログイン',
+			'auth.loginDescription' => 'メールアドレスを入力すると、認証コードをお送りします',
+			'auth.sendCode' => '認証コードを送信',
+			'auth.backToHome' => 'ホームに戻る',
+			'auth.verifyCode' => '認証コード確認',
+			'auth.enterCode' => '認証コードを入力',
+			'auth.enterCodeDescription' => ({required Object email}) => '${email} に送信された認証コードを入力してください',
+			'auth.loginButton' => 'ログイン',
+			'auth.resendCode' => '認証コードを再送信',
+			'auth.changeEmail' => 'メールアドレスを変更',
+			'auth.codeSent' => ({required Object email}) => '${email} に認証コードを送信しました',
+			'auth.codeResent' => ({required Object email}) => '${email} に認証コードを再送信しました',
+			'auth.loginSuccess' => 'ログインしました',
+			'onboarding.title' => 'プロフィール設定',
+			'onboarding.description' => 'ユニークなアカウント名を設定してはじめましょう',
+			'onboarding.accountName' => 'アカウント名',
+			'onboarding.accountNameHint' => '例: alice_smith',
+			'onboarding.accountNameHelper' => '3〜20文字、小文字英数字とアンダースコアのみ',
+			'onboarding.displayName' => '表示名',
+			'onboarding.displayNameHint' => '例: Alice Smith',
+			'onboarding.displayNameHelper' => '任意。他のユーザーに表示される名前です',
+			'onboarding.complete' => '設定を完了',
+			'onboarding.completing' => '設定中...',
+			'onboarding.accountNameRequired' => 'アカウント名は必須です',
+			'onboarding.accountNameTooShort' => '3文字以上で入力してください',
+			'onboarding.accountNameTooLong' => '20文字以内で入力してください',
+			'onboarding.accountNameInvalidFormat' => '小文字英数字とアンダースコアのみ使用できます',
+			'onboarding.accountNameTemporary' => 'アカウント名を設定してください',
+			'onboarding.accountNameTaken' => 'このアカウント名は既に使用されています',
+			'onboarding.success' => 'プロフィール設定が完了しました！',
 			'settings.title' => '設定',
 			'settings.language' => '言語',
 			'settings.theme' => 'テーマ',
@@ -255,6 +346,15 @@ extension on TranslationsJa {
 			'settings.changeLanguage' => '言語を変更',
 			'language.en' => '英語',
 			'language.ja' => '日本語',
+			'scenarioList.title' => 'ゲーム一覧',
+			'scenarioList.empty' => 'まだゲームがありません',
+			'scenarioList.emptyDescription' => '新しいシナリオが追加されるまでお待ちください',
+			'scenarioList.error' => 'ゲームの読み込みに失敗しました',
+			'scenarioList.logout' => 'ログアウト',
+			'scenarioDetail.play' => 'プレイする',
+			'scenarioDetail.startingGame' => 'ゲームを開始中...',
+			'scenarioDetail.startError' => 'ゲームの開始に失敗しました',
+			'scenarioDetail.description' => '説明',
 			'game.title' => 'ゲーム',
 			'game.start' => 'ゲーム開始',
 			'game.pause' => '一時停止',
@@ -263,12 +363,31 @@ extension on TranslationsJa {
 			'game.score' => 'スコア: {n}',
 			'game.restart' => 'リスタート',
 			'game.loading' => 'ゲームを読み込み中...',
+			'game.backToList' => 'ゲーム一覧に戻る',
 			'genui.title' => 'AIチャット',
 			'genui.inputHint' => 'メッセージを入力...',
 			'genui.send' => '送信',
 			'genui.emptyState' => '会話を始めましょう',
 			'genui.error' => 'メッセージの送信に失敗しました',
 			'genui.processing' => '考え中...',
+			'trpg.chooseAction' => '行動を選択してください',
+			'trpg.freeInput' => 'または自由に行動を記述...',
+			'trpg.rollCheck' => '判定チェック',
+			'trpg.rollDifficulty' => ({required Object n}) => '難易度: ${n}',
+			'trpg.rollSuccess' => ({required Object text}) => '成功時: ${text}',
+			'trpg.rollFailure' => ({required Object text}) => '失敗時: ${text}',
+			'trpg.rollButton' => 'ダイスを振る',
+			'trpg.clarifyTitle' => 'GMから確認があります',
+			'trpg.repairTitle' => '矛盾が検出されました',
+			'trpg.repairContradiction' => ({required Object text}) => '問題: ${text}',
+			'trpg.repairFix' => ({required Object text}) => '修正案: ${text}',
+			'trpg.repairAccept' => '修正を受け入れる',
+			'trpg.repairReject' => '拒否する',
+			'trpg.continueButton' => '続ける',
+			'trpg.inputHint' => '何をしますか？',
+			'trpg.send' => '送信',
+			'trpg.emptyState' => '冒険が始まります...',
+			'trpg.processing' => 'GMが考えています...',
 			'error.generic' => 'エラーが発生しました',
 			'error.network' => 'ネットワークエラー',
 			'error.notFound' => '見つかりません',

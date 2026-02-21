@@ -41,13 +41,16 @@ class Translations with BaseTranslations<AppLocale, Translations> {
 
 	// Translations
 	late final TranslationsAppEn app = TranslationsAppEn.internal(_root);
-	late final TranslationsHomeEn home = TranslationsHomeEn.internal(_root);
-	late final TranslationsCounterEn counter = TranslationsCounterEn.internal(_root);
 	late final TranslationsCommonEn common = TranslationsCommonEn.internal(_root);
+	late final TranslationsAuthEn auth = TranslationsAuthEn.internal(_root);
+	late final TranslationsOnboardingEn onboarding = TranslationsOnboardingEn.internal(_root);
 	late final TranslationsSettingsEn settings = TranslationsSettingsEn.internal(_root);
 	late final TranslationsLanguageEn language = TranslationsLanguageEn.internal(_root);
+	late final TranslationsScenarioListEn scenarioList = TranslationsScenarioListEn.internal(_root);
+	late final TranslationsScenarioDetailEn scenarioDetail = TranslationsScenarioDetailEn.internal(_root);
 	late final TranslationsGameEn game = TranslationsGameEn.internal(_root);
 	late final TranslationsGenuiEn genui = TranslationsGenuiEn.internal(_root);
+	late final TranslationsTrpgEn trpg = TranslationsTrpgEn.internal(_root);
 	late final TranslationsErrorEn error = TranslationsErrorEn.internal(_root);
 }
 
@@ -59,53 +62,11 @@ class TranslationsAppEn {
 
 	// Translations
 
-	/// en: 'Flutter Demo'
-	String get title => 'Flutter Demo';
+	/// en: 'Game Service'
+	String get title => 'Game Service';
 
-	/// en: 'Flutter Boilerplate'
-	String get name => 'Flutter Boilerplate';
-}
-
-// Path: home
-class TranslationsHomeEn {
-	TranslationsHomeEn.internal(this._root);
-
-	final Translations _root; // ignore: unused_field
-
-	// Translations
-
-	/// en: 'Flutter Demo Home Page'
-	String get title => 'Flutter Demo Home Page';
-
-	/// en: 'You have pushed the button this many times:'
-	String get message => 'You have pushed the button this many times:';
-}
-
-// Path: counter
-class TranslationsCounterEn {
-	TranslationsCounterEn.internal(this._root);
-
-	final Translations _root; // ignore: unused_field
-
-	// Translations
-
-	/// en: 'Increment'
-	String get increment => 'Increment';
-
-	/// en: 'Decrement'
-	String get decrement => 'Decrement';
-
-	/// en: 'Reset'
-	String get reset => 'Reset';
-
-	late final TranslationsCounterTooltipEn tooltip = TranslationsCounterTooltipEn.internal(_root);
-
-	/// en: '(zero) {No pushes yet} (one) {{n} time} (other) {{n} times}'
-	String value({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n,
-		zero: 'No pushes yet',
-		one: '{n} time',
-		other: '{n} times',
-	);
+	/// en: 'Game Service'
+	String get name => 'Game Service';
 }
 
 // Path: common
@@ -183,6 +144,117 @@ class TranslationsCommonEn {
 	String get retry => 'Retry';
 }
 
+// Path: auth
+class TranslationsAuthEn {
+	TranslationsAuthEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Login'
+	String get login => 'Login';
+
+	/// en: 'Login with Email'
+	String get loginWithEmail => 'Login with Email';
+
+	/// en: 'Enter your email and we'll send you a verification code'
+	String get loginDescription => 'Enter your email and we\'ll send you a verification code';
+
+	/// en: 'Send Verification Code'
+	String get sendCode => 'Send Verification Code';
+
+	/// en: 'Back to Home'
+	String get backToHome => 'Back to Home';
+
+	/// en: 'Verify Code'
+	String get verifyCode => 'Verify Code';
+
+	/// en: 'Enter Verification Code'
+	String get enterCode => 'Enter Verification Code';
+
+	/// en: 'Enter the verification code sent to $email'
+	String enterCodeDescription({required Object email}) => 'Enter the verification code sent to ${email}';
+
+	/// en: 'Login'
+	String get loginButton => 'Login';
+
+	/// en: 'Resend Code'
+	String get resendCode => 'Resend Code';
+
+	/// en: 'Change Email'
+	String get changeEmail => 'Change Email';
+
+	/// en: 'Verification code sent to $email'
+	String codeSent({required Object email}) => 'Verification code sent to ${email}';
+
+	/// en: 'Verification code resent to $email'
+	String codeResent({required Object email}) => 'Verification code resent to ${email}';
+
+	/// en: 'Logged in successfully'
+	String get loginSuccess => 'Logged in successfully';
+}
+
+// Path: onboarding
+class TranslationsOnboardingEn {
+	TranslationsOnboardingEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Set Up Your Profile'
+	String get title => 'Set Up Your Profile';
+
+	/// en: 'Choose a unique account name to get started'
+	String get description => 'Choose a unique account name to get started';
+
+	/// en: 'Account Name'
+	String get accountName => 'Account Name';
+
+	/// en: 'e.g. alice_smith'
+	String get accountNameHint => 'e.g. alice_smith';
+
+	/// en: '3-20 characters, lowercase letters, numbers, and underscores only'
+	String get accountNameHelper => '3-20 characters, lowercase letters, numbers, and underscores only';
+
+	/// en: 'Display Name'
+	String get displayName => 'Display Name';
+
+	/// en: 'e.g. Alice Smith'
+	String get displayNameHint => 'e.g. Alice Smith';
+
+	/// en: 'Optional. How others will see you'
+	String get displayNameHelper => 'Optional. How others will see you';
+
+	/// en: 'Complete Setup'
+	String get complete => 'Complete Setup';
+
+	/// en: 'Setting up...'
+	String get completing => 'Setting up...';
+
+	/// en: 'Account name is required'
+	String get accountNameRequired => 'Account name is required';
+
+	/// en: 'Must be at least 3 characters'
+	String get accountNameTooShort => 'Must be at least 3 characters';
+
+	/// en: 'Must be at most 20 characters'
+	String get accountNameTooLong => 'Must be at most 20 characters';
+
+	/// en: 'Only lowercase letters, numbers, and underscores allowed'
+	String get accountNameInvalidFormat => 'Only lowercase letters, numbers, and underscores allowed';
+
+	/// en: 'Please choose a personalized account name'
+	String get accountNameTemporary => 'Please choose a personalized account name';
+
+	/// en: 'This account name is already taken'
+	String get accountNameTaken => 'This account name is already taken';
+
+	/// en: 'Profile setup complete!'
+	String get success => 'Profile setup complete!';
+}
+
 // Path: settings
 class TranslationsSettingsEn {
 	TranslationsSettingsEn.internal(this._root);
@@ -228,6 +300,51 @@ class TranslationsLanguageEn {
 	String get ja => 'Japanese';
 }
 
+// Path: scenarioList
+class TranslationsScenarioListEn {
+	TranslationsScenarioListEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Games'
+	String get title => 'Games';
+
+	/// en: 'No games available yet'
+	String get empty => 'No games available yet';
+
+	/// en: 'Check back later for new scenarios'
+	String get emptyDescription => 'Check back later for new scenarios';
+
+	/// en: 'Failed to load games'
+	String get error => 'Failed to load games';
+
+	/// en: 'Logout'
+	String get logout => 'Logout';
+}
+
+// Path: scenarioDetail
+class TranslationsScenarioDetailEn {
+	TranslationsScenarioDetailEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Play Now'
+	String get play => 'Play Now';
+
+	/// en: 'Starting game...'
+	String get startingGame => 'Starting game...';
+
+	/// en: 'Failed to start the game'
+	String get startError => 'Failed to start the game';
+
+	/// en: 'Description'
+	String get description => 'Description';
+}
+
 // Path: game
 class TranslationsGameEn {
 	TranslationsGameEn.internal(this._root);
@@ -259,6 +376,9 @@ class TranslationsGameEn {
 
 	/// en: 'Loading game...'
 	String get loading => 'Loading game...';
+
+	/// en: 'Back to Games'
+	String get backToList => 'Back to Games';
 }
 
 // Path: genui
@@ -286,6 +406,69 @@ class TranslationsGenuiEn {
 
 	/// en: 'Thinking...'
 	String get processing => 'Thinking...';
+}
+
+// Path: trpg
+class TranslationsTrpgEn {
+	TranslationsTrpgEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Choose your action'
+	String get chooseAction => 'Choose your action';
+
+	/// en: 'Or describe your own action...'
+	String get freeInput => 'Or describe your own action...';
+
+	/// en: 'Skill Check'
+	String get rollCheck => 'Skill Check';
+
+	/// en: 'Difficulty: $n'
+	String rollDifficulty({required Object n}) => 'Difficulty: ${n}';
+
+	/// en: 'On success: $text'
+	String rollSuccess({required Object text}) => 'On success: ${text}';
+
+	/// en: 'On failure: $text'
+	String rollFailure({required Object text}) => 'On failure: ${text}';
+
+	/// en: 'Roll the dice'
+	String get rollButton => 'Roll the dice';
+
+	/// en: 'The GM needs clarification'
+	String get clarifyTitle => 'The GM needs clarification';
+
+	/// en: 'Contradiction detected'
+	String get repairTitle => 'Contradiction detected';
+
+	/// en: 'Issue: $text'
+	String repairContradiction({required Object text}) => 'Issue: ${text}';
+
+	/// en: 'Proposed fix: $text'
+	String repairFix({required Object text}) => 'Proposed fix: ${text}';
+
+	/// en: 'Accept fix'
+	String get repairAccept => 'Accept fix';
+
+	/// en: 'Reject'
+	String get repairReject => 'Reject';
+
+	/// en: 'Continue'
+	String get continueButton => 'Continue';
+
+	/// en: 'What do you do?'
+	String get inputHint => 'What do you do?';
+
+	/// en: 'Send'
+	String get send => 'Send';
+
+	/// en: 'Your adventure begins...'
+	String get emptyState => 'Your adventure begins...';
+
+	/// en: 'The GM is thinking...'
+	String get processing => 'The GM is thinking...';
 }
 
 // Path: error
@@ -318,21 +501,6 @@ class TranslationsErrorEn {
 	String get timeout => 'Request timeout';
 }
 
-// Path: counter.tooltip
-class TranslationsCounterTooltipEn {
-	TranslationsCounterTooltipEn.internal(this._root);
-
-	final Translations _root; // ignore: unused_field
-
-	// Translations
-
-	/// en: 'Increment'
-	String get increment => 'Increment';
-
-	/// en: 'Decrement'
-	String get decrement => 'Decrement';
-}
-
 /// The flat map containing all translations for locale <en>.
 /// Only for edge cases! For simple maps, use the map function of this library.
 ///
@@ -341,16 +509,8 @@ class TranslationsCounterTooltipEn {
 extension on Translations {
 	dynamic _flatMapFunction(String path) {
 		return switch (path) {
-			'app.title' => 'Flutter Demo',
-			'app.name' => 'Flutter Boilerplate',
-			'home.title' => 'Flutter Demo Home Page',
-			'home.message' => 'You have pushed the button this many times:',
-			'counter.increment' => 'Increment',
-			'counter.decrement' => 'Decrement',
-			'counter.reset' => 'Reset',
-			'counter.tooltip.increment' => 'Increment',
-			'counter.tooltip.decrement' => 'Decrement',
-			'counter.value' => ({required num n}) => (_root.$meta.cardinalResolver ?? PluralResolvers.cardinal('en'))(n, zero: 'No pushes yet', one: '{n} time', other: '{n} times', ), 
+			'app.title' => 'Game Service',
+			'app.name' => 'Game Service',
 			'common.save' => 'Save',
 			'common.cancel' => 'Cancel',
 			'common.delete' => 'Delete',
@@ -373,6 +533,37 @@ extension on Translations {
 			'common.clear' => 'Clear',
 			'common.refresh' => 'Refresh',
 			'common.retry' => 'Retry',
+			'auth.login' => 'Login',
+			'auth.loginWithEmail' => 'Login with Email',
+			'auth.loginDescription' => 'Enter your email and we\'ll send you a verification code',
+			'auth.sendCode' => 'Send Verification Code',
+			'auth.backToHome' => 'Back to Home',
+			'auth.verifyCode' => 'Verify Code',
+			'auth.enterCode' => 'Enter Verification Code',
+			'auth.enterCodeDescription' => ({required Object email}) => 'Enter the verification code sent to ${email}',
+			'auth.loginButton' => 'Login',
+			'auth.resendCode' => 'Resend Code',
+			'auth.changeEmail' => 'Change Email',
+			'auth.codeSent' => ({required Object email}) => 'Verification code sent to ${email}',
+			'auth.codeResent' => ({required Object email}) => 'Verification code resent to ${email}',
+			'auth.loginSuccess' => 'Logged in successfully',
+			'onboarding.title' => 'Set Up Your Profile',
+			'onboarding.description' => 'Choose a unique account name to get started',
+			'onboarding.accountName' => 'Account Name',
+			'onboarding.accountNameHint' => 'e.g. alice_smith',
+			'onboarding.accountNameHelper' => '3-20 characters, lowercase letters, numbers, and underscores only',
+			'onboarding.displayName' => 'Display Name',
+			'onboarding.displayNameHint' => 'e.g. Alice Smith',
+			'onboarding.displayNameHelper' => 'Optional. How others will see you',
+			'onboarding.complete' => 'Complete Setup',
+			'onboarding.completing' => 'Setting up...',
+			'onboarding.accountNameRequired' => 'Account name is required',
+			'onboarding.accountNameTooShort' => 'Must be at least 3 characters',
+			'onboarding.accountNameTooLong' => 'Must be at most 20 characters',
+			'onboarding.accountNameInvalidFormat' => 'Only lowercase letters, numbers, and underscores allowed',
+			'onboarding.accountNameTemporary' => 'Please choose a personalized account name',
+			'onboarding.accountNameTaken' => 'This account name is already taken',
+			'onboarding.success' => 'Profile setup complete!',
 			'settings.title' => 'Settings',
 			'settings.language' => 'Language',
 			'settings.theme' => 'Theme',
@@ -382,6 +573,15 @@ extension on Translations {
 			'settings.changeLanguage' => 'Change Language',
 			'language.en' => 'English',
 			'language.ja' => 'Japanese',
+			'scenarioList.title' => 'Games',
+			'scenarioList.empty' => 'No games available yet',
+			'scenarioList.emptyDescription' => 'Check back later for new scenarios',
+			'scenarioList.error' => 'Failed to load games',
+			'scenarioList.logout' => 'Logout',
+			'scenarioDetail.play' => 'Play Now',
+			'scenarioDetail.startingGame' => 'Starting game...',
+			'scenarioDetail.startError' => 'Failed to start the game',
+			'scenarioDetail.description' => 'Description',
 			'game.title' => 'Game',
 			'game.start' => 'Start Game',
 			'game.pause' => 'Pause',
@@ -390,12 +590,31 @@ extension on Translations {
 			'game.score' => 'Score: {n}',
 			'game.restart' => 'Restart',
 			'game.loading' => 'Loading game...',
+			'game.backToList' => 'Back to Games',
 			'genui.title' => 'AI Chat',
 			'genui.inputHint' => 'Type a message...',
 			'genui.send' => 'Send',
 			'genui.emptyState' => 'Start a conversation',
 			'genui.error' => 'Failed to send message',
 			'genui.processing' => 'Thinking...',
+			'trpg.chooseAction' => 'Choose your action',
+			'trpg.freeInput' => 'Or describe your own action...',
+			'trpg.rollCheck' => 'Skill Check',
+			'trpg.rollDifficulty' => ({required Object n}) => 'Difficulty: ${n}',
+			'trpg.rollSuccess' => ({required Object text}) => 'On success: ${text}',
+			'trpg.rollFailure' => ({required Object text}) => 'On failure: ${text}',
+			'trpg.rollButton' => 'Roll the dice',
+			'trpg.clarifyTitle' => 'The GM needs clarification',
+			'trpg.repairTitle' => 'Contradiction detected',
+			'trpg.repairContradiction' => ({required Object text}) => 'Issue: ${text}',
+			'trpg.repairFix' => ({required Object text}) => 'Proposed fix: ${text}',
+			'trpg.repairAccept' => 'Accept fix',
+			'trpg.repairReject' => 'Reject',
+			'trpg.continueButton' => 'Continue',
+			'trpg.inputHint' => 'What do you do?',
+			'trpg.send' => 'Send',
+			'trpg.emptyState' => 'Your adventure begins...',
+			'trpg.processing' => 'The GM is thinking...',
 			'error.generic' => 'An error occurred',
 			'error.network' => 'Network error',
 			'error.notFound' => 'Not found',

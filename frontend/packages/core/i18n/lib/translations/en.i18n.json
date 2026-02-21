@@ -1,25 +1,7 @@
 {
   "app": {
-    "title": "Flutter Demo",
-    "name": "Flutter Boilerplate"
-  },
-  "home": {
-    "title": "Flutter Demo Home Page",
-    "message": "You have pushed the button this many times:"
-  },
-  "counter": {
-    "increment": "Increment",
-    "decrement": "Decrement",
-    "reset": "Reset",
-    "tooltip": {
-      "increment": "Increment",
-      "decrement": "Decrement"
-    },
-    "value": {
-      "zero": "No pushes yet",
-      "one": "{n} time",
-      "other": "{n} times"
-    }
+    "title": "Game Service",
+    "name": "Game Service"
   },
   "common": {
     "save": "Save",
@@ -45,6 +27,41 @@
     "refresh": "Refresh",
     "retry": "Retry"
   },
+  "auth": {
+    "login": "Login",
+    "loginWithEmail": "Login with Email",
+    "loginDescription": "Enter your email and we'll send you a verification code",
+    "sendCode": "Send Verification Code",
+    "backToHome": "Back to Home",
+    "verifyCode": "Verify Code",
+    "enterCode": "Enter Verification Code",
+    "enterCodeDescription": "Enter the verification code sent to $email",
+    "loginButton": "Login",
+    "resendCode": "Resend Code",
+    "changeEmail": "Change Email",
+    "codeSent": "Verification code sent to $email",
+    "codeResent": "Verification code resent to $email",
+    "loginSuccess": "Logged in successfully"
+  },
+  "onboarding": {
+    "title": "Set Up Your Profile",
+    "description": "Choose a unique account name to get started",
+    "accountName": "Account Name",
+    "accountNameHint": "e.g. alice_smith",
+    "accountNameHelper": "3-20 characters, lowercase letters, numbers, and underscores only",
+    "displayName": "Display Name",
+    "displayNameHint": "e.g. Alice Smith",
+    "displayNameHelper": "Optional. How others will see you",
+    "complete": "Complete Setup",
+    "completing": "Setting up...",
+    "accountNameRequired": "Account name is required",
+    "accountNameTooShort": "Must be at least 3 characters",
+    "accountNameTooLong": "Must be at most 20 characters",
+    "accountNameInvalidFormat": "Only lowercase letters, numbers, and underscores allowed",
+    "accountNameTemporary": "Please choose a personalized account name",
+    "accountNameTaken": "This account name is already taken",
+    "success": "Profile setup complete!"
+  },
   "settings": {
     "title": "Settings",
     "language": "Language",
@@ -58,6 +75,19 @@
     "en": "English",
     "ja": "Japanese"
   },
+  "scenarioList": {
+    "title": "Games",
+    "empty": "No games available yet",
+    "emptyDescription": "Check back later for new scenarios",
+    "error": "Failed to load games",
+    "logout": "Logout"
+  },
+  "scenarioDetail": {
+    "play": "Play Now",
+    "startingGame": "Starting game...",
+    "startError": "Failed to start the game",
+    "description": "Description"
+  },
   "game": {
     "title": "Game",
     "start": "Start Game",
@@ -66,7 +96,8 @@
     "gameOver": "Game Over",
     "score": "Score: {n}",
     "restart": "Restart",
-    "loading": "Loading game..."
+    "loading": "Loading game...",
+    "backToList": "Back to Games"
   },
   "genui": {
     "title": "AI Chat",
@@ -75,6 +106,26 @@
     "emptyState": "Start a conversation",
     "error": "Failed to send message",
     "processing": "Thinking..."
+  },
+  "trpg": {
+    "chooseAction": "Choose your action",
+    "freeInput": "Or describe your own action...",
+    "rollCheck": "Skill Check",
+    "rollDifficulty": "Difficulty: $n",
+    "rollSuccess": "On success: $text",
+    "rollFailure": "On failure: $text",
+    "rollButton": "Roll the dice",
+    "clarifyTitle": "The GM needs clarification",
+    "repairTitle": "Contradiction detected",
+    "repairContradiction": "Issue: $text",
+    "repairFix": "Proposed fix: $text",
+    "repairAccept": "Accept fix",
+    "repairReject": "Reject",
+    "continueButton": "Continue",
+    "inputHint": "What do you do?",
+    "send": "Send",
+    "emptyState": "Your adventure begins...",
+    "processing": "The GM is thinking..."
   },
   "error": {
     "generic": "An error occurred",

@@ -1,7 +1,8 @@
+import 'package:core_auth/core_auth.dart';
+import 'package:core_i18n/generated/strings.g.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:core_auth/core_auth.dart';
 import '../../../features/auth/api/send_otp.dart';
 import '../../../features/auth/model/login_form_state.dart';
 import '../../../features/auth/ui/email_input_field.dart';
@@ -17,7 +18,7 @@ class LoginPage extends ConsumerWidget {
     final isLoading = sendOtpState.isLoading;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('ログイン')),
+      appBar: AppBar(title: Text(t.auth.login)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
@@ -29,15 +30,18 @@ class LoginPage extends ConsumerWidget {
               children: [
                 const Icon(Icons.lock_outline, size: 80, color: Colors.blue),
                 const SizedBox(height: 32),
-                const Text(
-                  'メールアドレスでログイン',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                Text(
+                  t.auth.loginWithEmail,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
-                const Text(
-                  'メールアドレスを入力すると、認証コードをお送りします',
-                  style: TextStyle(fontSize: 14, color: Colors.grey),
+                Text(
+                  t.auth.loginDescription,
+                  style: const TextStyle(fontSize: 14, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 32),
@@ -56,12 +60,12 @@ class LoginPage extends ConsumerWidget {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('認証コードを送信'),
+                      : Text(t.auth.sendCode),
                 ),
                 const SizedBox(height: 16),
                 TextButton(
                   onPressed: () => context.go('/'),
-                  child: const Text('ホームに戻る'),
+                  child: Text(t.auth.backToHome),
                 ),
               ],
             ),
@@ -79,19 +83,17 @@ class LoginPage extends ConsumerWidget {
 
     result.when(
       success: (_) {
-        // OTP送信成功、検証ページへ遷移
         ref.read(loginEmailProvider.notifier).clear();
         context.go('/verify-otp?email=${Uri.encodeComponent(email)}');
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('$email に認証コードを送信しました'),
+            content: Text(t.auth.codeSent(email: email)),
             backgroundColor: Colors.green,
           ),
         );
       },
       failure: (exception) {
-        // エラーメッセージを表示
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(exception.message),

@@ -3,36 +3,26 @@
     "context7": {
       "type": "stdio",
       "command": "npx",
-      "args": [
-        "-y",
-        "@upstash/context7-mcp"
-      ],
+      "args": ["-y", "@upstash/context7-mcp"],
       "env": {}
     },
     "dart": {
       "command": "dart",
-      "args": [
-        "mcp-server",
-        "--force-roots-fallback"
-      ]
+      "args": ["mcp-server", "--force-roots-fallback"]
     },
     "playwright": {
       "type": "stdio",
       "command": "npx",
-      "args": [
-        "@playwright/mcp@latest"
-      ],
+      "args": ["@playwright/mcp@latest"],
       "env": {}
     },
     "chrome-devtools": {
       "command": "npx",
-      "args": [
-        "chrome-devtools-mcp@latest"
-      ]
+      "args": ["chrome-devtools-mcp@latest"]
     },
     "supabase": {
       "type": "http",
-      "url": "http://localhost:54321/mcp?read_only=true",
+      "url": "http://localhost:54321/mcp",
       "headers": {
         "apikey": "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH",
         "Authorization": "Bearer sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH"

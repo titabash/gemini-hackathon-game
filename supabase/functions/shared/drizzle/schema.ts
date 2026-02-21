@@ -1,578 +1,740 @@
-import { sql } from 'drizzle-orm'
+import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
-  customType,
   integer,
   jsonb,
   pgPolicy,
   pgTable,
-  serial,
   text,
   timestamp,
-  uniqueIndex,
+  unique,
   uuid,
-} from 'drizzle-orm/pg-core'
+} from "drizzle-orm/pg-core";
 // NOTE: Deno互換のため、拡張子を明示
-import { chatTypeEnum, orderStatusEnum, subscriptionStatusEnum } from './types.ts'
+import {
+  gmDecisionTypeEnum,
+  inputTypeEnum,
+  objectiveStatusEnum,
+  sessionStatusEnum,
+} from "./types.ts";
 
-// pgvector型のカスタム定義
-const vector = customType<{ data: number[]; driverData: string }>({
-  dataType() {
-    return 'vector(1536)'
-  },
-  toDriver(value: number[]): string {
-    return JSON.stringify(value)
-  },
-})
+// ===== Users テーブル（RLS付き） =====
+// Auth hook連携: auth.users作成時に自動挿入
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey(),
+  displayName: text("display_name").notNull().default(""),
+  accountName: text("account_name").notNull().unique(),
+  avatarPath: text("avatar_path"),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
 
-// ===== Organizations テーブル =====
-export const organizations = pgTable('organizations', {
-  id: serial('id').primaryKey(),
-  name: text('name').notNull(),
-  createdAt: timestamp('created_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-})
-
-// ===== Corporate Users テーブル（RLS付き） =====
-export const corporateUsers = pgTable('corporate_users', {
-  id: uuid('id').primaryKey(),
-  name: text('name').notNull().default(''),
-  organizationId: integer('organization_id')
-    .notNull()
-    .references(() => organizations.id, { onDelete: 'cascade' }),
-  createdAt: timestamp('created_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-}).enableRLS()
-
-// ===== General Users テーブル（RLS付き） =====
-export const generalUsers = pgTable('general_users', {
-  id: uuid('id').primaryKey(),
-  displayName: text('display_name').notNull().default(''),
-  accountName: text('account_name').notNull().unique(),
-  createdAt: timestamp('created_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-}).enableRLS()
-
-// ===== General Users RLS ポリシー =====
+// ===== Users RLS ポリシー =====
 
 // Auth Hook用ポリシー（supabase_auth_admin専用）
-export const insertPolicyGeneralUsers = pgPolicy('insert_policy_general_users', {
-  for: 'insert',
-  to: 'supabase_auth_admin',
+export const insertPolicyUsers = pgPolicy("insert_policy_users", {
+  for: "insert",
+  to: "supabase_auth_admin",
   withCheck: sql`true`,
-}).link(generalUsers)
+}).link(users);
 
-// 全ユーザーが全general_usersを閲覧可能
-export const selectOwnUser = pgPolicy('select_own_user', {
-  for: 'select',
-  to: ['anon', 'authenticated'],
+// 全ユーザーが全usersを閲覧可能
+export const selectPolicyUsers = pgPolicy("select_policy_users", {
+  for: "select",
+  to: ["anon", "authenticated"],
   using: sql`true`,
-}).link(generalUsers)
+}).link(users);
 
 // 自分のユーザー情報のみ編集可能
-export const editPolicyGeneralUsers = pgPolicy('edit_policy_general_users', {
-  for: 'all',
-  to: 'authenticated',
+export const editPolicyUsers = pgPolicy("edit_policy_users", {
+  for: "all",
+  to: "authenticated",
   using: sql`(SELECT auth.uid()) = id`,
   withCheck: sql`(SELECT auth.uid()) = id`,
-}).link(generalUsers)
+}).link(users);
 
-// ===== General User Profiles テーブル（RLS付き） =====
-export const generalUserProfiles = pgTable('general_user_profiles', {
-  id: serial('id').primaryKey(),
-  firstName: text('first_name').notNull().default(''),
-  lastName: text('last_name').notNull().default(''),
-  userId: uuid('user_id')
+// ===== Scenarios テーブル（RLS付き） =====
+// シナリオテンプレート（再利用可能）
+export const scenarios = pgTable("scenarios", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  initialState: jsonb("initial_state").notNull(),
+  winConditions: jsonb("win_conditions").notNull(),
+  failConditions: jsonb("fail_conditions").notNull(),
+  thumbnailPath: text("thumbnail_path"),
+  createdBy: uuid("created_by").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  isPublic: boolean("is_public").notNull().default(true),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
+
+// ===== Scenarios RLS ポリシー =====
+
+// 公開シナリオまたは自分のシナリオを閲覧可能
+export const selectPolicyScenarios = pgPolicy("select_policy_scenarios", {
+  for: "select",
+  to: ["anon", "authenticated"],
+  using: sql`is_public = true OR (SELECT auth.uid()) = created_by`,
+}).link(scenarios);
+
+// 自分のシナリオのみ全操作可能
+export const allPolicyScenarios = pgPolicy("all_policy_scenarios", {
+  for: "all",
+  to: "authenticated",
+  using: sql`(SELECT auth.uid()) = created_by`,
+  withCheck: sql`(SELECT auth.uid()) = created_by`,
+}).link(scenarios);
+
+// シードデータ投入用（service_role）
+export const insertPolicyScenariosServiceRole = pgPolicy(
+  "insert_policy_scenarios_service_role",
+  {
+    for: "insert",
+    to: "service_role",
+    withCheck: sql`true`,
+  },
+).link(scenarios);
+
+// ===== Sessions テーブル（RLS付き） =====
+// ゲームプレイスルー
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id")
+    .notNull()
+    .references(() => scenarios.id, { onDelete: "restrict" }),
+  title: text("title").notNull().default(""),
+  status: sessionStatusEnum("status").notNull().default("active"),
+  currentState: jsonb("current_state").notNull(),
+  currentTurnNumber: integer("current_turn_number").notNull().default(0),
+  endingSummary: text("ending_summary"),
+  endingType: text("ending_type"),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
+
+// ===== Sessions RLS ポリシー =====
+
+export const selectPolicySessions = pgPolicy("select_policy_sessions", {
+  for: "select",
+  to: "authenticated",
+  using: sql`(SELECT auth.uid()) = user_id`,
+}).link(sessions);
+
+export const allPolicySessions = pgPolicy("all_policy_sessions", {
+  for: "all",
+  to: "authenticated",
+  using: sql`(SELECT auth.uid()) = user_id`,
+  withCheck: sql`(SELECT auth.uid()) = user_id`,
+}).link(sessions);
+
+// ===== Player Characters テーブル（RLS付き） =====
+// PCデータ（1セッション1体）
+export const playerCharacters = pgTable("player_characters", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
     .notNull()
     .unique()
-    .references(() => generalUsers.id, { onDelete: 'cascade' }),
-  email: text('email').notNull().unique(),
-  phoneNumber: text('phone_number'),
-}).enableRLS()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  imagePath: text("image_path"),
+  stats: jsonb("stats").notNull(),
+  statusEffects: jsonb("status_effects").notNull(),
+  locationX: integer("location_x").notNull().default(0),
+  locationY: integer("location_y").notNull().default(0),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
 
-// ===== General User Profiles RLS ポリシー =====
+// ===== Player Characters RLS ポリシー =====
 
-// 自分のプロフィールのみ閲覧可能
-export const selectOwnProfile = pgPolicy('select_own_profile', {
-  for: 'select',
-  to: 'authenticated',
-  using: sql`
+export const selectPolicyPlayerCharacters = pgPolicy(
+  "select_policy_player_characters",
+  {
+    for: "select",
+    to: "authenticated",
+    using: sql`
     EXISTS (
-      SELECT 1
-      FROM general_users
-      WHERE general_users.id = user_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = player_characters.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(generalUserProfiles)
+  },
+).link(playerCharacters);
 
-// 自分のプロフィールのみ編集可能
-export const insertPolicyGeneralUserProfiles = pgPolicy('insert_policy_general_user_profiles', {
-  for: 'all',
-  to: 'authenticated',
+export const allPolicyPlayerCharacters = pgPolicy(
+  "all_policy_player_characters",
+  {
+    for: "all",
+    to: "authenticated",
+    using: sql`
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = player_characters.session_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+    withCheck: sql`
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = player_characters.session_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+  },
+).link(playerCharacters);
+
+// ===== NPCs テーブル（RLS付き） =====
+// NPCインスタンス（セッション毎）
+export const npcs = pgTable("npcs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  imagePath: text("image_path"),
+  profile: jsonb("profile").notNull(),
+  goals: jsonb("goals").notNull(),
+  state: jsonb("state").notNull(),
+  locationX: integer("location_x").notNull().default(0),
+  locationY: integer("location_y").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
+
+// ===== NPCs RLS ポリシー =====
+
+export const selectPolicyNpcs = pgPolicy("select_policy_npcs", {
+  for: "select",
+  to: "authenticated",
   using: sql`
     EXISTS (
-      SELECT 1
-      FROM general_users
-      WHERE general_users.id = user_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = npcs.session_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+}).link(npcs);
+
+export const allPolicyNpcs = pgPolicy("all_policy_npcs", {
+  for: "all",
+  to: "authenticated",
+  using: sql`
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = npcs.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
   withCheck: sql`
     EXISTS (
-      SELECT 1
-      FROM general_users
-      WHERE general_users.id = user_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = npcs.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(generalUserProfiles)
+}).link(npcs);
 
-// ===== Addresses テーブル（RLS付き） =====
-export const addresses = pgTable('addresses', {
-  id: serial('id').primaryKey(),
-  street: text('street').notNull(),
-  city: text('city').notNull(),
-  state: text('state').notNull(),
-  postalCode: text('postal_code').notNull(),
-  country: text('country').notNull(),
-  profileId: integer('profile_id')
+// ===== NPC Relationships テーブル（RLS付き） =====
+// NPC→PC関係値（シングルプレイヤーのため1NPC:1関係）
+export const npcRelationships = pgTable("npc_relationships", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  npcId: uuid("npc_id")
+    .notNull()
     .unique()
-    .references(() => generalUserProfiles.id, {
-      onDelete: 'cascade',
-    }),
-}).enableRLS()
-
-// ===== Chat Rooms テーブル（RLS付き） =====
-export const chatRooms = pgTable('chat_rooms', {
-  id: serial('id').primaryKey(),
-  type: chatTypeEnum('type').notNull(),
-  createdAt: timestamp('created_at', {
+    .references(() => npcs.id, { onDelete: "cascade" }),
+  affinity: integer("affinity").notNull().default(0),
+  trust: integer("trust").notNull().default(0),
+  fear: integer("fear").notNull().default(0),
+  debt: integer("debt").notNull().default(0),
+  flags: jsonb("flags").notNull(),
+  createdAt: timestamp("created_at", {
     withTimezone: true,
     precision: 3,
   })
     .notNull()
     .defaultNow(),
-}).enableRLS()
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
 
-// ===== Chat Rooms RLS ポリシー =====
+// ===== NPC Relationships RLS ポリシー =====
 
-// 参加しているチャットルームのみ閲覧可能
-export const selectPolicyChatRooms = pgPolicy('select_policy_chat_rooms', {
-  for: 'select',
-  to: 'authenticated',
-  using: sql`
+export const selectPolicyNpcRelationships = pgPolicy(
+  "select_policy_npc_relationships",
+  {
+    for: "select",
+    to: "authenticated",
+    using: sql`
     EXISTS (
-      SELECT 1
-      FROM user_chats
-      JOIN general_users ON user_chats.user_id = general_users.id
-      WHERE user_chats.chat_room_id = chat_rooms.id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM npcs
+      JOIN sessions ON sessions.id = npcs.session_id
+      WHERE npcs.id = npc_relationships.npc_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(chatRooms)
+  },
+).link(npcRelationships);
 
-// 参加しているチャットルームのみ編集可能
-export const modifyPolicyChatRooms = pgPolicy('modify_policy_chat_rooms', {
-  for: 'all',
-  to: 'authenticated',
+export const allPolicyNpcRelationships = pgPolicy(
+  "all_policy_npc_relationships",
+  {
+    for: "all",
+    to: "authenticated",
+    using: sql`
+    EXISTS (
+      SELECT 1 FROM npcs
+      JOIN sessions ON sessions.id = npcs.session_id
+      WHERE npcs.id = npc_relationships.npc_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+    withCheck: sql`
+    EXISTS (
+      SELECT 1 FROM npcs
+      JOIN sessions ON sessions.id = npcs.session_id
+      WHERE npcs.id = npc_relationships.npc_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+  },
+).link(npcRelationships);
+
+// ===== Turns テーブル（RLS付き） =====
+// ターンログ（入出力記録）
+export const turns = pgTable("turns", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  turnNumber: integer("turn_number").notNull(),
+  inputType: inputTypeEnum("input_type").notNull(),
+  inputText: text("input_text").notNull().default(""),
+  gmDecisionType: gmDecisionTypeEnum("gm_decision_type").notNull(),
+  output: jsonb("output").notNull(),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}, (table) => [
+  unique("turns_session_id_turn_number_key").on(
+    table.sessionId,
+    table.turnNumber,
+  ),
+]).enableRLS();
+
+// ===== Turns RLS ポリシー =====
+
+export const selectPolicyTurns = pgPolicy("select_policy_turns", {
+  for: "select",
+  to: "authenticated",
   using: sql`
     EXISTS (
-      SELECT 1
-      FROM user_chats
-      JOIN general_users ON user_chats.user_id = general_users.id
-      WHERE user_chats.chat_room_id = chat_rooms.id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = turns.session_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+}).link(turns);
+
+export const allPolicyTurns = pgPolicy("all_policy_turns", {
+  for: "all",
+  to: "authenticated",
+  using: sql`
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = turns.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
   withCheck: sql`
     EXISTS (
-      SELECT 1
-      FROM user_chats
-      JOIN general_users ON user_chats.user_id = general_users.id
-      WHERE user_chats.chat_room_id = chat_rooms.id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = turns.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(chatRooms)
+}).link(turns);
 
-// ===== Virtual Users テーブル =====
-export const virtualUsers = pgTable('virtual_users', {
-  id: uuid('id').primaryKey(),
-  name: text('name').notNull(),
-  ownerId: uuid('owner_id')
+// ===== Context Summaries テーブル（RLS付き） =====
+// AI GMコンテキスト管理（1セッション1コンテキスト）
+export const contextSummaries = pgTable("context_summaries", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
     .notNull()
-    .references(() => generalUsers.id, { onDelete: 'cascade' }),
-  createdAt: timestamp('created_at', {
+    .unique()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  plotEssentials: jsonb("plot_essentials").notNull(),
+  shortTermSummary: text("short_term_summary").notNull().default(""),
+  confirmedFacts: jsonb("confirmed_facts").notNull(),
+  lastUpdatedTurn: integer("last_updated_turn").notNull().default(0),
+  createdAt: timestamp("created_at", {
     withTimezone: true,
     precision: 3,
   })
     .notNull()
     .defaultNow(),
-  updatedAt: timestamp('updated_at', {
+  updatedAt: timestamp("updated_at", {
     withTimezone: true,
     precision: 3,
   })
     .notNull()
     .defaultNow(),
-})
+}).enableRLS();
 
-// ===== Messages テーブル（check制約+RLS付き） =====
-export const messages = pgTable(
-  'messages',
+// ===== Context Summaries RLS ポリシー =====
+
+export const selectPolicyContextSummaries = pgPolicy(
+  "select_policy_context_summaries",
   {
-    id: serial('id').primaryKey(),
-    chatRoomId: integer('chat_room_id')
-      .notNull()
-      .references(() => chatRooms.id, { onDelete: 'cascade' }),
-    senderId: uuid('sender_id').references(() => generalUsers.id, {
-      onDelete: 'cascade',
-    }),
-    virtualUserId: uuid('virtual_user_id').references(() => virtualUsers.id, {
-      onDelete: 'cascade',
-    }),
-    content: text('content').notNull(),
-    createdAt: timestamp('created_at', {
-      withTimezone: true,
-      precision: 3,
-    })
-      .notNull()
-      .defaultNow(),
-  },
-  () => ({
-    // Check制約: sender_idかvirtual_user_idのどちらか一方のみがNULLでないこと
-    senderCheck: check(
-      'sender_check',
-      sql`(sender_id IS NOT NULL AND virtual_user_id IS NULL) OR (sender_id IS NULL AND virtual_user_id IS NOT NULL)`
-    ),
-  })
-).enableRLS()
-
-// ===== Messages RLS ポリシー =====
-
-// 参加しているチャットルームのメッセージのみ閲覧可能
-export const selectPolicyMessages = pgPolicy('select_policy_messages', {
-  for: 'select',
-  to: 'authenticated',
-  using: sql`
+    for: "select",
+    to: "authenticated",
+    using: sql`
     EXISTS (
-      SELECT 1
-      FROM user_chats
-      JOIN general_users ON user_chats.user_id = general_users.id
-      WHERE user_chats.chat_room_id = messages.chat_room_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = context_summaries.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(messages)
+  },
+).link(contextSummaries);
 
-// 参加しているチャットルームのメッセージのみ編集可能
-export const modifyPolicyMessages = pgPolicy('modify_policy_messages', {
-  for: 'all',
-  to: 'authenticated',
+export const allPolicyContextSummaries = pgPolicy(
+  "all_policy_context_summaries",
+  {
+    for: "all",
+    to: "authenticated",
+    using: sql`
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = context_summaries.session_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+    withCheck: sql`
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = context_summaries.session_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+  },
+).link(contextSummaries);
+
+// ===== Objectives テーブル（RLS付き） =====
+// クエスト/目標の進捗追跡（セッション単位）
+export const objectives = pgTable("objectives", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  description: text("description").notNull().default(""),
+  status: objectiveStatusEnum("status").notNull().default("active"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
+
+// ===== Objectives RLS ポリシー =====
+
+export const selectPolicyObjectives = pgPolicy("select_policy_objectives", {
+  for: "select",
+  to: "authenticated",
   using: sql`
     EXISTS (
-      SELECT 1
-      FROM user_chats
-      JOIN general_users ON user_chats.user_id = general_users.id
-      WHERE user_chats.chat_room_id = messages.chat_room_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = objectives.session_id
+      AND sessions.user_id = (SELECT auth.uid())
+    )
+  `,
+}).link(objectives);
+
+export const allPolicyObjectives = pgPolicy("all_policy_objectives", {
+  for: "all",
+  to: "authenticated",
+  using: sql`
+    EXISTS (
+      SELECT 1 FROM sessions
+      WHERE sessions.id = objectives.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
   withCheck: sql`
     EXISTS (
-      SELECT 1
-      FROM user_chats
-      JOIN general_users ON user_chats.user_id = general_users.id
-      WHERE user_chats.chat_room_id = messages.chat_room_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = objectives.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(messages)
+}).link(objectives);
 
-// ===== User Chats テーブル（RLS付き） =====
-export const userChats = pgTable(
-  'user_chats',
-  {
-    id: serial('id').primaryKey(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => generalUsers.id, { onDelete: 'cascade' }),
-    chatRoomId: integer('chat_room_id')
-      .notNull()
-      .references(() => chatRooms.id, { onDelete: 'cascade' }),
-  },
-  (table) => [uniqueIndex('user_chats_user_id_chat_room_id_key').on(table.userId, table.chatRoomId)]
-).enableRLS()
+// ===== Items テーブル（RLS付き） =====
+// セッション単位のアイテム（1セッション=1PCのためsession_idで暗黙的にPC所有）
+export const items = pgTable("items", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => sessions.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  type: text("type").notNull().default(""),
+  imagePath: text("image_path"),
+  quantity: integer("quantity").notNull().default(1),
+  isEquipped: boolean("is_equipped").notNull().default(false),
+  createdAt: timestamp("created_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", {
+    withTimezone: true,
+    precision: 3,
+  })
+    .notNull()
+    .defaultNow(),
+}).enableRLS();
 
-// ===== User Chats RLS ポリシー =====
+// ===== Items RLS ポリシー =====
 
-// 自分のチャット参加記録のみ閲覧可能
-export const selectPolicyUserChats = pgPolicy('select_policy_user_chats', {
-  for: 'select',
-  to: 'authenticated',
+export const selectPolicyItems = pgPolicy("select_policy_items", {
+  for: "select",
+  to: "authenticated",
   using: sql`
     EXISTS (
-      SELECT 1
-      FROM general_users
-      WHERE general_users.id = user_chats.user_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = items.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(userChats)
+}).link(items);
 
-// 自分のチャット参加記録のみ編集可能
-export const modifyPolicyUserChats = pgPolicy('modify_policy_user_chats', {
-  for: 'all',
-  to: 'authenticated',
+export const allPolicyItems = pgPolicy("all_policy_items", {
+  for: "all",
+  to: "authenticated",
   using: sql`
     EXISTS (
-      SELECT 1
-      FROM general_users
-      WHERE general_users.id = user_chats.user_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = items.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
   withCheck: sql`
     EXISTS (
-      SELECT 1
-      FROM general_users
-      WHERE general_users.id = user_chats.user_id
-      AND general_users.id = (SELECT auth.uid())
+      SELECT 1 FROM sessions
+      WHERE sessions.id = items.session_id
+      AND sessions.user_id = (SELECT auth.uid())
     )
   `,
-}).link(userChats)
+}).link(items);
 
-// ===== Virtual User Chats テーブル =====
-export const virtualUserChats = pgTable(
-  'virtual_user_chats',
-  {
-    id: serial('id').primaryKey(),
-    virtualUserId: uuid('virtual_user_id')
-      .notNull()
-      .references(() => virtualUsers.id, { onDelete: 'cascade' }),
-    chatRoomId: integer('chat_room_id')
-      .notNull()
-      .references(() => chatRooms.id, { onDelete: 'cascade' }),
-  },
-  (table) => [
-    uniqueIndex('virtual_user_chats_virtual_user_id_chat_room_id_key').on(
-      table.virtualUserId,
-      table.chatRoomId
-    ),
-  ]
-)
-
-// ===== Virtual User Profiles テーブル =====
-export const virtualUserProfiles = pgTable('virtual_user_profiles', {
-  id: serial('id').primaryKey(),
-  personality: text('personality').notNull().default('friendly'),
-  tone: text('tone').notNull().default('casual'),
-  knowledgeArea: text('knowledge_area').array().notNull(),
-  quirks: text('quirks').default(''),
-  backstory: text('backstory').notNull().default(''),
-  knowledge: jsonb('knowledge'),
-  virtualUserId: uuid('virtual_user_id')
-    .notNull()
-    .references(() => virtualUsers.id, { onDelete: 'cascade' }),
-  createdAt: timestamp('created_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-})
-
-// ===== Embeddings テーブル（pgvector） =====
-export const embeddings = pgTable('embeddings', {
-  id: text('id').primaryKey(),
-  // pgvector型（カスタム型定義）
-  embedding: vector('embedding').notNull(),
-  content: text('content').notNull(),
-  metadata: jsonb('metadata').notNull(),
-  createdAt: timestamp('created_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-})
-
-// ===== Subscriptions テーブル（Polar.sh, RLS付き） =====
-export const subscriptions = pgTable('subscriptions', {
-  id: text('id').primaryKey(), // Polar subscription ID
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => generalUsers.id, { onDelete: 'cascade' }),
-  polarProductId: text('polar_product_id').notNull(),
-  polarPriceId: text('polar_price_id').notNull(),
-  status: subscriptionStatusEnum('status').notNull().default('incomplete'),
-  currentPeriodStart: timestamp('current_period_start', {
-    withTimezone: true,
-    precision: 3,
+// ===== Scene Backgrounds テーブル（RLS付き） =====
+// ロケーション背景画像（シナリオ定義 + セッション中の動的生成）
+export const sceneBackgrounds = pgTable("scene_backgrounds", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scenarioId: uuid("scenario_id").references(() => scenarios.id, {
+    onDelete: "cascade",
   }),
-  currentPeriodEnd: timestamp('current_period_end', {
-    withTimezone: true,
-    precision: 3,
+  sessionId: uuid("session_id").references(() => sessions.id, {
+    onDelete: "cascade",
   }),
-  cancelAtPeriodEnd: integer('cancel_at_period_end').notNull().default(0), // boolean as int for compatibility
-  createdAt: timestamp('created_at', {
+  locationName: text("location_name").notNull(),
+  imagePath: text("image_path"),
+  description: text("description").notNull().default(""),
+  createdAt: timestamp("created_at", {
     withTimezone: true,
     precision: 3,
   })
     .notNull()
     .defaultNow(),
-  updatedAt: timestamp('updated_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-}).enableRLS()
+}, () => ({
+  atLeastOneParent: check(
+    "at_least_one_parent",
+    sql`scenario_id IS NOT NULL OR session_id IS NOT NULL`,
+  ),
+})).enableRLS();
 
-// ===== Subscriptions RLS ポリシー =====
+// ===== Scene Backgrounds RLS ポリシー =====
 
-// Edge Functions（Webhook）用ポリシー
-export const insertPolicySubscriptions = pgPolicy('insert_policy_subscriptions', {
-  for: 'insert',
-  to: 'service_role',
-  withCheck: sql`true`,
-}).link(subscriptions)
+// シナリオ定義の背景: 公開シナリオまたは自分のシナリオ
+// セッション動的生成の背景: 自分のセッション
+export const selectPolicySceneBackgrounds = pgPolicy(
+  "select_policy_scene_backgrounds",
+  {
+    for: "select",
+    to: ["anon", "authenticated"],
+    using: sql`
+    (
+      scenario_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM scenarios
+        WHERE scenarios.id = scene_backgrounds.scenario_id
+        AND (scenarios.is_public = true OR scenarios.created_by = (SELECT auth.uid()))
+      )
+    )
+    OR
+    (
+      session_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sessions
+        WHERE sessions.id = scene_backgrounds.session_id
+        AND sessions.user_id = (SELECT auth.uid())
+      )
+    )
+  `,
+  },
+).link(sceneBackgrounds);
 
-export const updatePolicySubscriptions = pgPolicy('update_policy_subscriptions', {
-  for: 'update',
-  to: 'service_role',
-  using: sql`true`,
-  withCheck: sql`true`,
-}).link(subscriptions)
+export const allPolicySceneBackgrounds = pgPolicy(
+  "all_policy_scene_backgrounds",
+  {
+    for: "all",
+    to: "authenticated",
+    using: sql`
+    (
+      scenario_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM scenarios
+        WHERE scenarios.id = scene_backgrounds.scenario_id
+        AND scenarios.created_by = (SELECT auth.uid())
+      )
+    )
+    OR
+    (
+      session_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sessions
+        WHERE sessions.id = scene_backgrounds.session_id
+        AND sessions.user_id = (SELECT auth.uid())
+      )
+    )
+  `,
+    withCheck: sql`
+    (
+      scenario_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM scenarios
+        WHERE scenarios.id = scene_backgrounds.scenario_id
+        AND scenarios.created_by = (SELECT auth.uid())
+      )
+    )
+    OR
+    (
+      session_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sessions
+        WHERE sessions.id = scene_backgrounds.session_id
+        AND sessions.user_id = (SELECT auth.uid())
+      )
+    )
+  `,
+  },
+).link(sceneBackgrounds);
 
-// 自分のサブスクリプションのみ閲覧可能
-export const selectPolicySubscriptions = pgPolicy('select_policy_subscriptions', {
-  for: 'select',
-  to: 'authenticated',
-  using: sql`(SELECT auth.uid()) = user_id`,
-}).link(subscriptions)
-
-// ===== Orders テーブル（Polar.sh 単発購入, RLS付き） =====
-export const orders = pgTable('orders', {
-  id: text('id').primaryKey(), // Polar order ID
-  userId: uuid('user_id')
-    .notNull()
-    .references(() => generalUsers.id, { onDelete: 'cascade' }),
-  polarProductId: text('polar_product_id').notNull(),
-  polarPriceId: text('polar_price_id').notNull(),
-  status: orderStatusEnum('status').notNull().default('paid'),
-  amount: integer('amount').notNull(), // in cents
-  currency: text('currency').notNull().default('usd'),
-  createdAt: timestamp('created_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp('updated_at', {
-    withTimezone: true,
-    precision: 3,
-  })
-    .notNull()
-    .defaultNow(),
-}).enableRLS()
-
-// ===== Orders RLS ポリシー =====
-
-// Edge Functions（Webhook）用ポリシー
-export const insertPolicyOrders = pgPolicy('insert_policy_orders', {
-  for: 'insert',
-  to: 'service_role',
-  withCheck: sql`true`,
-}).link(orders)
-
-export const updatePolicyOrders = pgPolicy('update_policy_orders', {
-  for: 'update',
-  to: 'service_role',
-  using: sql`true`,
-  withCheck: sql`true`,
-}).link(orders)
-
-// 自分の注文のみ閲覧可能
-export const selectPolicyOrders = pgPolicy('select_policy_orders', {
-  for: 'select',
-  to: 'authenticated',
-  using: sql`(SELECT auth.uid()) = user_id`,
-}).link(orders)
+// シードデータ投入用（service_role）
+export const insertPolicySceneBackgroundsServiceRole = pgPolicy(
+  "insert_policy_scene_backgrounds_service_role",
+  {
+    for: "insert",
+    to: "service_role",
+    withCheck: sql`true`,
+  },
+).link(sceneBackgrounds);
 
 // ===== 型エクスポート（Inferで自動推論） =====
-import type { InferInsertModel, InferSelectModel } from 'drizzle-orm'
+import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
 // SELECT型（既存レコードの型）
-export type Organization = InferSelectModel<typeof organizations>
-export type CorporateUser = InferSelectModel<typeof corporateUsers>
-export type GeneralUser = InferSelectModel<typeof generalUsers>
-export type GeneralUserProfile = InferSelectModel<typeof generalUserProfiles>
-export type Address = InferSelectModel<typeof addresses>
-export type ChatRoom = InferSelectModel<typeof chatRooms>
-export type Message = InferSelectModel<typeof messages>
-export type UserChat = InferSelectModel<typeof userChats>
-export type VirtualUser = InferSelectModel<typeof virtualUsers>
-export type VirtualUserChat = InferSelectModel<typeof virtualUserChats>
-export type VirtualUserProfile = InferSelectModel<typeof virtualUserProfiles>
-export type Embedding = InferSelectModel<typeof embeddings>
-export type Subscription = InferSelectModel<typeof subscriptions>
-export type Order = InferSelectModel<typeof orders>
+export type User = InferSelectModel<typeof users>;
+export type Scenario = InferSelectModel<typeof scenarios>;
+export type Session = InferSelectModel<typeof sessions>;
+export type PlayerCharacter = InferSelectModel<typeof playerCharacters>;
+export type Npc = InferSelectModel<typeof npcs>;
+export type NpcRelationship = InferSelectModel<typeof npcRelationships>;
+export type Turn = InferSelectModel<typeof turns>;
+export type ContextSummary = InferSelectModel<typeof contextSummaries>;
+export type Objective = InferSelectModel<typeof objectives>;
+export type Item = InferSelectModel<typeof items>;
+export type SceneBackground = InferSelectModel<typeof sceneBackgrounds>;
 
 // INSERT型（新規作成時の型）
-export type NewOrganization = InferInsertModel<typeof organizations>
-export type NewCorporateUser = InferInsertModel<typeof corporateUsers>
-export type NewGeneralUser = InferInsertModel<typeof generalUsers>
-export type NewGeneralUserProfile = InferInsertModel<typeof generalUserProfiles>
-export type NewAddress = InferInsertModel<typeof addresses>
-export type NewChatRoom = InferInsertModel<typeof chatRooms>
-export type NewMessage = InferInsertModel<typeof messages>
-export type NewUserChat = InferInsertModel<typeof userChats>
-export type NewVirtualUser = InferInsertModel<typeof virtualUsers>
-export type NewVirtualUserChat = InferInsertModel<typeof virtualUserChats>
-export type NewVirtualUserProfile = InferInsertModel<typeof virtualUserProfiles>
-export type NewEmbedding = InferInsertModel<typeof embeddings>
-export type NewSubscription = InferInsertModel<typeof subscriptions>
-export type NewOrder = InferInsertModel<typeof orders>
+export type NewUser = InferInsertModel<typeof users>;
+export type NewScenario = InferInsertModel<typeof scenarios>;
+export type NewSession = InferInsertModel<typeof sessions>;
+export type NewPlayerCharacter = InferInsertModel<typeof playerCharacters>;
+export type NewNpc = InferInsertModel<typeof npcs>;
+export type NewNpcRelationship = InferInsertModel<typeof npcRelationships>;
+export type NewTurn = InferInsertModel<typeof turns>;
+export type NewContextSummary = InferInsertModel<typeof contextSummaries>;
+export type NewObjective = InferInsertModel<typeof objectives>;
+export type NewItem = InferInsertModel<typeof items>;
+export type NewSceneBackground = InferInsertModel<typeof sceneBackgrounds>;

@@ -1,7 +1,8 @@
+import 'package:core_auth/core_auth.dart';
+import 'package:core_i18n/generated/strings.g.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:core_auth/core_auth.dart';
 import '../../../features/auth/api/verify_otp.dart';
 import '../../../features/auth/api/send_otp.dart';
 import '../../../features/auth/model/verify_otp_form_state.dart';
@@ -20,7 +21,7 @@ class VerifyOtpPage extends ConsumerWidget {
     final isLoading = verifyOtpState.isLoading;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('認証コード確認')),
+      appBar: AppBar(title: Text(t.auth.verifyCode)),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
@@ -36,14 +37,17 @@ class VerifyOtpPage extends ConsumerWidget {
                   color: Colors.blue,
                 ),
                 const SizedBox(height: 32),
-                const Text(
-                  '認証コードを入力',
-                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                Text(
+                  t.auth.enterCode,
+                  style: const TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  '$email に送信された認証コードを入力してください',
+                  t.auth.enterCodeDescription(email: email),
                   style: const TextStyle(fontSize: 14, color: Colors.grey),
                   textAlign: TextAlign.center,
                 ),
@@ -63,19 +67,19 @@ class VerifyOtpPage extends ConsumerWidget {
                           width: 20,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('ログイン'),
+                      : Text(t.auth.loginButton),
                 ),
                 const SizedBox(height: 16),
                 TextButton(
                   onPressed: () => _handleResendOtp(context, ref),
-                  child: const Text('認証コードを再送信'),
+                  child: Text(t.auth.resendCode),
                 ),
                 TextButton(
                   onPressed: () {
                     ref.read(verifyOtpTokenProvider.notifier).clear();
                     context.go('/login');
                   },
-                  child: const Text('メールアドレスを変更'),
+                  child: Text(t.auth.changeEmail),
                 ),
               ],
             ),
@@ -95,21 +99,17 @@ class VerifyOtpPage extends ConsumerWidget {
 
     result.when(
       success: (_) {
-        // ログイン成功、フォームをクリア
         ref.read(verifyOtpTokenProvider.notifier).clear();
-
-        // ダッシュボードへ遷移（GoRouterが自動的にホームにリダイレクト）
-        context.go('/dashboard');
+        context.go('/');
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ログインしました'),
+          SnackBar(
+            content: Text(t.auth.loginSuccess),
             backgroundColor: Colors.green,
           ),
         );
       },
       failure: (exception) {
-        // エラーメッセージを表示
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(exception.message),
@@ -129,7 +129,7 @@ class VerifyOtpPage extends ConsumerWidget {
       success: (_) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('$email に認証コードを再送信しました'),
+            content: Text(t.auth.codeResent(email: email)),
             backgroundColor: Colors.green,
           ),
         );

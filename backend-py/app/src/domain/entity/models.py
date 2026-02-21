@@ -1,9 +1,8 @@
-from typing import Any, Optional
+from typing import Optional
 import datetime
 import uuid
 
-from pgvector.sqlalchemy.vector import VECTOR
-from sqlalchemy import ARRAY, BigInteger, CheckConstraint, Column, Enum, ForeignKeyConstraint, Index, Integer, PrimaryKeyConstraint, Text, UniqueConstraint, Uuid, text
+from sqlalchemy import BigInteger, Boolean, CheckConstraint, Column, Enum, ForeignKeyConstraint, Integer, PrimaryKeyConstraint, Text, UniqueConstraint, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -18,39 +17,10 @@ class DrizzleMigrations(SQLModel, table=True):
     created_at: Optional[int] = Field(default=None, sa_column=Column('created_at', BigInteger))
 
 
-class ChatRooms(SQLModel, table=True):
-    __tablename__ = 'chat_rooms'
+class Users(SQLModel, table=True):
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='chat_rooms_pkey'),
-    )
-
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
-    type: str = Field(sa_column=Column('type', Enum('PRIVATE', 'GROUP', name='chat_type'), nullable=False))
-    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-
-    user_chats: list['UserChats'] = Relationship(back_populates='chat_room')
-    messages: list['Messages'] = Relationship(back_populates='chat_room')
-    virtual_user_chats: list['VirtualUserChats'] = Relationship(back_populates='chat_room')
-
-
-class Embeddings(SQLModel, table=True):
-    __table_args__ = (
-        PrimaryKeyConstraint('id', name='embeddings_pkey'),
-    )
-
-    id: str = Field(sa_column=Column('id', Text, primary_key=True))
-    embedding: Any = Field(sa_column=Column('embedding', VECTOR(1536), nullable=False))
-    content: str = Field(sa_column=Column('content', Text, nullable=False))
-    metadata_: dict = Field(sa_column=Column('metadata', JSONB, nullable=False))
-    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-
-
-class GeneralUsers(SQLModel, table=True):
-    __tablename__ = 'general_users'
-    __table_args__ = (
-        PrimaryKeyConstraint('id', name='general_users_pkey'),
-        UniqueConstraint('account_name', name='general_users_account_name_unique')
+        PrimaryKeyConstraint('id', name='users_pkey'),
+        UniqueConstraint('account_name', name='users_account_name_unique')
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True))
@@ -58,211 +28,224 @@ class GeneralUsers(SQLModel, table=True):
     account_name: str = Field(sa_column=Column('account_name', Text, nullable=False))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    avatar_path: Optional[str] = Field(default=None, sa_column=Column('avatar_path', Text))
 
-    general_user_profiles: Optional['GeneralUserProfiles'] = Relationship(sa_relationship_kwargs={'uselist': False}, back_populates='user')
-    orders: list['Orders'] = Relationship(back_populates='user')
-    subscriptions: list['Subscriptions'] = Relationship(back_populates='user')
-    user_chats: list['UserChats'] = Relationship(back_populates='user')
-    virtual_users: list['VirtualUsers'] = Relationship(back_populates='owner')
-    messages: list['Messages'] = Relationship(back_populates='sender')
+    scenarios: list['Scenarios'] = Relationship(back_populates='users')
+    sessions: list['Sessions'] = Relationship(back_populates='user')
 
 
-class Organizations(SQLModel, table=True):
+class Scenarios(SQLModel, table=True):
     __table_args__ = (
-        PrimaryKeyConstraint('id', name='organizations_pkey'),
+        ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='SET NULL', name='scenarios_created_by_users_id_fk'),
+        PrimaryKeyConstraint('id', name='scenarios_pkey')
     )
 
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    title: str = Field(sa_column=Column('title', Text, nullable=False))
+    description: str = Field(sa_column=Column('description', Text, nullable=False, server_default=text("''::text")))
+    initial_state: dict = Field(sa_column=Column('initial_state', JSONB, nullable=False))
+    win_conditions: dict = Field(sa_column=Column('win_conditions', JSONB, nullable=False))
+    fail_conditions: dict = Field(sa_column=Column('fail_conditions', JSONB, nullable=False))
+    is_public: bool = Field(sa_column=Column('is_public', Boolean, nullable=False, server_default=text('true')))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    thumbnail_path: Optional[str] = Field(default=None, sa_column=Column('thumbnail_path', Text))
+    created_by: Optional[uuid.UUID] = Field(default=None, sa_column=Column('created_by', Uuid))
+
+    users: Optional['Users'] = Relationship(back_populates='scenarios')
+    sessions: list['Sessions'] = Relationship(back_populates='scenario')
+    scene_backgrounds: list['SceneBackgrounds'] = Relationship(back_populates='scenario')
+
+
+class Sessions(SQLModel, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='RESTRICT', name='sessions_scenario_id_scenarios_id_fk'),
+        ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE', name='sessions_user_id_users_id_fk'),
+        PrimaryKeyConstraint('id', name='sessions_pkey')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    user_id: uuid.UUID = Field(sa_column=Column('user_id', Uuid, nullable=False))
+    scenario_id: uuid.UUID = Field(sa_column=Column('scenario_id', Uuid, nullable=False))
+    title: str = Field(sa_column=Column('title', Text, nullable=False, server_default=text("''::text")))
+    status: str = Field(sa_column=Column('status', Enum('active', 'completed', 'abandoned', name='session_status'), nullable=False, server_default=text("'active'::session_status")))
+    current_state: dict = Field(sa_column=Column('current_state', JSONB, nullable=False))
+    current_turn_number: int = Field(sa_column=Column('current_turn_number', Integer, nullable=False, server_default=text('0')))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    ending_summary: Optional[str] = Field(default=None, sa_column=Column('ending_summary', Text))
+    ending_type: Optional[str] = Field(default=None, sa_column=Column('ending_type', Text))
+
+    scenario: Optional['Scenarios'] = Relationship(back_populates='sessions')
+    user: Optional['Users'] = Relationship(back_populates='sessions')
+    context_summaries: Optional['ContextSummaries'] = Relationship(sa_relationship_kwargs={'uselist': False}, back_populates='session')
+    items: list['Items'] = Relationship(back_populates='session')
+    npcs: list['Npcs'] = Relationship(back_populates='session')
+    objectives: list['Objectives'] = Relationship(back_populates='session')
+    player_characters: Optional['PlayerCharacters'] = Relationship(sa_relationship_kwargs={'uselist': False}, back_populates='session')
+    scene_backgrounds: list['SceneBackgrounds'] = Relationship(back_populates='session')
+    turns: list['Turns'] = Relationship(back_populates='session')
+
+
+class ContextSummaries(SQLModel, table=True):
+    __tablename__ = 'context_summaries'
+    __table_args__ = (
+        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='context_summaries_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='context_summaries_pkey'),
+        UniqueConstraint('session_id', name='context_summaries_session_id_unique')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
+    plot_essentials: dict = Field(sa_column=Column('plot_essentials', JSONB, nullable=False))
+    short_term_summary: str = Field(sa_column=Column('short_term_summary', Text, nullable=False, server_default=text("''::text")))
+    confirmed_facts: dict = Field(sa_column=Column('confirmed_facts', JSONB, nullable=False))
+    last_updated_turn: int = Field(sa_column=Column('last_updated_turn', Integer, nullable=False, server_default=text('0')))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+
+    session: Optional['Sessions'] = Relationship(back_populates='context_summaries')
+
+
+class Items(SQLModel, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='items_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='items_pkey')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
     name: str = Field(sa_column=Column('name', Text, nullable=False))
+    description: str = Field(sa_column=Column('description', Text, nullable=False, server_default=text("''::text")))
+    type: str = Field(sa_column=Column('type', Text, nullable=False, server_default=text("''::text")))
+    quantity: int = Field(sa_column=Column('quantity', Integer, nullable=False, server_default=text('1')))
+    is_equipped: bool = Field(sa_column=Column('is_equipped', Boolean, nullable=False, server_default=text('false')))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    image_path: Optional[str] = Field(default=None, sa_column=Column('image_path', Text))
 
-    corporate_users: list['CorporateUsers'] = Relationship(back_populates='organization')
+    session: Optional['Sessions'] = Relationship(back_populates='items')
 
 
-class CorporateUsers(SQLModel, table=True):
-    __tablename__ = 'corporate_users'
+class Npcs(SQLModel, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['organization_id'], ['organizations.id'], ondelete='CASCADE', name='corporate_users_organization_id_organizations_id_fk'),
-        PrimaryKeyConstraint('id', name='corporate_users_pkey')
+        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='npcs_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='npcs_pkey')
     )
 
-    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True))
-    name: str = Field(sa_column=Column('name', Text, nullable=False, server_default=text("''::text")))
-    organization_id: int = Field(sa_column=Column('organization_id', Integer, nullable=False))
-    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-
-    organization: Optional['Organizations'] = Relationship(back_populates='corporate_users')
-
-
-class GeneralUserProfiles(SQLModel, table=True):
-    __tablename__ = 'general_user_profiles'
-    __table_args__ = (
-        ForeignKeyConstraint(['user_id'], ['general_users.id'], ondelete='CASCADE', name='general_user_profiles_user_id_general_users_id_fk'),
-        PrimaryKeyConstraint('id', name='general_user_profiles_pkey'),
-        UniqueConstraint('email', name='general_user_profiles_email_unique'),
-        UniqueConstraint('user_id', name='general_user_profiles_user_id_unique')
-    )
-
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
-    first_name: str = Field(sa_column=Column('first_name', Text, nullable=False, server_default=text("''::text")))
-    last_name: str = Field(sa_column=Column('last_name', Text, nullable=False, server_default=text("''::text")))
-    user_id: uuid.UUID = Field(sa_column=Column('user_id', Uuid, nullable=False))
-    email: str = Field(sa_column=Column('email', Text, nullable=False))
-    phone_number: Optional[str] = Field(default=None, sa_column=Column('phone_number', Text))
-
-    user: Optional['GeneralUsers'] = Relationship(back_populates='general_user_profiles')
-    addresses: Optional['Addresses'] = Relationship(sa_relationship_kwargs={'uselist': False}, back_populates='profile')
-
-
-class Orders(SQLModel, table=True):
-    __table_args__ = (
-        ForeignKeyConstraint(['user_id'], ['general_users.id'], ondelete='CASCADE', name='orders_user_id_general_users_id_fk'),
-        PrimaryKeyConstraint('id', name='orders_pkey')
-    )
-
-    id: str = Field(sa_column=Column('id', Text, primary_key=True))
-    user_id: uuid.UUID = Field(sa_column=Column('user_id', Uuid, nullable=False))
-    polar_product_id: str = Field(sa_column=Column('polar_product_id', Text, nullable=False))
-    polar_price_id: str = Field(sa_column=Column('polar_price_id', Text, nullable=False))
-    status: str = Field(sa_column=Column('status', Enum('paid', 'refunded', 'partially_refunded', name='order_status'), nullable=False, server_default=text("'paid'::order_status")))
-    amount: int = Field(sa_column=Column('amount', Integer, nullable=False))
-    currency: str = Field(sa_column=Column('currency', Text, nullable=False, server_default=text("'usd'::text")))
-    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-
-    user: Optional['GeneralUsers'] = Relationship(back_populates='orders')
-
-
-class Subscriptions(SQLModel, table=True):
-    __table_args__ = (
-        ForeignKeyConstraint(['user_id'], ['general_users.id'], ondelete='CASCADE', name='subscriptions_user_id_general_users_id_fk'),
-        PrimaryKeyConstraint('id', name='subscriptions_pkey')
-    )
-
-    id: str = Field(sa_column=Column('id', Text, primary_key=True))
-    user_id: uuid.UUID = Field(sa_column=Column('user_id', Uuid, nullable=False))
-    polar_product_id: str = Field(sa_column=Column('polar_product_id', Text, nullable=False))
-    polar_price_id: str = Field(sa_column=Column('polar_price_id', Text, nullable=False))
-    status: str = Field(sa_column=Column('status', Enum('active', 'canceled', 'incomplete', 'incomplete_expired', 'past_due', 'trialing', 'unpaid', name='subscription_status'), nullable=False, server_default=text("'incomplete'::subscription_status")))
-    cancel_at_period_end: int = Field(sa_column=Column('cancel_at_period_end', Integer, nullable=False, server_default=text('0')))
-    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-    current_period_start: Optional[datetime.datetime] = Field(default=None, sa_column=Column('current_period_start', TIMESTAMP(True, 3)))
-    current_period_end: Optional[datetime.datetime] = Field(default=None, sa_column=Column('current_period_end', TIMESTAMP(True, 3)))
-
-    user: Optional['GeneralUsers'] = Relationship(back_populates='subscriptions')
-
-
-class UserChats(SQLModel, table=True):
-    __tablename__ = 'user_chats'
-    __table_args__ = (
-        ForeignKeyConstraint(['chat_room_id'], ['chat_rooms.id'], ondelete='CASCADE', name='user_chats_chat_room_id_chat_rooms_id_fk'),
-        ForeignKeyConstraint(['user_id'], ['general_users.id'], ondelete='CASCADE', name='user_chats_user_id_general_users_id_fk'),
-        PrimaryKeyConstraint('id', name='user_chats_pkey'),
-        Index('user_chats_user_id_chat_room_id_key', 'user_id', 'chat_room_id', unique=True)
-    )
-
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
-    user_id: uuid.UUID = Field(sa_column=Column('user_id', Uuid, nullable=False))
-    chat_room_id: int = Field(sa_column=Column('chat_room_id', Integer, nullable=False))
-
-    chat_room: Optional['ChatRooms'] = Relationship(back_populates='user_chats')
-    user: Optional['GeneralUsers'] = Relationship(back_populates='user_chats')
-
-
-class VirtualUsers(SQLModel, table=True):
-    __tablename__ = 'virtual_users'
-    __table_args__ = (
-        ForeignKeyConstraint(['owner_id'], ['general_users.id'], ondelete='CASCADE', name='virtual_users_owner_id_general_users_id_fk'),
-        PrimaryKeyConstraint('id', name='virtual_users_pkey')
-    )
-
-    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True))
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
     name: str = Field(sa_column=Column('name', Text, nullable=False))
-    owner_id: uuid.UUID = Field(sa_column=Column('owner_id', Uuid, nullable=False))
+    profile: dict = Field(sa_column=Column('profile', JSONB, nullable=False))
+    goals: dict = Field(sa_column=Column('goals', JSONB, nullable=False))
+    state: dict = Field(sa_column=Column('state', JSONB, nullable=False))
+    location_x: int = Field(sa_column=Column('location_x', Integer, nullable=False, server_default=text('0')))
+    location_y: int = Field(sa_column=Column('location_y', Integer, nullable=False, server_default=text('0')))
+    is_active: bool = Field(sa_column=Column('is_active', Boolean, nullable=False, server_default=text('true')))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    image_path: Optional[str] = Field(default=None, sa_column=Column('image_path', Text))
+
+    session: Optional['Sessions'] = Relationship(back_populates='npcs')
+    npc_relationships: Optional['NpcRelationships'] = Relationship(sa_relationship_kwargs={'uselist': False}, back_populates='npc')
+
+
+class Objectives(SQLModel, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='objectives_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='objectives_pkey')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
+    title: str = Field(sa_column=Column('title', Text, nullable=False))
+    description: str = Field(sa_column=Column('description', Text, nullable=False, server_default=text("''::text")))
+    status: str = Field(sa_column=Column('status', Enum('active', 'completed', 'failed', name='objective_status'), nullable=False, server_default=text("'active'::objective_status")))
+    sort_order: int = Field(sa_column=Column('sort_order', Integer, nullable=False, server_default=text('0')))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
 
-    owner: Optional['GeneralUsers'] = Relationship(back_populates='virtual_users')
-    messages: list['Messages'] = Relationship(back_populates='virtual_user')
-    virtual_user_chats: list['VirtualUserChats'] = Relationship(back_populates='virtual_user')
-    virtual_user_profiles: list['VirtualUserProfiles'] = Relationship(back_populates='virtual_user')
+    session: Optional['Sessions'] = Relationship(back_populates='objectives')
 
 
-class Addresses(SQLModel, table=True):
+class PlayerCharacters(SQLModel, table=True):
+    __tablename__ = 'player_characters'
     __table_args__ = (
-        ForeignKeyConstraint(['profile_id'], ['general_user_profiles.id'], ondelete='CASCADE', name='addresses_profile_id_general_user_profiles_id_fk'),
-        PrimaryKeyConstraint('id', name='addresses_pkey'),
-        UniqueConstraint('profile_id', name='addresses_profile_id_unique')
+        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='player_characters_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='player_characters_pkey'),
+        UniqueConstraint('session_id', name='player_characters_session_id_unique')
     )
 
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
-    street: str = Field(sa_column=Column('street', Text, nullable=False))
-    city: str = Field(sa_column=Column('city', Text, nullable=False))
-    state: str = Field(sa_column=Column('state', Text, nullable=False))
-    postal_code: str = Field(sa_column=Column('postal_code', Text, nullable=False))
-    country: str = Field(sa_column=Column('country', Text, nullable=False))
-    profile_id: Optional[int] = Field(default=None, sa_column=Column('profile_id', Integer))
-
-    profile: Optional['GeneralUserProfiles'] = Relationship(back_populates='addresses')
-
-
-class Messages(SQLModel, table=True):
-    __table_args__ = (
-        CheckConstraint('sender_id IS NOT NULL AND virtual_user_id IS NULL OR sender_id IS NULL AND virtual_user_id IS NOT NULL', name='sender_check'),
-        ForeignKeyConstraint(['chat_room_id'], ['chat_rooms.id'], ondelete='CASCADE', name='messages_chat_room_id_chat_rooms_id_fk'),
-        ForeignKeyConstraint(['sender_id'], ['general_users.id'], ondelete='CASCADE', name='messages_sender_id_general_users_id_fk'),
-        ForeignKeyConstraint(['virtual_user_id'], ['virtual_users.id'], ondelete='CASCADE', name='messages_virtual_user_id_virtual_users_id_fk'),
-        PrimaryKeyConstraint('id', name='messages_pkey')
-    )
-
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
-    chat_room_id: int = Field(sa_column=Column('chat_room_id', Integer, nullable=False))
-    content: str = Field(sa_column=Column('content', Text, nullable=False))
-    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-    sender_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('sender_id', Uuid))
-    virtual_user_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('virtual_user_id', Uuid))
-
-    chat_room: Optional['ChatRooms'] = Relationship(back_populates='messages')
-    sender: Optional['GeneralUsers'] = Relationship(back_populates='messages')
-    virtual_user: Optional['VirtualUsers'] = Relationship(back_populates='messages')
-
-
-class VirtualUserChats(SQLModel, table=True):
-    __tablename__ = 'virtual_user_chats'
-    __table_args__ = (
-        ForeignKeyConstraint(['chat_room_id'], ['chat_rooms.id'], ondelete='CASCADE', name='virtual_user_chats_chat_room_id_chat_rooms_id_fk'),
-        ForeignKeyConstraint(['virtual_user_id'], ['virtual_users.id'], ondelete='CASCADE', name='virtual_user_chats_virtual_user_id_virtual_users_id_fk'),
-        PrimaryKeyConstraint('id', name='virtual_user_chats_pkey'),
-        Index('virtual_user_chats_virtual_user_id_chat_room_id_key', 'virtual_user_id', 'chat_room_id', unique=True)
-    )
-
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
-    virtual_user_id: uuid.UUID = Field(sa_column=Column('virtual_user_id', Uuid, nullable=False))
-    chat_room_id: int = Field(sa_column=Column('chat_room_id', Integer, nullable=False))
-
-    chat_room: Optional['ChatRooms'] = Relationship(back_populates='virtual_user_chats')
-    virtual_user: Optional['VirtualUsers'] = Relationship(back_populates='virtual_user_chats')
-
-
-class VirtualUserProfiles(SQLModel, table=True):
-    __tablename__ = 'virtual_user_profiles'
-    __table_args__ = (
-        ForeignKeyConstraint(['virtual_user_id'], ['virtual_users.id'], ondelete='CASCADE', name='virtual_user_profiles_virtual_user_id_virtual_users_id_fk'),
-        PrimaryKeyConstraint('id', name='virtual_user_profiles_pkey')
-    )
-
-    id: int = Field(sa_column=Column('id', Integer, primary_key=True))
-    personality: str = Field(sa_column=Column('personality', Text, nullable=False, server_default=text("'friendly'::text")))
-    tone: str = Field(sa_column=Column('tone', Text, nullable=False, server_default=text("'casual'::text")))
-    knowledge_area: list[str] = Field(sa_column=Column('knowledge_area', ARRAY(Text()), nullable=False))
-    backstory: str = Field(sa_column=Column('backstory', Text, nullable=False, server_default=text("''::text")))
-    virtual_user_id: uuid.UUID = Field(sa_column=Column('virtual_user_id', Uuid, nullable=False))
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
+    name: str = Field(sa_column=Column('name', Text, nullable=False))
+    stats: dict = Field(sa_column=Column('stats', JSONB, nullable=False))
+    status_effects: dict = Field(sa_column=Column('status_effects', JSONB, nullable=False))
+    location_x: int = Field(sa_column=Column('location_x', Integer, nullable=False, server_default=text('0')))
+    location_y: int = Field(sa_column=Column('location_y', Integer, nullable=False, server_default=text('0')))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
-    quirks: Optional[str] = Field(default=None, sa_column=Column('quirks', Text, server_default=text("''::text")))
-    knowledge: Optional[dict] = Field(default=None, sa_column=Column('knowledge', JSONB))
+    image_path: Optional[str] = Field(default=None, sa_column=Column('image_path', Text))
 
-    virtual_user: Optional['VirtualUsers'] = Relationship(back_populates='virtual_user_profiles')
+    session: Optional['Sessions'] = Relationship(back_populates='player_characters')
+
+
+class SceneBackgrounds(SQLModel, table=True):
+    __tablename__ = 'scene_backgrounds'
+    __table_args__ = (
+        CheckConstraint('scenario_id IS NOT NULL OR session_id IS NOT NULL', name='at_least_one_parent'),
+        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='CASCADE', name='scene_backgrounds_scenario_id_scenarios_id_fk'),
+        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='scene_backgrounds_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='scene_backgrounds_pkey')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    location_name: str = Field(sa_column=Column('location_name', Text, nullable=False))
+    description: str = Field(sa_column=Column('description', Text, nullable=False, server_default=text("''::text")))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    scenario_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('scenario_id', Uuid))
+    session_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('session_id', Uuid))
+    image_path: Optional[str] = Field(default=None, sa_column=Column('image_path', Text))
+
+    scenario: Optional['Scenarios'] = Relationship(back_populates='scene_backgrounds')
+    session: Optional['Sessions'] = Relationship(back_populates='scene_backgrounds')
+
+
+class Turns(SQLModel, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='turns_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='turns_pkey'),
+        UniqueConstraint('session_id', 'turn_number', name='turns_session_id_turn_number_key')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
+    turn_number: int = Field(sa_column=Column('turn_number', Integer, nullable=False))
+    input_type: str = Field(sa_column=Column('input_type', Enum('do', 'say', 'choice', 'roll_result', 'clarify_answer', 'system', name='input_type'), nullable=False))
+    input_text: str = Field(sa_column=Column('input_text', Text, nullable=False, server_default=text("''::text")))
+    gm_decision_type: str = Field(sa_column=Column('gm_decision_type', Enum('narrate', 'choice', 'roll', 'clarify', 'repair', name='gm_decision_type'), nullable=False))
+    output: dict = Field(sa_column=Column('output', JSONB, nullable=False))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+
+    session: Optional['Sessions'] = Relationship(back_populates='turns')
+
+
+class NpcRelationships(SQLModel, table=True):
+    __tablename__ = 'npc_relationships'
+    __table_args__ = (
+        ForeignKeyConstraint(['npc_id'], ['npcs.id'], ondelete='CASCADE', name='npc_relationships_npc_id_npcs_id_fk'),
+        PrimaryKeyConstraint('id', name='npc_relationships_pkey'),
+        UniqueConstraint('npc_id', name='npc_relationships_npc_id_unique')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    npc_id: uuid.UUID = Field(sa_column=Column('npc_id', Uuid, nullable=False))
+    affinity: int = Field(sa_column=Column('affinity', Integer, nullable=False, server_default=text('0')))
+    trust: int = Field(sa_column=Column('trust', Integer, nullable=False, server_default=text('0')))
+    fear: int = Field(sa_column=Column('fear', Integer, nullable=False, server_default=text('0')))
+    debt: int = Field(sa_column=Column('debt', Integer, nullable=False, server_default=text('0')))
+    flags: dict = Field(sa_column=Column('flags', JSONB, nullable=False))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+
+    npc: Optional['Npcs'] = Relationship(back_populates='npc_relationships')

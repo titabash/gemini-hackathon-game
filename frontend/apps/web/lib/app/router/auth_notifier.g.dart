@@ -10,12 +10,12 @@ part of 'auth_notifier.dart';
 // ignore_for_file: type=lint, type=warning
 /// AuthStateNotifierのProvider
 
-@ProviderFor(authStateNotifier)
-final authStateProvider = AuthStateNotifierProvider._();
+@ProviderFor(authState)
+final authStateProvider = AuthStateProvider._();
 
 /// AuthStateNotifierのProvider
 
-final class AuthStateNotifierProvider
+final class AuthStateProvider
     extends
         $FunctionalProvider<
           AuthStateNotifier,
@@ -24,7 +24,7 @@ final class AuthStateNotifierProvider
         >
     with $Provider<AuthStateNotifier> {
   /// AuthStateNotifierのProvider
-  AuthStateNotifierProvider._()
+  AuthStateProvider._()
     : super(
         from: null,
         argument: null,
@@ -36,7 +36,7 @@ final class AuthStateNotifierProvider
       );
 
   @override
-  String debugGetCreateSourceHash() => _$authStateNotifierHash();
+  String debugGetCreateSourceHash() => _$authStateHash();
 
   @$internal
   @override
@@ -46,7 +46,7 @@ final class AuthStateNotifierProvider
 
   @override
   AuthStateNotifier create(Ref ref) {
-    return authStateNotifier(ref);
+    return authState(ref);
   }
 
   /// {@macro riverpod.override_with_value}
@@ -58,4 +58,4 @@ final class AuthStateNotifierProvider
   }
 }
 
-String _$authStateNotifierHash() => r'60d036965e0cf9ec429e3ae2613fe75857c60f35';
+String _$authStateHash() => r'04efcdc5b6a4d1ee600d8bf3344ed73b269ce621';

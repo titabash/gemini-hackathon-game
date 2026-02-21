@@ -18,8 +18,6 @@ ignore_errors = true
 
 [[tool.mypy.overrides]]
 module = [
-    "src.gateway.openai_gateway",
-    "src.gateway.embeddings_gateway",
     "src.middleware.auth_middleware",
     "src.infra.supabase_client",
 ]
@@ -86,6 +84,7 @@ convention = "google"
     "ANN001",  # missing type annotation for function argument
     "ANN201",  # missing return type annotation
     "PLC0415", # import should be at top-level
+    "SLF001",  # private member access (testing internals)
 ]
 
 [tool.ruff.format]
@@ -157,11 +156,12 @@ dependencies = [
     # "snowflake-connector-python",
     # 音声
     "cartesia",
+    # Google Gemini (直接SDK使用: Gemini構造化出力がLangChainラッパー未対応のため)
+    "google-genai>=1.64.0",
     # Logging
     "structlog",
     "pyyaml>=6.0.2",
     "oyaml>=1.0",
-
     "httpx",
 ]
 
@@ -177,6 +177,7 @@ dev = [
     "pytest-asyncio",
     "pytest-mock",
     "testcontainers[postgres]",
+    "respx",
 
     # 画像生成AI
     "diffusers",

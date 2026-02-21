@@ -1,24 +1,7 @@
 {
   "app": {
-    "title": "Flutter デモ",
-    "name": "Flutter ボイラープレート"
-  },
-  "home": {
-    "title": "Flutter デモホームページ",
-    "message": "ボタンを押した回数："
-  },
-  "counter": {
-    "increment": "増やす",
-    "decrement": "減らす",
-    "reset": "リセット",
-    "tooltip": {
-      "increment": "増やす",
-      "decrement": "減らす"
-    },
-    "value": {
-      "zero": "まだ押されていません",
-      "other": "{n}回"
-    }
+    "title": "ゲームサービス",
+    "name": "ゲームサービス"
   },
   "common": {
     "save": "保存",
@@ -44,6 +27,41 @@
     "refresh": "更新",
     "retry": "再試行"
   },
+  "auth": {
+    "login": "ログイン",
+    "loginWithEmail": "メールアドレスでログイン",
+    "loginDescription": "メールアドレスを入力すると、認証コードをお送りします",
+    "sendCode": "認証コードを送信",
+    "backToHome": "ホームに戻る",
+    "verifyCode": "認証コード確認",
+    "enterCode": "認証コードを入力",
+    "enterCodeDescription": "$email に送信された認証コードを入力してください",
+    "loginButton": "ログイン",
+    "resendCode": "認証コードを再送信",
+    "changeEmail": "メールアドレスを変更",
+    "codeSent": "$email に認証コードを送信しました",
+    "codeResent": "$email に認証コードを再送信しました",
+    "loginSuccess": "ログインしました"
+  },
+  "onboarding": {
+    "title": "プロフィール設定",
+    "description": "ユニークなアカウント名を設定してはじめましょう",
+    "accountName": "アカウント名",
+    "accountNameHint": "例: alice_smith",
+    "accountNameHelper": "3〜20文字、小文字英数字とアンダースコアのみ",
+    "displayName": "表示名",
+    "displayNameHint": "例: Alice Smith",
+    "displayNameHelper": "任意。他のユーザーに表示される名前です",
+    "complete": "設定を完了",
+    "completing": "設定中...",
+    "accountNameRequired": "アカウント名は必須です",
+    "accountNameTooShort": "3文字以上で入力してください",
+    "accountNameTooLong": "20文字以内で入力してください",
+    "accountNameInvalidFormat": "小文字英数字とアンダースコアのみ使用できます",
+    "accountNameTemporary": "アカウント名を設定してください",
+    "accountNameTaken": "このアカウント名は既に使用されています",
+    "success": "プロフィール設定が完了しました！"
+  },
   "settings": {
     "title": "設定",
     "language": "言語",
@@ -57,6 +75,19 @@
     "en": "英語",
     "ja": "日本語"
   },
+  "scenarioList": {
+    "title": "ゲーム一覧",
+    "empty": "まだゲームがありません",
+    "emptyDescription": "新しいシナリオが追加されるまでお待ちください",
+    "error": "ゲームの読み込みに失敗しました",
+    "logout": "ログアウト"
+  },
+  "scenarioDetail": {
+    "play": "プレイする",
+    "startingGame": "ゲームを開始中...",
+    "startError": "ゲームの開始に失敗しました",
+    "description": "説明"
+  },
   "game": {
     "title": "ゲーム",
     "start": "ゲーム開始",
@@ -65,7 +96,8 @@
     "gameOver": "ゲームオーバー",
     "score": "スコア: {n}",
     "restart": "リスタート",
-    "loading": "ゲームを読み込み中..."
+    "loading": "ゲームを読み込み中...",
+    "backToList": "ゲーム一覧に戻る"
   },
   "genui": {
     "title": "AIチャット",
@@ -74,6 +106,26 @@
     "emptyState": "会話を始めましょう",
     "error": "メッセージの送信に失敗しました",
     "processing": "考え中..."
+  },
+  "trpg": {
+    "chooseAction": "行動を選択してください",
+    "freeInput": "または自由に行動を記述...",
+    "rollCheck": "判定チェック",
+    "rollDifficulty": "難易度: $n",
+    "rollSuccess": "成功時: $text",
+    "rollFailure": "失敗時: $text",
+    "rollButton": "ダイスを振る",
+    "clarifyTitle": "GMから確認があります",
+    "repairTitle": "矛盾が検出されました",
+    "repairContradiction": "問題: $text",
+    "repairFix": "修正案: $text",
+    "repairAccept": "修正を受け入れる",
+    "repairReject": "拒否する",
+    "continueButton": "続ける",
+    "inputHint": "何をしますか？",
+    "send": "送信",
+    "emptyState": "冒険が始まります...",
+    "processing": "GMが考えています..."
   },
   "error": {
     "generic": "エラーが発生しました",
