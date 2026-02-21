@@ -1,0 +1,70 @@
+{
+  "app": {
+    "title": "Flutter Demo",
+    "name": "Flutter Boilerplate"
+  },
+  "home": {
+    "title": "Flutter Demo Home Page",
+    "message": "You have pushed the button this many times:"
+  },
+  "counter": {
+    "increment": "Increment",
+    "decrement": "Decrement",
+    "reset": "Reset",
+    "tooltip": {
+      "increment": "Increment",
+      "decrement": "Decrement"
+    },
+    "value": {
+      "zero": "No pushes yet",
+      "one": "{n} time",
+      "other": "{n} times"
+    }
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "loading": "Loading...",
+    "error": "Error",
+    "success": "Success",
+    "warning": "Warning",
+    "info": "Info",
+    "yes": "Yes",
+    "no": "No",
+    "ok": "OK",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish",
+    "submit": "Submit",
+    "search": "Search",
+    "clear": "Clear",
+    "refresh": "Refresh",
+    "retry": "Retry"
+  },
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "theme": "Theme",
+    "darkMode": "Dark Mode",
+    "lightMode": "Light Mode",
+    "systemMode": "System",
+    "changeLanguage": "Change Language"
+  },
+  "language": {
+    "en": "English",
+    "ja": "Japanese"
+  },
+  "error": {
+    "generic": "An error occurred",
+    "network": "Network error",
+    "notFound": "Not found",
+    "unauthorized": "Unauthorized",
+    "forbidden": "Forbidden",
+    "serverError": "Server error",
+    "timeout": "Request timeout"
+  }
+}

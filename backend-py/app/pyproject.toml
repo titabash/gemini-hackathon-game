@@ -1,0 +1,204 @@
+
+[tool.mypy]
+python_version = "3.13"
+exclude = [
+    '^\.venv/',
+    '^src/domain/entity/models\.py$',
+]
+strict = true
+ignore_missing_imports = true
+install_types = true
+non_interactive = true
+
+[[tool.mypy.overrides]]
+module = [
+    "src.domain.entity.models",
+]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = [
+    "src.gateway.openai_gateway",
+    "src.gateway.embeddings_gateway",
+    "src.middleware.auth_middleware",
+    "src.infra.supabase_client",
+]
+disable_error_code = ["arg-type", "no-any-return", "union-attr", "call-arg", "return-value"]
+
+[tool.ruff]
+# Same as Black.
+line-length = 88
+
+# Assume Python 3.13.
+target-version = "py313"
+
+# Exclude auto-generated files
+exclude = [
+    "src/domain/entity/models.py",
+]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "ANN1",   # missing type self and cls
+    "D1",     # undocumented
+    "TD001",  # invalid todo tag
+    "TD002",  # missing todo author
+    "TD003",  # missing todo link
+    "PD011",  # pandas use of dot values
+    "B008",
+    "COM812", # conflicts with formatter
+    "S104",   # binding to all interfaces (0.0.0.0)
+    "TRY002", # create your own exception
+    "TRY003", # avoid specifying long messages outside exception class
+    "EM101",  # exception must not use string literal
+    "G004",   # logging statement uses f-string
+    "BLE001", # do not catch blind exception
+    "B904",   # raise exceptions with from
+    "TRY300", # consider moving statement to else block
+    "TRY301", # abstract raise to inner function
+    "TRY401", # redundant exception object in logging
+    "ARG002", # unused method argument
+    "RUF001", # ambiguous unicode characters
+    "RUF003", # ambiguous unicode comment
+]
+unfixable = [
+    "F401",   # unused import
+    "F841",   # unused variable
+    "ERA001", # commented out code
+]
+
+logger-objects = ["src.library.logger.LOGGER"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true
+known-first-party = ["musubi_restapi"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+split-on-trailing-comma = true
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",    # use of assert
+    "PLR2004", # magic value in comparison
+    "ANN001",  # missing type annotation for function argument
+    "ANN201",  # missing return type annotation
+    "PLC0415", # import should be at top-level
+]
+
+[tool.ruff.format]
+# Like Black, use double quotes for strings.
+quote-style = "double"
+docstring-code-format = true
+
+[lint.mccabe]
+max-complexity = 3
+
+[project]
+name = "backend-py"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.13"
+dependencies = [
+    "orjson ==3.10.14",
+    "fastapi",
+    "starlette",
+    "uvicorn[standard]",
+    "python-multipart",
+    "supabase",
+    "strawberry-graphql",
+    "pandas",
+    "numpy",
+    "scipy",
+    "httpx",
+    # SQLModel & Database
+    "sqlmodel",
+    "sqlacodegen==3.1.1",
+    "psycopg2-binary",
+    # Autogen
+    "pyautogen",
+    # OpenAI
+    "openai",
+    # LangChain
+    "langchain",
+    "langchain-community",
+    "langchain-anthropic",
+    "langchain-openai",
+    "langchain-postgres",
+    "langgraph",
+    "langchainhub",
+    # 画像
+    "Pillow",
+    # 画像生成AI Client
+    "replicate",
+    "fal-client",
+    # runpod
+    "runpod",
+    # Modal
+    "modal",
+    # AI
+    "torch",
+    # WebRTC
+    "aiortc",
+    "livekit",
+    "livekit-api",
+    # Message Queue
+    "kombu",
+    "tembo-pgmq-python",
+    # AWS
+    # "boto3",
+    # Google Cloud
+    # "google-cloud-bigquery-data-exchange",
+    # Azure
+    # "azure-identity",
+    # Snowflake
+    # "snowflake-connector-python",
+    # 音声
+    "cartesia",
+    # Logging
+    "structlog",
+    "pyyaml>=6.0.2",
+    "oyaml>=1.0",
+
+    "httpx",
+]
+
+[dependency-groups]
+dev = [
+    # Linting & Formatting & Type Checking
+    "ruff",
+    "mypy",
+
+    # Testing
+    "pytest",
+    "pytest-cov",
+    "pytest-asyncio",
+    "pytest-mock",
+    "testcontainers[postgres]",
+
+    # 画像生成AI
+    "diffusers",
+    "transformers",
+    "sentencepiece",
+    "protobuf",
+    "accelerate",
+    "compel",
+    "torchao",
+    "huggingface-hub",
+]
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+pythonpath = ["src"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-ra -q --cov=src --cov-report=term-missing --cov-report=html"
+asyncio_mode = "auto"
+
+# [build-system]
+# requires = ["hatchling"]
+# build-backend = "hatchling.build"

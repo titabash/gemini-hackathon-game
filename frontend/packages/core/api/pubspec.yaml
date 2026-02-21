@@ -1,0 +1,48 @@
+name: core_api
+description: Core API client package with Dio + Retrofit
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.8.0
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # HTTP client
+  dio: ^5.9.0
+  retrofit: ^4.6.0
+  flutter_client_sse: ^2.0.3
+
+  # State management
+  hooks_riverpod: ^3.0.3
+  riverpod_annotation: ^4.0.0
+  riverpod: ^3.0.3
+
+  # JSON serialization
+  json_annotation: ^4.9.0
+
+  # Logging
+  logger: ^2.5.0
+
+  # Dependencies on other packages
+  core_auth:
+    path: ../auth
+  core_utils:
+    path: ../utils
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Code generation
+  build_runner: ^2.7.1
+  retrofit_generator: ^10.2.1
+  json_serializable: ^6.8.0
+  riverpod_generator: ^4.0.0+1
+
+  # Linting
+  flutter_lints: ^6.0.0

@@ -1,0 +1,41 @@
+name: core_auth
+description: Core authentication package for Flutter Boilerplate
+version: 0.1.0
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.5.0
+  flutter: '>=3.24.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # State management
+  hooks_riverpod: ^3.0.3
+  riverpod_annotation: ^4.0.0
+
+  # Supabase
+  supabase_flutter: ^2.10.3
+
+  # Immutable models
+  freezed_annotation: ^3.0.0
+  json_annotation: ^4.9.0
+
+  # Utilities
+  core_utils:
+    path: ../utils
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Code generation
+  build_runner: ^2.7.1
+  riverpod_generator: ^4.0.0+1
+  freezed: ^3.0.0
+  json_serializable: ^6.8.0
+
+  # Linting
+  flutter_lints: ^6.0.0

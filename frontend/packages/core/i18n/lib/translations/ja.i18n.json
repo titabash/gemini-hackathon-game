@@ -1,0 +1,69 @@
+{
+  "app": {
+    "title": "Flutter デモ",
+    "name": "Flutter ボイラープレート"
+  },
+  "home": {
+    "title": "Flutter デモホームページ",
+    "message": "ボタンを押した回数："
+  },
+  "counter": {
+    "increment": "増やす",
+    "decrement": "減らす",
+    "reset": "リセット",
+    "tooltip": {
+      "increment": "増やす",
+      "decrement": "減らす"
+    },
+    "value": {
+      "zero": "まだ押されていません",
+      "other": "{n}回"
+    }
+  },
+  "common": {
+    "save": "保存",
+    "cancel": "キャンセル",
+    "delete": "削除",
+    "edit": "編集",
+    "confirm": "確認",
+    "loading": "読み込み中...",
+    "error": "エラー",
+    "success": "成功",
+    "warning": "警告",
+    "info": "情報",
+    "yes": "はい",
+    "no": "いいえ",
+    "ok": "OK",
+    "close": "閉じる",
+    "back": "戻る",
+    "next": "次へ",
+    "finish": "完了",
+    "submit": "送信",
+    "search": "検索",
+    "clear": "クリア",
+    "refresh": "更新",
+    "retry": "再試行"
+  },
+  "settings": {
+    "title": "設定",
+    "language": "言語",
+    "theme": "テーマ",
+    "darkMode": "ダークモード",
+    "lightMode": "ライトモード",
+    "systemMode": "システム設定",
+    "changeLanguage": "言語を変更"
+  },
+  "language": {
+    "en": "英語",
+    "ja": "日本語"
+  },
+  "error": {
+    "generic": "エラーが発生しました",
+    "network": "ネットワークエラー",
+    "notFound": "見つかりません",
+    "unauthorized": "認証エラー",
+    "forbidden": "アクセス拒否",
+    "serverError": "サーバーエラー",
+    "timeout": "タイムアウト"
+  }
+}

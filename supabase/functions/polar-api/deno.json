@@ -1,0 +1,9 @@
+{
+  "imports": {
+    "@polar-sh/sdk": "npm:@polar-sh/sdk@^0.42.1",
+    "@supabase/supabase-js": "jsr:@supabase/supabase-js@^2"
+  },
+  "tasks": {
+    "dev": "deno run --watch --allow-net --allow-env --allow-read index.ts"
+  }
+}

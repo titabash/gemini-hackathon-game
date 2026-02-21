@@ -1,0 +1,16 @@
+{
+  "env": {
+    "SUPABASE_URL": "${SUPABASE_URL}",
+    "SUPABASE_ANON_KEY": "${SUPABASE_ANON_KEY}",
+    "FRONTEND_URL": "${FRONTEND_URL}"
+  },
+  "buildCommand": "cd apps/web && ../../flutter/bin/flutter build web --no-tree-shake-icons --release --dart-define=SUPABASE_URL=${SUPABASE_URL} --dart-define=SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY} --dart-define=FRONTEND_URL=${FRONTEND_URL}",
+  "outputDirectory": "apps/web/build/web",
+  "installCommand": "if cd flutter; then git pull && cd .. ; else git clone https://github.com/flutter/flutter.git; fi && ls && flutter/bin/flutter doctor && flutter/bin/flutter clean && flutter/bin/flutter config --enable-web",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

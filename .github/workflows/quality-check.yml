@@ -1,0 +1,182 @@
+name: Quality Check
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+jobs:
+  lint-and-format-check:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.10.0'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.11'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.9'
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap Flutter workspace
+        working-directory: frontend
+        run: melos bootstrap
+
+      - name: Install Drizzle dependencies
+        working-directory: drizzle
+        run: bun install
+
+      - name: Install Backend Python dependencies
+        working-directory: backend-py/app
+        run: |
+          pip install uv
+          uv sync --dev
+
+      - name: Lint & Format Check - Flutter
+        run: make check-flutter
+
+      - name: Lint & Format Check - Edge Functions
+        run: make check-edge-functions
+
+      - name: Lint & Format Check - Backend Python
+        run: make check-backend
+
+  type-check:
+    name: Type Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.10.0'
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.2.11'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.9'
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap Flutter workspace
+        working-directory: frontend
+        run: melos bootstrap
+
+      - name: Install Drizzle dependencies
+        working-directory: drizzle
+        run: bun install
+
+      - name: Install Backend Python dependencies
+        working-directory: backend-py/app
+        run: |
+          pip install uv
+          uv sync --dev
+
+      - name: Generate Flutter code
+        working-directory: frontend/apps/web
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Type Check - Flutter
+        working-directory: frontend/apps/web
+        run: dart analyze
+
+      - name: Type Check - Backend Python
+        working-directory: backend-py/app
+        run: uv run mypy src
+
+  test-flutter:
+    name: Test Flutter
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.38.6'
+          channel: 'stable'
+          cache: true
+
+      - name: Install Melos
+        run: dart pub global activate melos
+
+      - name: Bootstrap Flutter workspace
+        working-directory: frontend
+        run: melos bootstrap
+
+      - name: Generate Flutter code
+        working-directory: frontend/apps/web
+        run: dart run build_runner build --delete-conflicting-outputs
+
+      - name: Run Flutter tests
+        working-directory: frontend
+        run: melos run test
+
+  test-backend:
+    name: Test Backend Python
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13.9'
+
+      - name: Install dependencies
+        working-directory: backend-py/app
+        run: |
+          pip install uv
+          uv sync --dev
+
+      - name: Run tests
+        working-directory: backend-py/app
+        run: uv run pytest

@@ -1,0 +1,185 @@
+name: frontend_workspace
+description: Flutter frontend monorepo workspace
+publish_to: none
+
+environment:
+  sdk: ^3.6.0
+
+# Workspace 定義
+workspace:
+  - apps/web
+  - packages/shared/ui
+  - packages/core/i18n
+  - packages/core/utils
+  - packages/core/auth
+  - packages/core/api
+  - packages/core/polar
+  - packages/core/notification
+  - widgetbook
+
+dev_dependencies:
+  melos: ^7.0.0
+  mock_supabase_http_client: ^0.0.3+2
+
+# Melos 設定
+melos:
+  # IDE 統合
+  ide:
+    intellij:
+      enabled: true
+
+  # コマンド設定
+  command:
+    bootstrap:
+      # pub get を並行実行すると問題が発生する場合があるため無効化
+      # 参考: FlutterFire プロジェクトの設定
+      # https://github.com/firebase/flutterfire/blob/master/melos.yaml
+      runPubGetInParallel: false
+      hooks:
+        post: |
+          echo "Bootstrap completed!"
+          melos run generate
+
+  # パッケージカテゴリ定義
+  categories:
+    apps:
+      - apps/*
+    shared_packages:
+      - packages/shared/*
+    core_packages:
+      - packages/core/*
+
+  # スクリプト定義
+  scripts:
+    # コード生成
+    generate:
+      description: Run build_runner for all packages that need it
+      run: |
+        melos exec -c 1 --fail-fast --depends-on="build_runner" -- \
+          dart run build_runner build --delete-conflicting-outputs
+
+    generate_watch:
+      description: Watch mode for code generation
+      run: |
+        melos exec -c 1 --depends-on="build_runner" -- \
+          dart run build_runner watch --delete-conflicting-outputs
+
+    # 解析・フォーマット
+    analyze:
+      description: Run Dart analyzer for all packages
+      run: melos exec -c 1 -- dart analyze . --fatal-infos
+
+    format:
+      description: Format all Dart files
+      run: melos exec -c 1 -- dart format .
+
+    format_check:
+      description: Check formatting without modifying files
+      run: melos exec -c 1 -- dart format --set-exit-if-changed .
+
+    # テスト
+    test:
+      description: Run tests for all packages
+      run: melos exec -c 1 --fail-fast --dir-exists=test -- flutter test
+
+    test_coverage:
+      description: Run tests with coverage
+      run: |
+        melos exec -c 1 --fail-fast --dir-exists=test -- \
+          flutter test --coverage
+
+    # 統合テスト
+    integration_test:
+      description: Run integration tests for apps (デバイス/シミュレータが必要)
+      run: |
+        melos exec -c 1 --fail-fast --scope="*_app" \
+          --dir-exists=integration_test -- \
+          flutter test integration_test/
+
+    integration_test_web:
+      description: Run integration tests for web app specifically (requires device)
+      run: cd apps/web && flutter test integration_test/
+
+    integration_test_web_drive:
+      description: Run Web integration tests with flutter drive (ChromeDriver必須)
+      run: |
+        echo "⚠️  ChromeDriverを別のターミナルで起動してください:"
+        echo "  npx @puppeteer/browsers install chromedriver@stable"
+        echo "  chromedriver --port=4444"
+        echo ""
+        cd apps/web && flutter drive \
+          --driver=test_driver/integration_test.dart \
+          --target=integration_test/app_test.dart \
+          -d chrome
+
+    test_all:
+      description: Run unit, widget, and integration tests
+      run: |
+        echo "Running unit and widget tests..."
+        melos run test
+        echo "Running integration tests..."
+        melos run integration_test
+
+    # クリーンアップ
+    clean:
+      description: Clean all packages
+      run: melos exec -c 6 -- flutter clean
+
+    clean_deep:
+      description: Deep clean (including dependencies)
+      run: |
+        melos clean
+        melos exec -c 6 -- flutter clean
+        rm -rf .dart_tool/
+        rm -rf pubspec.lock
+
+    # 依存関係管理
+    get:
+      description: Run pub get for all packages
+      run: melos exec -c 1 -- flutter pub get
+
+    upgrade:
+      description: Upgrade dependencies
+      run: melos exec -c 1 -- flutter pub upgrade
+
+    # 品質チェック（フル検証）
+    quality_check:
+      description: Run all quality checks (full)
+      run: |
+        melos clean
+        melos bootstrap
+        melos run analyze
+        melos run format_check
+        melos run test
+
+    quality_check_ci:
+      description: Run quality checks (optimized for CI)
+      run: |
+        melos bootstrap --no-example
+        melos run analyze
+        melos run format_check
+        melos run test
+
+    test_changed:
+      description: Test only changed packages
+      run: |
+        melos exec --diff="$MELOS_DIFF_BASE" --fail-fast \
+          --dir-exists=test -- flutter test
+
+    analyze_changed:
+      description: Analyze only changed packages
+      run: |
+        melos exec --diff="$MELOS_DIFF_BASE" --fail-fast \
+          -- dart analyze . --fatal-infos
+
+    web_run:
+      description: Run web app in debug mode
+      run: cd apps/web && flutter run -d chrome --web-port 8080
+
+    web_build:
+      description: Build web app for production
+      run: cd apps/web && flutter build web --release
+
+    web_serve:
+      description: Serve built web app locally
+      run: cd apps/web/build/web && python3 -m http.server 8080

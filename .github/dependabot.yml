@@ -1,0 +1,63 @@
+version: 2
+updates:
+  # Flutter (Pub) dependencies
+  - package-ecosystem: "pub"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      flutter:
+        patterns:
+          - "flutter*"
+      riverpod:
+        patterns:
+          - "*riverpod*"
+          - "hooks_riverpod"
+      supabase:
+        patterns:
+          - "supabase*"
+      drift:
+        patterns:
+          - "drift*"
+          - "sqlite3*"
+
+  # Drizzle (npm) dependencies
+  - package-ecosystem: "npm"
+    directory: "/drizzle"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      drizzle:
+        patterns:
+          - "drizzle-*"
+          - "postgres"
+
+  # Backend Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/backend-py/app"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      fastapi:
+        patterns:
+          - "fastapi*"
+          - "uvicorn*"
+      supabase:
+        patterns:
+          - "supabase*"
+      ai-ml:
+        patterns:
+          - "langchain*"
+          - "openai"
+          - "anthropic"
+          - "torch*"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5

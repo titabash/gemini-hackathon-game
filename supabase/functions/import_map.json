@@ -1,0 +1,12 @@
+{
+  "imports": {
+    "drizzle-orm": "npm:drizzle-orm@^0.44.7",
+    "drizzle-orm/": "npm:drizzle-orm@^0.44.7/",
+    "postgres": "https://esm.sh/postgres@3.4.7",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@2",
+    "@/": "./",
+    "@infra/": "./infra/",
+    "@domain/": "./domain/",
+    "@drizzle-schema/": "./shared/drizzle/"
+  }
+}

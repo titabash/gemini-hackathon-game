@@ -1,0 +1,35 @@
+name: widgetbook_workspace
+description: Widgetbook component catalog for the Flutter boilerplate
+publish_to: none
+resolution: workspace
+
+environment:
+  sdk: ^3.6.0
+  flutter: ^3.27.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # Widgetbook core
+  widgetbook: ^3.20.2
+  widgetbook_annotation: ^3.9.0
+
+  # Local packages (Melos が自動リンク)
+  shared_ui:
+  web_app:
+  core_i18n:
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+  # Code generation
+  build_runner: ^2.7.1
+  widgetbook_generator: ^3.20.1
+
+flutter:
+  uses-material-design: true

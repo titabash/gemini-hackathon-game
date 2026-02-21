@@ -1,0 +1,150 @@
+# ========================================
+# Codex CLI Configuration
+# Flutter Boilerplate Project
+# ========================================
+
+# ----- Model Configuration -----
+model = "gpt-5-codex"
+model_provider = "openai"
+model_reasoning_effort = "medium"  # minimal, low, medium, high
+model_verbosity = "medium"         # low, medium, high
+
+# ----- Authentication -----
+preferred_auth_method = "chatgpt"  # chatgpt | apikey
+
+# ----- Security Settings -----
+# 推奨: 開発時は on-request、レビュー時は read-only
+approval_policy = "on-request"     # untrusted | on-failure | on-request | never
+sandbox_mode = "workspace-write"   # read-only | workspace-write | danger-full-access
+
+[sandbox_workspace_write]
+# Supabase CLIやnpm installがネットワークアクセス必要な場合はtrue
+network_access = true
+# 追加の書き込み可能ディレクトリ（必要に応じて追加）
+writable_roots = []
+
+# ----- Shell Environment -----
+[shell_environment_policy]
+# 実行コマンドに渡す環境変数を制限
+include_only = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LANG",
+  "SUPABASE_URL",
+  "SUPABASE_ANON_KEY",
+  "SUPABASE_SERVICE_ROLE_KEY",
+  "OPENAI_API_KEY",
+  "ANTHROPIC_API_KEY",
+  "PERPLEXITY_API_KEY",
+  "GOOGLE_API_KEY",
+]
+
+# ----- Feature Flags -----
+[features]
+web_search_request = true      # Web検索機能を有効化
+view_image_tool = true          # 画像表示ツールを有効化
+streamable_shell = true         # リアルタイムシェル出力
+unified_exec = false            # 統合実行モード（実験的）
+apply_patch_freeform = false    # フリーフォームパッチ適用（実験的）
+
+# ----- MCP Servers (Model Context Protocol) -----
+
+# Context7: 技術ドキュメント検索とベストプラクティス調査
+[mcp.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+
+# Supabase MCP: データベーススキーマ確認、RLSポリシー検証
+[mcp.supabase]
+command = "npx"
+args = ["-y", "@modelcontextprotocol/server-supabase"]
+# 環境変数はシェル環境から取得
+# env = { SUPABASE_URL = "${SUPABASE_URL}", SUPABASE_SERVICE_ROLE_KEY = "${SUPABASE_SERVICE_ROLE_KEY}" }
+
+# Playwright MCP: ブラウザ自動化とE2Eテスト
+# [mcp.playwright]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-playwright"]
+
+# Filesystem MCP: ファイルシステム操作（必要に応じて有効化）
+# [mcp.filesystem]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-filesystem", "/Users/tknr/Development/flutter-boilerplate"]
+
+# Magic UI Design MCP: デザインシステムとUIコンポーネント支援
+# [mcp.magicuidesign]
+# command = "npx"
+# args = ["-y", "@modelcontextprotocol/server-magicuidesign"]
+
+# Dart/Flutter MCP (利用可能な場合)
+# [mcp.dart]
+# command = "dart"
+# args = ["run", "mcp_server"]
+
+# ----- Profiles -----
+
+# コードレビュー専用プロファイル（読み取り専用、高推論レベル）
+[profiles.review]
+model = "gpt-5-pro"
+model_reasoning_effort = "high"
+approval_policy = "never"       # 変更なし、自動承認
+sandbox_mode = "read-only"
+
+# 高速開発プロファイル（失敗時のみ確認）
+[profiles.fast]
+model = "gpt-4.1"
+model_reasoning_effort = "low"
+approval_policy = "on-failure"  # 失敗時のみ確認
+sandbox_mode = "workspace-write"
+[profiles.fast.sandbox_workspace_write]
+network_access = true
+
+# 実験的機能テストプロファイル（隔離環境のみ使用）
+[profiles.experimental]
+model = "gpt-5-codex"
+model_reasoning_effort = "high"
+approval_policy = "never"       # 完全自動化（注意: 隔離環境のみ）
+sandbox_mode = "danger-full-access"
+
+# リファクタリング専用プロファイル（高推論、慎重な変更）
+[profiles.refactor]
+model = "gpt-5-codex"
+model_reasoning_effort = "high"
+approval_policy = "on-request"
+sandbox_mode = "workspace-write"
+[profiles.refactor.sandbox_workspace_write]
+network_access = false
+
+# ----- History Settings -----
+save_history = true
+max_agents_md_bytes = 1048576  # 1MB
+
+# ----- Telemetry -----
+environment_tag = "dev"
+
+# ----- Usage Notes -----
+#
+# プロファイルの使用方法:
+#   codex --profile review      # コードレビューモード
+#   codex --profile fast        # 高速開発モード
+#   codex --profile refactor    # リファクタリングモード
+#   codex --profile experimental # 実験モード（隔離環境のみ）
+#
+# MCPサーバーの追加方法:
+#   codex mcp add <name> -- <command> [args...]
+#   例: codex mcp add context7 -- npx -y @upstash/context7-mcp
+#
+# MCPサーバーのリスト確認:
+#   codex mcp list
+#
+# セキュリティ注意事項:
+#   - approval_policy="never"は信頼できる環境のみで使用
+#   - sandbox_mode="danger-full-access"は隔離環境のみで使用
+#   - 本番環境では常にapproval_policy="on-request"以上を推奨
+#
+# このプロジェクト特有の注意事項:
+#   - Flutter開発にはMelos bootstrapが必要: make frontend
+#   - コード生成後は必ず: make frontend-generate
+#   - データベーススキーマ変更前にSupabase MCPで確認
+#   - フォーマットと品質チェック: make fix-format && make check-quality
