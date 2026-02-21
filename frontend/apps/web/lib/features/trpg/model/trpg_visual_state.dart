@@ -9,6 +9,7 @@ class TrpgVisualState {
     this.hp = 100,
     this.maxHp = 100,
     this.playerName = 'Player',
+    this.backgroundImageUrl,
   });
 
   final String? locationName;
@@ -17,6 +18,7 @@ class TrpgVisualState {
   final int hp;
   final int maxHp;
   final String playerName;
+  final String? backgroundImageUrl;
 
   TrpgVisualState copyWith({
     String? locationName,
@@ -25,6 +27,7 @@ class TrpgVisualState {
     int? hp,
     int? maxHp,
     String? playerName,
+    String? backgroundImageUrl,
   }) {
     return TrpgVisualState(
       locationName: locationName ?? this.locationName,
@@ -33,14 +36,18 @@ class TrpgVisualState {
       hp: hp ?? this.hp,
       maxHp: maxHp ?? this.maxHp,
       playerName: playerName ?? this.playerName,
+      backgroundImageUrl: backgroundImageUrl ?? this.backgroundImageUrl,
     );
   }
 }
 
 /// Visual representation of an NPC on the game canvas.
 class NpcVisual {
-  const NpcVisual({required this.name, this.emotion});
+  const NpcVisual({required this.name, this.emotion, this.imageUrl});
 
   final String name;
   final String? emotion;
+
+  /// Resolved public URL for the NPC portrait image.
+  final String? imageUrl;
 }

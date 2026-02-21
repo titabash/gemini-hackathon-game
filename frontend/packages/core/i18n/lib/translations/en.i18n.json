@@ -125,7 +125,10 @@
     "inputHint": "What do you do?",
     "send": "Send",
     "emptyState": "Your adventure begins...",
-    "processing": "The GM is thinking..."
+    "processing": "The GM is thinking...",
+    "tapToContinue": "Tap to continue",
+    "narrator": "Narrator",
+    "messageLog": "Message Log"
   },
   "error": {
     "generic": "An error occurred",

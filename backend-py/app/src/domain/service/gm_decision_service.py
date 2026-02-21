@@ -33,10 +33,11 @@ class GmDecisionService:
                     response_type=GmDecisionResponse,
                     temperature=temp,
                 )
-            except Exception:
-                logger.warning(
+            except Exception as exc:
+                logger.exception(
                     "GM decision attempt failed",
                     attempt=attempt + 1,
+                    error=str(exc),
                 )
                 temp = 0.0
         return self._fallback()

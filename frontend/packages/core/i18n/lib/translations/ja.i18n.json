@@ -125,7 +125,10 @@
     "inputHint": "何をしますか？",
     "send": "送信",
     "emptyState": "冒険が始まります...",
-    "processing": "GMが考えています..."
+    "processing": "GMが考えています...",
+    "tapToContinue": "タップして続ける",
+    "narrator": "ナレーター",
+    "messageLog": "メッセージログ"
   },
   "error": {
     "generic": "エラーが発生しました",

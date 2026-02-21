@@ -5,7 +5,7 @@ Gemini構造化出力スキーマおよびゲームコンテキスト構築用�
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -129,6 +129,7 @@ class GmDecisionResponse(BaseModel):
     narration_text: str
 
     scene_description: str | None = None
+    selected_background_id: str | None = None
 
     choices: list[ChoiceOption] | None = None
     roll: RollData | None = None
@@ -142,6 +143,14 @@ class GmDecisionResponse(BaseModel):
 
 
 # --- Game Context (prompt construction) ---
+
+
+class BackgroundResourceSummary(BaseModel):
+    """Available scene background for LLM selection."""
+
+    id: str
+    location_name: str
+    description: str
 
 
 class TurnSummary(BaseModel):
@@ -158,7 +167,7 @@ class PlayerSummary(BaseModel):
     """Player character summary for context."""
 
     name: str
-    stats: dict
+    stats: dict[str, Any]
     status_effects: list[str]
     location_x: int
     location_y: int
@@ -168,10 +177,10 @@ class NpcSummary(BaseModel):
     """NPC summary for context."""
 
     name: str
-    profile: dict
-    goals: dict
-    state: dict
-    relationship: dict
+    profile: dict[str, Any]
+    goals: dict[str, Any]
+    state: dict[str, Any]
+    relationship: dict[str, Any]
 
 
 class ObjectiveSummary(BaseModel):
@@ -196,15 +205,16 @@ class GameContext(BaseModel):
     scenario_title: str
     scenario_setting: str
     system_prompt: str
-    win_conditions: dict
-    fail_conditions: dict
-    plot_essentials: dict
+    win_conditions: list[dict[str, Any]]
+    fail_conditions: list[dict[str, Any]]
+    plot_essentials: dict[str, Any]
     short_term_summary: str
-    confirmed_facts: dict
+    confirmed_facts: dict[str, Any]
     recent_turns: list[TurnSummary]
     player: PlayerSummary
     active_npcs: list[NpcSummary]
     active_objectives: list[ObjectiveSummary]
     player_items: list[ItemSummary]
     current_turn_number: int
-    current_state: dict
+    current_state: dict[str, Any]
+    available_backgrounds: list[BackgroundResourceSummary] = []

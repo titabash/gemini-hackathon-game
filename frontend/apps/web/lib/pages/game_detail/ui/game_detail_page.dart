@@ -1,4 +1,5 @@
 import 'package:core_i18n/generated/strings.g.dart';
+import 'package:core_utils/core_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -119,7 +120,8 @@ class GameDetailPage extends ConsumerWidget {
 
       if (!context.mounted) return;
       context.go('/game/${session.id}');
-    } catch (e) {
+    } catch (e, st) {
+      Logger.error('Failed to start game', e, st);
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(

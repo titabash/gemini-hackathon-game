@@ -38,6 +38,17 @@ class NpcGateway:
         )
         return list(session.exec(statement).all())
 
+    def get_by_scenario(
+        self,
+        session: Session,
+        scenario_id: uuid.UUID,
+    ) -> list[Npcs]:
+        """Get all NPCs defined at the scenario level."""
+        statement = select(Npcs).where(
+            Npcs.scenario_id == scenario_id,
+        )
+        return list(session.exec(statement).all())
+
     def get_with_relationship(
         self,
         session: Session,

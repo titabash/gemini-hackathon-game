@@ -18,6 +18,7 @@ export const gmDecisionTypeEnum = pgEnum("gm_decision_type", [
 
 // Enum: input_type - プレイヤーの入力タイプ
 export const inputTypeEnum = pgEnum("input_type", [
+  "start",
   "do",
   "say",
   "choice",

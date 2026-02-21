@@ -5,7 +5,7 @@ import '../../../entities/session/model/game_session.dart';
 part 'create_session.g.dart';
 
 /// ゲームセッションを作成するProvider
-@riverpod
+@Riverpod(keepAlive: true)
 class CreateSession extends _$CreateSession {
   @override
   Future<GameSession?> build() async {
@@ -16,9 +16,11 @@ class CreateSession extends _$CreateSession {
   Future<GameSession> create({required String scenarioId}) async {
     state = const AsyncLoading();
 
+    // async前に依存を取得（dispose後のref使用を防ぐ）
+    final supabase = ref.read(supabaseClientProvider);
+    final user = ref.read(currentUserProvider);
+
     final result = await AsyncValue.guard(() async {
-      final supabase = ref.read(supabaseClientProvider);
-      final user = ref.read(currentUserProvider);
       if (user == null) {
         throw Exception('User not authenticated');
       }

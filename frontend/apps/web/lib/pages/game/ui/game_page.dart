@@ -1,4 +1,3 @@
-import 'package:core_game/core_game.dart';
 import 'package:core_i18n/generated/strings.g.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -7,9 +6,9 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../../features/trpg/model/trpg_session_provider.dart';
 import '../../../features/trpg/ui/game/trpg_game.dart';
-import '../../../features/trpg/ui/trpg_chat_surface.dart';
+import '../../../features/trpg/ui/novel/novel_game_surface.dart';
 
-/// Game page that hosts both the Flame game canvas and a TRPG chat surface.
+/// Full-screen novel-game page hosting the Flame canvas and UI overlays.
 class GamePage extends HookConsumerWidget {
   const GamePage({super.key, required this.sessionId});
 
@@ -29,21 +28,17 @@ class GamePage extends HookConsumerWidget {
     }, [sessionId]);
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         leading: IconButton(
           onPressed: () => context.go('/'),
-          icon: const Icon(Icons.arrow_back),
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
           tooltip: t.game.backToList,
         ),
-        title: Text(t.game.title),
       ),
-      body: Column(
-        children: [
-          Expanded(flex: 2, child: GameContainer(game: game)),
-          const Divider(height: 1),
-          Expanded(child: TrpgChatSurface(sessionId: sessionId)),
-        ],
-      ),
+      body: NovelGameSurface(sessionId: sessionId, game: game),
     );
   }
 }

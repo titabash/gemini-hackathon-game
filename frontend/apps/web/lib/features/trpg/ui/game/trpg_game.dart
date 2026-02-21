@@ -1,6 +1,8 @@
 import 'dart:math';
+import 'dart:ui' as ui;
 
 import 'package:core_game/core_game.dart';
+import 'package:core_utils/core_utils.dart';
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flame/particles.dart' as flame_particles;
@@ -8,19 +10,16 @@ import 'package:flutter/material.dart';
 
 import '../../model/trpg_visual_state.dart';
 
-/// TRPG game canvas that renders an atmospheric scene with player/NPC tokens.
+/// TRPG game canvas for the novel-game style.
 ///
-/// Receives visual state updates from [TrpgSessionNotifier] via a
-/// [ValueNotifier] and updates the game components accordingly.
+/// Renders an atmospheric background (gradient or generated image),
+/// NPC character tokens, and ambient particle effects.
 class TrpgGame extends BaseGame {
   TrpgGame({required this.visualState});
 
   final ValueNotifier<TrpgVisualState> visualState;
 
   late final _SceneBackground _background;
-  late final _PlayerToken _playerToken;
-  late final _LocationHud _locationHud;
-  late final _HpBar _hpBar;
   final List<_NpcToken> _npcTokens = [];
 
   final _random = Random();
@@ -34,11 +33,7 @@ class TrpgGame extends BaseGame {
     await super.onLoad();
 
     _background = _SceneBackground();
-    _playerToken = _PlayerToken(name: visualState.value.playerName);
-    _locationHud = _LocationHud();
-    _hpBar = _HpBar();
-
-    await addAll([_background, _playerToken, _locationHud, _hpBar]);
+    await add(_background);
 
     visualState.addListener(_onVisualStateChanged);
     _onVisualStateChanged();
@@ -57,9 +52,7 @@ class TrpgGame extends BaseGame {
   void _onVisualStateChanged() {
     final state = visualState.value;
     _background.updateScene(state.sceneDescription);
-    _locationHud.updateLocation(state.locationName);
-    _playerToken.updateName(state.playerName);
-    _hpBar.updateHp(state.hp, state.maxHp);
+    _background.updateBackgroundImage(state.backgroundImageUrl);
     _updateNpcs(state.activeNpcs);
   }
 
@@ -70,8 +63,13 @@ class TrpgGame extends BaseGame {
     _npcTokens.clear();
 
     for (var i = 0; i < npcs.length; i++) {
-      final angle = (2 * pi / max(npcs.length, 1)) * i - pi / 2;
-      final npc = _NpcToken(name: npcs[i].name, orbitAngle: angle);
+      // Place NPCs along the bottom third, spread horizontally
+      final xFraction = (i + 1) / (npcs.length + 1);
+      final npc = _NpcToken(
+        name: npcs[i].name,
+        xFraction: xFraction,
+        imageUrl: npcs[i].imageUrl,
+      );
       _npcTokens.add(npc);
       add(npc);
     }
@@ -119,6 +117,10 @@ class _SceneBackground extends PositionComponent with HasGameReference {
   Color _bottomColor = const Color(0xFF1A1A3E);
   List<Color> _particleColors = const [Color(0xFF6644AA), Color(0xFF4488CC)];
 
+  String? _imageUrl;
+  ui.Image? _loadedImage;
+  String? _loadedImageUrl;
+
   List<Color> get particleColors => _particleColors;
 
   @override
@@ -130,6 +132,33 @@ class _SceneBackground extends PositionComponent with HasGameReference {
   @override
   void render(Canvas canvas) {
     final rect = Rect.fromLTWH(0, 0, size.x, size.y);
+
+    // If a background image is loaded, draw it covering the full area
+    if (_loadedImage != null) {
+      final imgRect = Rect.fromLTWH(
+        0,
+        0,
+        _loadedImage!.width.toDouble(),
+        _loadedImage!.height.toDouble(),
+      );
+      // Cover fit
+      final scale = max(
+        size.x / _loadedImage!.width,
+        size.y / _loadedImage!.height,
+      );
+      final scaledW = _loadedImage!.width * scale;
+      final scaledH = _loadedImage!.height * scale;
+      final dx = (size.x - scaledW) / 2;
+      final dy = (size.y - scaledH) / 2;
+      final dstRect = Rect.fromLTWH(dx, dy, scaledW, scaledH);
+
+      canvas.drawImageRect(_loadedImage!, imgRect, dstRect, Paint());
+      // Draw a slight dark overlay for text readability
+      canvas.drawRect(rect, Paint()..color = const Color(0x44000000));
+      return;
+    }
+
+    // Fallback: gradient background
     final gradient = LinearGradient(
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
@@ -142,164 +171,142 @@ class _SceneBackground extends PositionComponent with HasGameReference {
     if (description == null) return;
     final lower = description.toLowerCase();
 
-    if (lower.contains('forest') || lower.contains('woods')) {
+    if (_matchesAny(lower, ['forest', 'woods', '森', '林'])) {
       _topColor = const Color(0xFF071A07);
       _bottomColor = const Color(0xFF1A3A1A);
       _particleColors = const [Color(0xFF55AA55), Color(0xFF88CC44)];
-    } else if (lower.contains('cave') || lower.contains('dungeon')) {
+    } else if (_matchesAny(lower, ['cave', 'dungeon', '洞窟', 'ダンジョン'])) {
       _topColor = const Color(0xFF0A0A0A);
       _bottomColor = const Color(0xFF1A1A2E);
       _particleColors = const [Color(0xFF555577), Color(0xFF887744)];
-    } else if (lower.contains('town') || lower.contains('village')) {
+    } else if (_matchesAny(lower, [
+      'town',
+      'village',
+      'tavern',
+      'bar',
+      '町',
+      '村',
+      '酒場',
+      '宿',
+    ])) {
       _topColor = const Color(0xFF1A1408);
       _bottomColor = const Color(0xFF2A2010);
       _particleColors = const [Color(0xFFCC9944), Color(0xFFEEBB66)];
-    } else if (lower.contains('mountain') || lower.contains('peak')) {
+    } else if (_matchesAny(lower, ['mountain', 'peak', '山', '峰'])) {
       _topColor = const Color(0xFF1A1A2A);
       _bottomColor = const Color(0xFF3A3A4A);
       _particleColors = const [Color(0xFFAABBCC), Color(0xFF8899AA)];
-    } else if (lower.contains('ocean') ||
-        lower.contains('sea') ||
-        lower.contains('lake')) {
+    } else if (_matchesAny(lower, ['ocean', 'sea', 'lake', '海', '湖'])) {
       _topColor = const Color(0xFF0A1A2A);
       _bottomColor = const Color(0xFF0A2A4A);
       _particleColors = const [Color(0xFF4488CC), Color(0xFF66AAEE)];
-    } else if (lower.contains('desert') || lower.contains('sand')) {
+    } else if (_matchesAny(lower, ['desert', 'sand', '砂漠', '砂'])) {
       _topColor = const Color(0xFF2A1A08);
       _bottomColor = const Color(0xFF4A3018);
       _particleColors = const [Color(0xFFCCAA55), Color(0xFFEECC77)];
-    } else if (lower.contains('castle') || lower.contains('throne')) {
+    } else if (_matchesAny(lower, ['castle', 'throne', '城', '玉座'])) {
       _topColor = const Color(0xFF1A0A1A);
       _bottomColor = const Color(0xFF2A1A2A);
       _particleColors = const [Color(0xFFAA6688), Color(0xFFCC88AA)];
     }
   }
-}
 
-// ---------------------------------------------------------------------------
-// Player Token
-// ---------------------------------------------------------------------------
+  static bool _matchesAny(String text, List<String> keywords) {
+    return keywords.any(text.contains);
+  }
 
-class _PlayerToken extends PositionComponent with HasGameReference {
-  _PlayerToken({required String name}) : _name = name;
+  void updateBackgroundImage(String? url) {
+    if (url == _imageUrl) return;
+    _imageUrl = url;
+    if (url == null || url.isEmpty) {
+      _loadedImage = null;
+      _loadedImageUrl = null;
+      return;
+    }
+    _loadImageFromUrl(url);
+  }
 
-  String _name;
-  static const double _radius = 28;
-
-  final _bodyPaint = Paint()
-    ..color = const Color(0xFF4488FF)
-    ..style = PaintingStyle.fill;
-
-  final _borderPaint = Paint()
-    ..color = const Color(0xFF88BBFF)
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 2.5;
-
-  final _glowPaint = Paint()
-    ..color = const Color(0x334488FF)
-    ..style = PaintingStyle.fill;
-
-  late TextPaint _textPaint;
-
-  @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-    size = Vector2.all(_radius * 2);
-    anchor = Anchor.center;
-    priority = 10;
-
-    _textPaint = TextPaint(
-      style: const TextStyle(
-        fontSize: 20,
-        color: Colors.white,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-
-    add(
-      MoveEffect.by(
-        Vector2(0, -4),
-        EffectController(
-          duration: 2,
-          reverseDuration: 2,
-          infinite: true,
-          curve: Curves.easeInOut,
+  Future<void> _loadImageFromUrl(String url) async {
+    if (_loadedImageUrl == url) return;
+    Logger.debug('Loading background image: $url');
+    try {
+      final provider = NetworkImage(url);
+      final stream = provider.resolve(ImageConfiguration.empty);
+      stream.addListener(
+        ImageStreamListener(
+          (info, _) {
+            _loadedImage = info.image;
+            _loadedImageUrl = url;
+            Logger.debug('Background image loaded successfully');
+          },
+          onError: (error, stackTrace) {
+            Logger.warning(
+              'Failed to load background image: $url',
+              error,
+              stackTrace,
+            );
+          },
         ),
-      ),
-    );
-  }
-
-  @override
-  void onGameResize(Vector2 gameSize) {
-    super.onGameResize(gameSize);
-    position = gameSize / 2;
-  }
-
-  @override
-  void render(Canvas canvas) {
-    // Glow
-    canvas.drawCircle(const Offset(_radius, _radius), _radius + 8, _glowPaint);
-    // Body
-    canvas.drawCircle(const Offset(_radius, _radius), _radius, _bodyPaint);
-    // Border
-    canvas.drawCircle(const Offset(_radius, _radius), _radius, _borderPaint);
-    // Initial letter
-    final initial = _name.isNotEmpty ? _name[0].toUpperCase() : '?';
-    _textPaint.render(
-      canvas,
-      initial,
-      Vector2(_radius, _radius),
-      anchor: Anchor.center,
-    );
-  }
-
-  void updateName(String name) {
-    _name = name;
+      );
+    } catch (e, st) {
+      Logger.warning('Background image load exception: $url', e, st);
+    }
   }
 }
 
 // ---------------------------------------------------------------------------
-// NPC Token
+// NPC Standing Portrait (novel-game style)
 // ---------------------------------------------------------------------------
 
 class _NpcToken extends PositionComponent with HasGameReference {
-  _NpcToken({required this.name, required this.orbitAngle});
+  _NpcToken({required this.name, required this.xFraction, this.imageUrl});
 
   final String name;
-  final double orbitAngle;
-  static const double _radius = 20;
-  static const double _orbitDistance = 100;
+  final String? imageUrl;
+
+  /// Horizontal position as a fraction of screen width (0.0 - 1.0).
+  final double xFraction;
+
+  /// Height of the standing portrait relative to screen height.
+  static const double _heightRatio = 0.65;
+
+  /// Radius for the fallback circle when no image is available.
+  static const double _fallbackRadius = 32;
 
   final _bodyPaint = Paint()
     ..color = const Color(0xFFCC6644)
     ..style = PaintingStyle.fill;
 
-  final _borderPaint = Paint()
-    ..color = const Color(0xFFEE9966)
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 2;
+  final _shadowPaint = Paint()
+    ..color = const Color(0x44000000)
+    ..style = PaintingStyle.fill;
 
   late TextPaint _namePaint;
   late TextPaint _initialPaint;
 
+  ui.Image? _portrait;
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-    size = Vector2.all(_radius * 2);
-    anchor = Anchor.center;
+    anchor = Anchor.bottomCenter;
     priority = 9;
 
     _namePaint = TextPaint(
       style: const TextStyle(
-        fontSize: 11,
-        color: Colors.white70,
-        fontWeight: FontWeight.w500,
+        fontSize: 14,
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+        shadows: [
+          Shadow(color: Colors.black, blurRadius: 8),
+          Shadow(color: Colors.black, blurRadius: 4),
+        ],
       ),
     );
 
     _initialPaint = TextPaint(
       style: const TextStyle(
-        fontSize: 16,
+        fontSize: 22,
         color: Colors.white,
         fontWeight: FontWeight.bold,
       ),
@@ -307,174 +314,129 @@ class _NpcToken extends PositionComponent with HasGameReference {
 
     add(
       MoveEffect.by(
-        Vector2(0, -3),
+        Vector2(0, -2),
         EffectController(
-          duration: 2.5,
-          reverseDuration: 2.5,
+          duration: 3.0,
+          reverseDuration: 3.0,
           infinite: true,
           curve: Curves.easeInOut,
-          startDelay: orbitAngle.abs() * 0.3,
         ),
       ),
     );
+
+    _loadPortrait();
+  }
+
+  void _loadPortrait() {
+    final url = imageUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      final provider = NetworkImage(url);
+      final stream = provider.resolve(ImageConfiguration.empty);
+      stream.addListener(
+        ImageStreamListener(
+          (info, _) {
+            _portrait = info.image;
+            _recalculateSize();
+          },
+          onError: (error, stackTrace) {
+            Logger.debug('Failed to load NPC portrait: $url', error);
+          },
+        ),
+      );
+    } catch (e) {
+      Logger.debug('NPC portrait load exception: $url', e);
+    }
+  }
+
+  void _recalculateSize() {
+    if (!isMounted) return;
+    final gameSize = game.size;
+    final portraitHeight = gameSize.y * _heightRatio;
+
+    final portrait = _portrait;
+    if (portrait != null) {
+      final aspect = portrait.width / portrait.height;
+      size = Vector2(portraitHeight * aspect, portraitHeight);
+    } else {
+      size = Vector2(_fallbackRadius * 2, _fallbackRadius * 2);
+    }
   }
 
   @override
   void onGameResize(Vector2 gameSize) {
     super.onGameResize(gameSize);
-    final center = gameSize / 2;
-    position = Vector2(
-      center.x + cos(orbitAngle) * _orbitDistance,
-      center.y + sin(orbitAngle) * _orbitDistance,
-    );
+    position = Vector2(gameSize.x * xFraction, gameSize.y);
+    _recalculateSize();
   }
 
   @override
   void render(Canvas canvas) {
-    // Body
-    canvas.drawCircle(const Offset(_radius, _radius), _radius, _bodyPaint);
-    // Border
-    canvas.drawCircle(const Offset(_radius, _radius), _radius, _borderPaint);
-    // Initial
-    final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-    _initialPaint.render(
-      canvas,
-      initial,
-      Vector2(_radius, _radius),
-      anchor: Anchor.center,
-    );
-    // Name below
-    _namePaint.render(
-      canvas,
-      name,
-      Vector2(_radius, _radius * 2 + 10),
-      anchor: Anchor.center,
-    );
-  }
-}
+    final portrait = _portrait;
+    if (portrait != null) {
+      // Draw foot shadow
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(size.x / 2, size.y + 2),
+          width: size.x * 0.5,
+          height: 8,
+        ),
+        _shadowPaint,
+      );
 
-// ---------------------------------------------------------------------------
-// Location HUD
-// ---------------------------------------------------------------------------
+      // Draw standing portrait (full body, no clipping)
+      final src = Rect.fromLTWH(
+        0,
+        0,
+        portrait.width.toDouble(),
+        portrait.height.toDouble(),
+      );
+      final dst = Rect.fromLTWH(0, 0, size.x, size.y);
+      canvas.drawImageRect(portrait, src, dst, Paint());
 
-class _LocationHud extends PositionComponent with HasGameReference {
-  String _location = '';
+      // Name plate below feet
+      _namePaint.render(
+        canvas,
+        name,
+        Vector2(size.x / 2, size.y + 16),
+        anchor: Anchor.center,
+      );
+    } else {
+      // Fallback: small circle with initial
+      final cx = size.x / 2;
+      final cy = size.y / 2;
 
-  late TextPaint _textPaint;
+      canvas.drawOval(
+        Rect.fromCenter(
+          center: Offset(cx, size.y + 2),
+          width: _fallbackRadius * 1.5,
+          height: 6,
+        ),
+        _shadowPaint,
+      );
 
-  @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-    priority = 20;
-    _textPaint = TextPaint(
-      style: const TextStyle(
-        fontSize: 18,
-        color: Colors.white70,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 1.2,
-        shadows: [Shadow(color: Colors.black, blurRadius: 4)],
-      ),
-    );
-  }
+      canvas.drawCircle(Offset(cx, cy), _fallbackRadius, _bodyPaint);
 
-  @override
-  void onGameResize(Vector2 gameSize) {
-    super.onGameResize(gameSize);
-    position = Vector2(gameSize.x / 2, 24);
-  }
+      final borderPaint = Paint()
+        ..color = const Color(0xFFEE9966)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5;
+      canvas.drawCircle(Offset(cx, cy), _fallbackRadius, borderPaint);
 
-  @override
-  void render(Canvas canvas) {
-    if (_location.isEmpty) return;
-    _textPaint.render(canvas, _location, Vector2.zero(), anchor: Anchor.center);
-  }
+      final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+      _initialPaint.render(
+        canvas,
+        initial,
+        Vector2(cx, cy),
+        anchor: Anchor.center,
+      );
 
-  void updateLocation(String? location) {
-    _location = location ?? '';
-  }
-}
-
-// ---------------------------------------------------------------------------
-// HP Bar
-// ---------------------------------------------------------------------------
-
-class _HpBar extends PositionComponent with HasGameReference {
-  int _hp = 100;
-  int _maxHp = 100;
-
-  static const double _barWidth = 120;
-  static const double _barHeight = 10;
-
-  final _bgPaint = Paint()
-    ..color = const Color(0x66000000)
-    ..style = PaintingStyle.fill;
-
-  final _fillPaint = Paint()
-    ..color = const Color(0xFF44CC44)
-    ..style = PaintingStyle.fill;
-
-  final _borderPaint = Paint()
-    ..color = const Color(0x88FFFFFF)
-    ..style = PaintingStyle.stroke
-    ..strokeWidth = 1;
-
-  late TextPaint _textPaint;
-
-  @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-    size = Vector2(_barWidth, _barHeight + 20);
-    anchor = Anchor.bottomLeft;
-    priority = 20;
-
-    _textPaint = TextPaint(
-      style: const TextStyle(
-        fontSize: 11,
-        color: Colors.white70,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-  }
-
-  @override
-  void onGameResize(Vector2 gameSize) {
-    super.onGameResize(gameSize);
-    position = Vector2(16, gameSize.y - 12);
-  }
-
-  @override
-  void render(Canvas canvas) {
-    // Label
-    _textPaint.render(canvas, 'HP', Vector2.zero());
-
-    // Background
-    final bgRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(0, 14, _barWidth, _barHeight),
-      const Radius.circular(4),
-    );
-    canvas.drawRRect(bgRect, _bgPaint);
-
-    // Fill
-    final ratio = _maxHp > 0 ? (_hp / _maxHp).clamp(0.0, 1.0) : 0.0;
-    final fillRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 14, _barWidth * ratio, _barHeight),
-      const Radius.circular(4),
-    );
-
-    _fillPaint.color = ratio > 0.5
-        ? const Color(0xFF44CC44)
-        : ratio > 0.25
-        ? const Color(0xFFCCAA22)
-        : const Color(0xFFCC4444);
-
-    canvas.drawRRect(fillRect, _fillPaint);
-
-    // Border
-    canvas.drawRRect(bgRect, _borderPaint);
-  }
-
-  void updateHp(int hp, int maxHp) {
-    _hp = hp;
-    _maxHp = maxHp;
+      _namePaint.render(
+        canvas,
+        name,
+        Vector2(cx, size.y + 14),
+        anchor: Anchor.center,
+      );
+    }
   }
 }

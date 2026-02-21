@@ -4,11 +4,12 @@ import 'dart:convert';
 import 'package:core_api/core_api.dart';
 import 'package:core_utils/core_utils.dart';
 
-/// GM turn endpoint URL from environment.
-const gmServerUrl = String.fromEnvironment(
-  'GM_SERVER_URL',
-  defaultValue: 'http://localhost:8000/api/gm/turn',
+/// GM turn endpoint URL derived from BACKEND_URL.
+const _backendUrl = String.fromEnvironment(
+  'BACKEND_URL',
+  defaultValue: 'http://localhost:4040',
 );
+const gmServerUrl = '$_backendUrl/api/gm/turn';
 
 /// Parsed SSE event from the GM backend.
 sealed class GmEvent {
@@ -45,6 +46,12 @@ class GmErrorEvent extends GmEvent {
   final String message;
 }
 
+/// Background image path from storage ({bucket}/{objectPath}).
+class GmImageEvent extends GmEvent {
+  const GmImageEvent(this.path);
+  final String path;
+}
+
 /// Sends a GM turn request and returns a stream of [GmEvent].
 Stream<GmEvent> sendGmTurn({
   required SseClientFactory sseFactory,
@@ -70,12 +77,20 @@ Stream<GmEvent> sendGmTurn({
     headers: headers,
   );
 
+  var done = false;
   await for (final sseMessage in connection.messages) {
     final event = _parseSseMessage(sseMessage);
-    if (event != null) {
-      yield event;
-      if (event is GmDoneEvent) break;
+    if (event == null) continue;
+
+    yield event;
+
+    if (event is GmDoneEvent) {
+      done = true;
+      continue;
     }
+
+    // After done, close once imageUpdate is received
+    if (done && event is GmImageEvent) break;
   }
 }
 
@@ -103,6 +118,7 @@ GmEvent? _parseSseMessage(SseMessage message) {
       'stateUpdate' => GmStateUpdateEvent(
         decoded['data'] as Map<String, dynamic>? ?? {},
       ),
+      'imageUpdate' => GmImageEvent(decoded['path'] as String? ?? ''),
       'done' => const GmDoneEvent(),
       'error' => GmErrorEvent(decoded['content'] as String? ?? 'Unknown'),
       _ => null,

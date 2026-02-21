@@ -469,6 +469,15 @@ class TranslationsTrpgEn {
 
 	/// en: 'The GM is thinking...'
 	String get processing => 'The GM is thinking...';
+
+	/// en: 'Tap to continue'
+	String get tapToContinue => 'Tap to continue';
+
+	/// en: 'Narrator'
+	String get narrator => 'Narrator';
+
+	/// en: 'Message Log'
+	String get messageLog => 'Message Log';
 }
 
 // Path: error
@@ -615,6 +624,9 @@ extension on Translations {
 			'trpg.send' => 'Send',
 			'trpg.emptyState' => 'Your adventure begins...',
 			'trpg.processing' => 'The GM is thinking...',
+			'trpg.tapToContinue' => 'Tap to continue',
+			'trpg.narrator' => 'Narrator',
+			'trpg.messageLog' => 'Message Log',
 			'error.generic' => 'An error occurred',
 			'error.network' => 'Network error',
 			'error.notFound' => 'Not found',

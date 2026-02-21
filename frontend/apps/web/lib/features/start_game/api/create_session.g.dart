@@ -23,7 +23,7 @@ final class CreateSessionProvider
         argument: null,
         retry: null,
         name: r'createSessionProvider',
-        isAutoDispose: true,
+        isAutoDispose: false,
         dependencies: null,
         $allTransitiveDependencies: null,
       );
@@ -36,7 +36,7 @@ final class CreateSessionProvider
   CreateSession create() => CreateSession();
 }
 
-String _$createSessionHash() => r'2d940efc1cbbb5dbd9287b3aaf32fdad27ff54e7';
+String _$createSessionHash() => r'c63b3997b3ecef0ac6ce7836b444f25ed40d7473';
 
 /// ゲームセッションを作成するProvider
 

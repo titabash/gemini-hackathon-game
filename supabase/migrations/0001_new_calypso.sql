@@ -1,0 +1,1 @@
+ALTER TYPE "public"."input_type" ADD VALUE 'start' BEFORE 'do';

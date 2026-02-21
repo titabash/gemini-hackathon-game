@@ -196,7 +196,8 @@ export type Database = {
           location_y: number
           name: string
           profile: Json
-          session_id: string
+          scenario_id: string | null
+          session_id: string | null
           state: Json
           updated_at: string
         }
@@ -210,7 +211,8 @@ export type Database = {
           location_y?: number
           name: string
           profile: Json
-          session_id: string
+          scenario_id?: string | null
+          session_id?: string | null
           state: Json
           updated_at?: string
         }
@@ -224,11 +226,19 @@ export type Database = {
           location_y?: number
           name?: string
           profile?: Json
-          session_id?: string
+          scenario_id?: string | null
+          session_id?: string | null
           state?: Json
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "npcs_scenario_id_scenarios_id_fk"
+            columns: ["scenario_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "npcs_session_id_sessions_id_fk"
             columns: ["session_id"]
@@ -556,6 +566,7 @@ export type Database = {
     Enums: {
       gm_decision_type: "narrate" | "choice" | "roll" | "clarify" | "repair"
       input_type:
+        | "start"
         | "do"
         | "say"
         | "choice"
@@ -696,6 +707,7 @@ export const Constants = {
     Enums: {
       gm_decision_type: ["narrate", "choice", "roll", "clarify", "repair"],
       input_type: [
+        "start",
         "do",
         "say",
         "choice",

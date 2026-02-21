@@ -54,6 +54,7 @@ class Scenarios(SQLModel, table=True):
 
     users: Optional['Users'] = Relationship(back_populates='scenarios')
     sessions: list['Sessions'] = Relationship(back_populates='scenario')
+    npcs: list['Npcs'] = Relationship(back_populates='scenario')
     scene_backgrounds: list['SceneBackgrounds'] = Relationship(back_populates='scenario')
 
 
@@ -129,12 +130,13 @@ class Items(SQLModel, table=True):
 
 class Npcs(SQLModel, table=True):
     __table_args__ = (
+        CheckConstraint('scenario_id IS NOT NULL OR session_id IS NOT NULL', name='npcs_at_least_one_parent'),
+        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='CASCADE', name='npcs_scenario_id_scenarios_id_fk'),
         ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='npcs_session_id_sessions_id_fk'),
         PrimaryKeyConstraint('id', name='npcs_pkey')
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
-    session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
     name: str = Field(sa_column=Column('name', Text, nullable=False))
     profile: dict = Field(sa_column=Column('profile', JSONB, nullable=False))
     goals: dict = Field(sa_column=Column('goals', JSONB, nullable=False))
@@ -144,8 +146,11 @@ class Npcs(SQLModel, table=True):
     is_active: bool = Field(sa_column=Column('is_active', Boolean, nullable=False, server_default=text('true')))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    session_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('session_id', Uuid))
     image_path: Optional[str] = Field(default=None, sa_column=Column('image_path', Text))
+    scenario_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('scenario_id', Uuid))
 
+    scenario: Optional['Scenarios'] = Relationship(back_populates='npcs')
     session: Optional['Sessions'] = Relationship(back_populates='npcs')
     npc_relationships: Optional['NpcRelationships'] = Relationship(sa_relationship_kwargs={'uselist': False}, back_populates='npc')
 
@@ -221,7 +226,7 @@ class Turns(SQLModel, table=True):
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
     session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
     turn_number: int = Field(sa_column=Column('turn_number', Integer, nullable=False))
-    input_type: str = Field(sa_column=Column('input_type', Enum('do', 'say', 'choice', 'roll_result', 'clarify_answer', 'system', name='input_type'), nullable=False))
+    input_type: str = Field(sa_column=Column('input_type', Enum('start', 'do', 'say', 'choice', 'roll_result', 'clarify_answer', 'system', name='input_type'), nullable=False))
     input_text: str = Field(sa_column=Column('input_text', Text, nullable=False, server_default=text("''::text")))
     gm_decision_type: str = Field(sa_column=Column('gm_decision_type', Enum('narrate', 'choice', 'roll', 'clarify', 'repair', name='gm_decision_type'), nullable=False))
     output: dict = Field(sa_column=Column('output', JSONB, nullable=False))

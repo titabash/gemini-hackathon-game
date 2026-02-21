@@ -232,12 +232,15 @@ export const allPolicyPlayerCharacters = pgPolicy(
 ).link(playerCharacters);
 
 // ===== NPCs テーブル（RLS付き） =====
-// NPCインスタンス（セッション毎）
+// NPCテンプレート（シナリオ定義）+ セッション固有インスタンス
 export const npcs = pgTable("npcs", {
   id: uuid("id").primaryKey().defaultRandom(),
-  sessionId: uuid("session_id")
-    .notNull()
-    .references(() => sessions.id, { onDelete: "cascade" }),
+  scenarioId: uuid("scenario_id").references(() => scenarios.id, {
+    onDelete: "cascade",
+  }),
+  sessionId: uuid("session_id").references(() => sessions.id, {
+    onDelete: "cascade",
+  }),
   name: text("name").notNull(),
   imagePath: text("image_path"),
   profile: jsonb("profile").notNull(),
@@ -258,18 +261,35 @@ export const npcs = pgTable("npcs", {
   })
     .notNull()
     .defaultNow(),
-}).enableRLS();
+}, () => ({
+  atLeastOneParent: check(
+    "npcs_at_least_one_parent",
+    sql`scenario_id IS NOT NULL OR session_id IS NOT NULL`,
+  ),
+})).enableRLS();
 
 // ===== NPCs RLS ポリシー =====
 
+// シナリオ定義のNPC: 公開シナリオまたは自分のシナリオ
+// セッション固有のNPC: 自分のセッション
 export const selectPolicyNpcs = pgPolicy("select_policy_npcs", {
   for: "select",
-  to: "authenticated",
+  to: ["anon", "authenticated"],
   using: sql`
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.id = npcs.session_id
-      AND sessions.user_id = (SELECT auth.uid())
+    (
+      scenario_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM scenarios
+        WHERE scenarios.id = npcs.scenario_id
+        AND (scenarios.is_public = true OR scenarios.created_by = (SELECT auth.uid()))
+      )
+    )
+    OR
+    (
+      session_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sessions
+        WHERE sessions.id = npcs.session_id
+        AND sessions.user_id = (SELECT auth.uid())
+      )
     )
   `,
 }).link(npcs);
@@ -278,20 +298,50 @@ export const allPolicyNpcs = pgPolicy("all_policy_npcs", {
   for: "all",
   to: "authenticated",
   using: sql`
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.id = npcs.session_id
-      AND sessions.user_id = (SELECT auth.uid())
+    (
+      scenario_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM scenarios
+        WHERE scenarios.id = npcs.scenario_id
+        AND scenarios.created_by = (SELECT auth.uid())
+      )
+    )
+    OR
+    (
+      session_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sessions
+        WHERE sessions.id = npcs.session_id
+        AND sessions.user_id = (SELECT auth.uid())
+      )
     )
   `,
   withCheck: sql`
-    EXISTS (
-      SELECT 1 FROM sessions
-      WHERE sessions.id = npcs.session_id
-      AND sessions.user_id = (SELECT auth.uid())
+    (
+      scenario_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM scenarios
+        WHERE scenarios.id = npcs.scenario_id
+        AND scenarios.created_by = (SELECT auth.uid())
+      )
+    )
+    OR
+    (
+      session_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM sessions
+        WHERE sessions.id = npcs.session_id
+        AND sessions.user_id = (SELECT auth.uid())
+      )
     )
   `,
 }).link(npcs);
+
+// シードデータ投入用（service_role）
+export const insertPolicyNpcsServiceRole = pgPolicy(
+  "insert_policy_npcs_service_role",
+  {
+    for: "insert",
+    to: "service_role",
+    withCheck: sql`true`,
+  },
+).link(npcs);
 
 // ===== NPC Relationships テーブル（RLS付き） =====
 // NPC→PC関係値（シングルプレイヤーのため1NPC:1関係）

@@ -17,6 +17,7 @@ from domain.entity.gm_prompts import (
     CONTEXT_TEMPLATE,
 )
 from domain.entity.gm_types import (
+    BackgroundResourceSummary,
     GameContext,
     ItemSummary,
     NpcSummary,
@@ -33,6 +34,7 @@ from gateway.npc_gateway import NpcGateway
 from gateway.objective_gateway import ObjectiveGateway
 from gateway.player_character_gateway import PlayerCharacterGateway
 from gateway.scenario_gateway import ScenarioGateway
+from gateway.scene_background_gateway import SceneBackgroundGateway
 from gateway.session_gateway import SessionGateway
 from gateway.turn_gateway import TurnGateway
 from util.logging import get_logger
@@ -77,6 +79,7 @@ class ContextService:
         self._objective_gw = ObjectiveGateway()
         self._item_gw = ItemGateway()
         self._scenario_gw = ScenarioGateway()
+        self._bg_gw = SceneBackgroundGateway()
 
     def build_context(
         self,
@@ -112,6 +115,10 @@ class ContextService:
             player_items=self._load_items(db, session_id),
             current_turn_number=int(sess.current_turn_number),
             current_state=sess.current_state,
+            available_backgrounds=self._load_backgrounds(
+                db,
+                sess.scenario_id,
+            ),
         )
 
     def build_prompt(
@@ -121,32 +128,37 @@ class ContextService:
         input_text: str,
     ) -> str:
         """Format CONTEXT_TEMPLATE with GameContext fields."""
-        return CONTEXT_TEMPLATE.format(
-            scenario_title=context.scenario_title,
-            scenario_setting=context.scenario_setting,
-            system_prompt=context.system_prompt,
-            win_conditions=json.dumps(context.win_conditions),
-            fail_conditions=json.dumps(context.fail_conditions),
-            plot_essentials=json.dumps(context.plot_essentials),
-            short_term_summary=context.short_term_summary,
-            confirmed_facts=json.dumps(context.confirmed_facts),
-            recent_turns=self._format_turns(context.recent_turns),
-            player_name=context.player.name,
-            player_stats=json.dumps(context.player.stats),
-            player_status_effects=", ".join(
-                context.player.status_effects,
-            ),
-            player_x=context.player.location_x,
-            player_y=context.player.location_y,
-            active_npcs=self._format_npcs(context.active_npcs),
-            active_objectives=self._format_objectives(
-                context.active_objectives,
-            ),
-            player_items=self._format_items(context.player_items),
-            current_turn_number=context.current_turn_number,
-            current_state=json.dumps(context.current_state),
-            input_type=input_type,
-            input_text=input_text,
+        return str(
+            CONTEXT_TEMPLATE.format(
+                scenario_title=context.scenario_title,
+                scenario_setting=context.scenario_setting,
+                system_prompt=context.system_prompt,
+                win_conditions=json.dumps(context.win_conditions),
+                fail_conditions=json.dumps(context.fail_conditions),
+                plot_essentials=json.dumps(context.plot_essentials),
+                short_term_summary=context.short_term_summary,
+                confirmed_facts=json.dumps(context.confirmed_facts),
+                recent_turns=self._format_turns(context.recent_turns),
+                player_name=context.player.name,
+                player_stats=json.dumps(context.player.stats),
+                player_status_effects=", ".join(
+                    context.player.status_effects,
+                ),
+                player_x=context.player.location_x,
+                player_y=context.player.location_y,
+                active_npcs=self._format_npcs(context.active_npcs),
+                active_objectives=self._format_objectives(
+                    context.active_objectives,
+                ),
+                player_items=self._format_items(context.player_items),
+                current_turn_number=context.current_turn_number,
+                current_state=json.dumps(context.current_state),
+                available_backgrounds=self._format_backgrounds(
+                    context.available_backgrounds,
+                ),
+                input_type=input_type,
+                input_text=input_text,
+            )
         )
 
     def should_compress(
@@ -213,7 +225,7 @@ class ContextService:
         self,
         db: Session,
         session_id: uuid.UUID,
-    ) -> dict:
+    ) -> dict[str, object]:
         ctx = self._context_gw.get_by_session(db, session_id)
         return dict(ctx.plot_essentials) if ctx else {}
 
@@ -229,7 +241,7 @@ class ContextService:
         self,
         db: Session,
         session_id: uuid.UUID,
-    ) -> dict:
+    ) -> dict[str, object]:
         ctx = self._context_gw.get_by_session(db, session_id)
         return dict(ctx.confirmed_facts) if ctx else {}
 
@@ -273,7 +285,7 @@ class ContextService:
         result: list[NpcSummary] = []
         for npc in npcs:
             pair = self._npc_gw.get_with_relationship(db, npc.id)
-            rel_dict: dict = {}
+            rel_dict: dict[str, object] = {}
             if pair and pair[1]:
                 rel = pair[1]
                 rel_dict = {
@@ -323,6 +335,22 @@ class ContextService:
             for i in rows
         ]
 
+    def _load_backgrounds(
+        self,
+        db: Session,
+        scenario_id: uuid.UUID,
+    ) -> list[BackgroundResourceSummary]:
+        """Load all base-asset backgrounds for the scenario."""
+        rows = self._bg_gw.find_all_by_scenario(db, scenario_id)
+        return [
+            BackgroundResourceSummary(
+                id=str(bg.id),
+                location_name=bg.location_name,
+                description=bg.description,
+            )
+            for bg in rows
+        ]
+
     @staticmethod
     def _format_turns(turns: list[TurnSummary]) -> str:
         return "\n".join(
@@ -350,3 +378,14 @@ class ContextService:
     @staticmethod
     def _format_items(items: list[ItemSummary]) -> str:
         return "\n".join(f"- {i.name} ({i.item_type}) x{i.quantity}" for i in items)
+
+    @staticmethod
+    def _format_backgrounds(
+        bgs: list[BackgroundResourceSummary],
+    ) -> str:
+        """Format background list for prompt injection."""
+        if not bgs:
+            return "(no backgrounds available)"
+        return "\n".join(
+            f"- id={b.id} | {b.location_name}: {b.description}" for b in bgs
+        )

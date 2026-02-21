@@ -125,6 +125,12 @@ public = true
 file_size_limit = "2MiB"
 allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
 
+# AI生成画像（シーン背景）
+[storage.buckets.generated-images]
+public = true
+file_size_limit = "5MiB"
+allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true

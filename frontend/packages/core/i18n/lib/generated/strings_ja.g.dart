@@ -256,6 +256,9 @@ class _TranslationsTrpgJa extends TranslationsTrpgEn {
 	@override String get send => '送信';
 	@override String get emptyState => '冒険が始まります...';
 	@override String get processing => 'GMが考えています...';
+	@override String get tapToContinue => 'タップして続ける';
+	@override String get narrator => 'ナレーター';
+	@override String get messageLog => 'メッセージログ';
 }
 
 // Path: error
@@ -388,6 +391,9 @@ extension on TranslationsJa {
 			'trpg.send' => '送信',
 			'trpg.emptyState' => '冒険が始まります...',
 			'trpg.processing' => 'GMが考えています...',
+			'trpg.tapToContinue' => 'タップして続ける',
+			'trpg.narrator' => 'ナレーター',
+			'trpg.messageLog' => 'メッセージログ',
 			'error.generic' => 'エラーが発生しました',
 			'error.network' => 'ネットワークエラー',
 			'error.notFound' => '見つかりません',
