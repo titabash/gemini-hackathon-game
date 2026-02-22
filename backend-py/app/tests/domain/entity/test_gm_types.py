@@ -6,6 +6,7 @@ for all Gemini structured output types.
 
 from src.domain.entity.gm_types import (
     ChoiceOption,
+    FlagChange,
     GameContext,
     GmDecisionResponse,
     GmTurnRequest,
@@ -20,7 +21,6 @@ from src.domain.entity.gm_types import (
     PlayerSummary,
     RelationshipChange,
     RepairData,
-    RollData,
     SessionEnd,
     StateChanges,
     TurnSummary,
@@ -50,7 +50,7 @@ class TestGmTurnRequest:
 
     def test_all_input_types(self) -> None:
         """All defined input types should be valid."""
-        for itype in ("do", "say", "choice", "roll_result", "clarify_answer"):
+        for itype in ("do", "say", "choice", "clarify_answer"):
             req = GmTurnRequest(
                 session_id="s1",
                 input_type=itype,
@@ -93,22 +93,9 @@ class TestGmDecisionResponse:
                 ChoiceOption(id="c", text="Leave", hint="safe option"),
             ],
         )
+        assert resp.choices is not None
         assert len(resp.choices) == 3
         assert resp.choices[2].hint == "safe option"
-
-    def test_roll_decision(self) -> None:
-        """Roll decision should contain roll data."""
-        resp = GmDecisionResponse(
-            decision_type="roll",
-            narration_text="You attempt to pick the lock.",
-            roll=RollData(
-                skill_name="dexterity",
-                difficulty=15,
-                stakes_success="The lock clicks open.",
-                stakes_failure="The lock jams.",
-            ),
-        )
-        assert resp.roll.difficulty == 15
 
     def test_clarify_decision(self) -> None:
         """Clarify decision should contain a question."""
@@ -129,6 +116,7 @@ class TestGmDecisionResponse:
                 proposed_fix="Use your fists instead.",
             ),
         )
+        assert resp.repair is not None
         assert resp.repair.contradiction is not None
 
     def test_with_npc_dialogues(self) -> None:
@@ -144,6 +132,7 @@ class TestGmDecisionResponse:
                 ),
             ],
         )
+        assert resp.npc_dialogues is not None
         assert len(resp.npc_dialogues) == 1
 
     def test_with_state_changes(self) -> None:
@@ -162,7 +151,9 @@ class TestGmDecisionResponse:
                 ],
             ),
         )
+        assert resp.state_changes is not None
         assert resp.state_changes.hp_delta == 10
+        assert resp.state_changes.new_items is not None
         assert len(resp.state_changes.new_items) == 1
 
     def test_json_schema_generation(self) -> None:
@@ -199,6 +190,7 @@ class TestGmDecisionResponse:
         data = resp.model_dump_json()
         restored = GmDecisionResponse.model_validate_json(data)
         assert restored.decision_type == "choice"
+        assert restored.choices is not None
         assert len(restored.choices) == 1
 
     def test_session_end(self) -> None:
@@ -213,6 +205,8 @@ class TestGmDecisionResponse:
                 ),
             ),
         )
+        assert resp.state_changes is not None
+        assert resp.state_changes.session_end is not None
         assert resp.state_changes.session_end.ending_type == "victory"
 
 
@@ -228,6 +222,7 @@ class TestStateChanges:
                 y=20,
             ),
         )
+        assert sc.location_change is not None
         assert sc.location_change.x == 10
 
     def test_status_effects(self) -> None:
@@ -236,6 +231,7 @@ class TestStateChanges:
             status_effect_adds=["poisoned", "blinded"],
             status_effect_removes=["blessed"],
         )
+        assert sc.status_effect_adds is not None
         assert len(sc.status_effect_adds) == 2
 
     def test_empty_state_changes(self) -> None:
@@ -254,8 +250,8 @@ class TestGameContext:
             scenario_title="Test Scenario",
             scenario_setting="A fantasy world",
             system_prompt="You are a game master.",
-            win_conditions={"defeat_boss": True},
-            fail_conditions={"party_wipe": True},
+            win_conditions=[{"defeat_boss": True}],
+            fail_conditions=[{"party_wipe": True}],
             plot_essentials={"main_quest": "Defeat the dragon"},
             short_term_summary="The party entered the dungeon.",
             confirmed_facts={"has_sword": True},
@@ -274,6 +270,35 @@ class TestGameContext:
             current_state={},
         )
         assert ctx.scenario_title == "Test Scenario"
+        assert ctx.max_turns == 30
+
+    def test_custom_max_turns(self) -> None:
+        """max_turns should accept custom values."""
+        ctx = GameContext(
+            scenario_title="T",
+            scenario_setting="S",
+            system_prompt="P",
+            win_conditions=[],
+            fail_conditions=[],
+            plot_essentials={},
+            short_term_summary="",
+            confirmed_facts={},
+            recent_turns=[],
+            player=PlayerSummary(
+                name="H",
+                stats={},
+                status_effects=[],
+                location_x=0,
+                location_y=0,
+            ),
+            active_npcs=[],
+            active_objectives=[],
+            player_items=[],
+            current_turn_number=5,
+            max_turns=20,
+            current_state={},
+        )
+        assert ctx.max_turns == 20
 
     def test_with_npcs_and_objectives(self) -> None:
         """Context with NPCs and objectives should be valid."""
@@ -281,8 +306,8 @@ class TestGameContext:
             scenario_title="T",
             scenario_setting="S",
             system_prompt="P",
-            win_conditions={},
-            fail_conditions={},
+            win_conditions=[],
+            fail_conditions=[],
             plot_essentials={},
             short_term_summary="",
             confirmed_facts={},
@@ -323,3 +348,53 @@ class TestGameContext:
         assert len(ctx.active_npcs) == 1
         assert len(ctx.active_objectives) == 1
         assert len(ctx.player_items) == 1
+
+
+class TestFlagChange:
+    """Tests for FlagChange model and flag_changes in StateChanges."""
+
+    def test_flag_change_creation(self) -> None:
+        """FlagChange should accept flag_id and value."""
+        fc = FlagChange(flag_id="found_secret", value=True)
+        assert fc.flag_id == "found_secret"
+        assert fc.value is True
+
+    def test_flag_change_json_roundtrip(self) -> None:
+        """FlagChange should serialize and deserialize correctly."""
+        fc = FlagChange(flag_id="defeated_boss", value=False)
+        data = fc.model_dump_json()
+        restored = FlagChange.model_validate_json(data)
+        assert restored == fc
+
+    def test_state_changes_with_flag_changes(self) -> None:
+        """StateChanges should accept flag_changes list."""
+        sc = StateChanges(
+            flag_changes=[
+                FlagChange(flag_id="found_warehouse_secret", value=True),
+                FlagChange(flag_id="talked_to_npc", value=True),
+            ],
+        )
+        assert sc.flag_changes is not None
+        assert len(sc.flag_changes) == 2
+        assert sc.flag_changes[0].flag_id == "found_warehouse_secret"
+
+    def test_state_changes_flag_changes_default_none(self) -> None:
+        """flag_changes should default to None."""
+        sc = StateChanges()
+        assert sc.flag_changes is None
+
+    def test_state_changes_with_flags_json_roundtrip(self) -> None:
+        """StateChanges with flag_changes should serialize correctly."""
+        sc = StateChanges(
+            hp_delta=-5,
+            flag_changes=[
+                FlagChange(flag_id="key_found", value=True),
+            ],
+        )
+        data = sc.model_dump_json()
+        restored = StateChanges.model_validate_json(data)
+        assert restored.flag_changes is not None
+        assert len(restored.flag_changes) == 1
+        assert restored.flag_changes[0].flag_id == "key_found"
+        assert restored.flag_changes[0].value is True
+        assert restored.hp_delta == -5

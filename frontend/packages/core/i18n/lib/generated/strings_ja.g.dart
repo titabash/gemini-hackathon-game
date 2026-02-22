@@ -240,11 +240,6 @@ class _TranslationsTrpgJa extends TranslationsTrpgEn {
 	// Translations
 	@override String get chooseAction => '行動を選択してください';
 	@override String get freeInput => 'または自由に行動を記述...';
-	@override String get rollCheck => '判定チェック';
-	@override String rollDifficulty({required Object n}) => '難易度: ${n}';
-	@override String rollSuccess({required Object text}) => '成功時: ${text}';
-	@override String rollFailure({required Object text}) => '失敗時: ${text}';
-	@override String get rollButton => 'ダイスを振る';
 	@override String get clarifyTitle => 'GMから確認があります';
 	@override String get repairTitle => '矛盾が検出されました';
 	@override String repairContradiction({required Object text}) => '問題: ${text}';
@@ -375,11 +370,6 @@ extension on TranslationsJa {
 			'genui.processing' => '考え中...',
 			'trpg.chooseAction' => '行動を選択してください',
 			'trpg.freeInput' => 'または自由に行動を記述...',
-			'trpg.rollCheck' => '判定チェック',
-			'trpg.rollDifficulty' => ({required Object n}) => '難易度: ${n}',
-			'trpg.rollSuccess' => ({required Object text}) => '成功時: ${text}',
-			'trpg.rollFailure' => ({required Object text}) => '失敗時: ${text}',
-			'trpg.rollButton' => 'ダイスを振る',
 			'trpg.clarifyTitle' => 'GMから確認があります',
 			'trpg.repairTitle' => '矛盾が検出されました',
 			'trpg.repairContradiction' => ({required Object text}) => '問題: ${text}',

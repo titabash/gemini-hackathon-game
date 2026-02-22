@@ -110,11 +110,6 @@
   "trpg": {
     "chooseAction": "Choose your action",
     "freeInput": "Or describe your own action...",
-    "rollCheck": "Skill Check",
-    "rollDifficulty": "Difficulty: $n",
-    "rollSuccess": "On success: $text",
-    "rollFailure": "On failure: $text",
-    "rollButton": "Roll the dice",
     "clarifyTitle": "The GM needs clarification",
     "repairTitle": "Contradiction detected",
     "repairContradiction": "Issue: $text",

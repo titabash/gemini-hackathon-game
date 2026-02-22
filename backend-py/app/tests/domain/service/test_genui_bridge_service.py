@@ -18,11 +18,11 @@ from src.domain.entity.gm_types import (
     NpcDialogue,
     NpcIntent,
     RepairData,
-    RollData,
     StateChanges,
 )
 from src.domain.service.genui_bridge_service import (
     GenuiBridgeService,
+    NpcImageMap,
     _a2ui_delete,
     _a2ui_surface,
     _collect_npcs,
@@ -45,7 +45,7 @@ def _classify_event(payload: dict[str, Any]) -> str:
         return "surfaceUpdate"
     if "beginRendering" in payload:
         return "beginRendering"
-    return payload.get("type", "unknown")
+    return str(payload.get("type", "unknown"))
 
 
 def _parse_raw_events(raw_events: list[str]) -> list[dict[str, Any]]:
@@ -67,7 +67,7 @@ async def _collect_stream(
     svc: GenuiBridgeService,
     decision: GmDecisionResponse,
     *,
-    npc_images: dict[str, str | None] | None = None,
+    npc_images: NpcImageMap | None = None,
 ) -> list[str]:
     """Drain stream_decision into a list."""
     return [
@@ -263,7 +263,7 @@ class TestCollectNpcs:
                 ),
             ],
         )
-        images = {"Wizard": "npcs/wizard.png"}
+        images: NpcImageMap = {"Wizard": ("npcs/wizard.png", {})}
         result = _collect_npcs(decision, images, image_key="imagePath")
         assert result[0]["imagePath"] == "scenario-assets/npcs/wizard.png"
 
@@ -286,7 +286,7 @@ class TestCollectNpcs:
                 NpcDialogue(npc_name="Ghost", dialogue="Boo"),
             ],
         )
-        images = {"Other": "other.png"}
+        images: NpcImageMap = {"Other": ("other.png", {})}
         result = _collect_npcs(decision, images, image_key="imagePath")
         assert result[0]["imagePath"] is None
 
@@ -330,6 +330,70 @@ class TestCollectNpcs:
         )
         result = _collect_npcs(decision, None, image_key="imagePath", max_npcs=None)
         assert len(result) == 5
+
+    # --- Emotion-based image selection tests ---
+
+    def test_emotion_image_selected(self) -> None:
+        """LLM emotion=joy -> joy emotion image is selected."""
+        decision = self._make_decision(
+            dialogues=[
+                NpcDialogue(
+                    npc_name="Wizard",
+                    dialogue="Ha!",
+                    emotion="joy",
+                ),
+            ],
+        )
+        images: NpcImageMap = {
+            "Wizard": ("npcs/wizard.png", {"joy": "npcs/wizard_joy.png"}),
+        }
+        result = _collect_npcs(decision, images, image_key="imagePath")
+        assert result[0]["imagePath"] == "scenario-assets/npcs/wizard_joy.png"
+
+    def test_emotion_fallback_to_default(self) -> None:
+        """Emotion not in emotion_images -> default image."""
+        decision = self._make_decision(
+            dialogues=[
+                NpcDialogue(
+                    npc_name="Wizard",
+                    dialogue="Hmm",
+                    emotion="sadness",
+                ),
+            ],
+        )
+        images: NpcImageMap = {
+            "Wizard": ("npcs/wizard.png", {"joy": "npcs/wizard_joy.png"}),
+        }
+        result = _collect_npcs(decision, images, image_key="imagePath")
+        assert result[0]["imagePath"] == "scenario-assets/npcs/wizard.png"
+
+    def test_no_emotion_uses_default(self) -> None:
+        """emotion=None -> default image."""
+        decision = self._make_decision(
+            dialogues=[
+                NpcDialogue(npc_name="Wizard", dialogue="..."),
+            ],
+        )
+        images: NpcImageMap = {
+            "Wizard": ("npcs/wizard.png", {"joy": "npcs/wizard_joy.png"}),
+        }
+        result = _collect_npcs(decision, images, image_key="imagePath")
+        assert result[0]["imagePath"] == "scenario-assets/npcs/wizard.png"
+
+    def test_empty_emotion_map_uses_default(self) -> None:
+        """Empty emotion_images -> default image even with emotion set."""
+        decision = self._make_decision(
+            dialogues=[
+                NpcDialogue(
+                    npc_name="Wizard",
+                    dialogue="Hi",
+                    emotion="joy",
+                ),
+            ],
+        )
+        images: NpcImageMap = {"Wizard": ("npcs/wizard.png", {})}
+        result = _collect_npcs(decision, images, image_key="imagePath")
+        assert result[0]["imagePath"] == "scenario-assets/npcs/wizard.png"
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +533,7 @@ class TestBuildStateData:
                 NpcDialogue(npc_name="Elf", dialogue="Greetings"),
             ],
         )
-        images = {"Elf": "npcs/elf.png"}
+        images: NpcImageMap = {"Elf": ("npcs/elf.png", {})}
         result = GenuiBridgeService._build_state_data(
             decision,
             npc_images=images,
@@ -498,23 +562,6 @@ class TestBuildSurfaceProperties:
         assert result["type"] == "choiceGroup"
         assert len(result["properties"]["choices"]) == 2
         assert result["properties"]["allowFreeInput"] is True
-
-    def test_roll_surface(self) -> None:
-        """Roll decision should return rollPanel surface."""
-        decision = GmDecisionResponse(
-            decision_type="roll",
-            narration_text="Roll!",
-            roll=RollData(
-                skill_name="strength",
-                difficulty=12,
-                stakes_success="You break the door.",
-                stakes_failure="You hurt your shoulder.",
-            ),
-        )
-        result = GenuiBridgeService._build_surface_properties(decision)
-        assert result is not None
-        assert result["type"] == "rollPanel"
-        assert result["properties"]["skill_name"] == "strength"
 
     def test_clarify_surface(self) -> None:
         """Clarify decision should return clarifyQuestion surface."""
@@ -925,7 +972,7 @@ class TestStreamDecision:
                 NpcDialogue(npc_name="Wizard", dialogue="Greetings!"),
             ],
         )
-        images: dict[str, str | None] = {"Wizard": "npcs/wizard.png"}
+        images: NpcImageMap = {"Wizard": ("npcs/wizard.png", {})}
         svc = GenuiBridgeService()
         svc.WORD_DELAY = 0
 
@@ -950,7 +997,7 @@ class TestStreamDecision:
                 NpcDialogue(npc_name="Elf", dialogue="Hi"),
             ],
         )
-        images: dict[str, str | None] = {"Elf": "npcs/elf.png"}
+        images: NpcImageMap = {"Elf": ("npcs/elf.png", {})}
         svc = GenuiBridgeService()
         svc.WORD_DELAY = 0
 

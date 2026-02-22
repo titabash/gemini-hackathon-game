@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from sqlmodel import Session
 
-    from domain.entity.gm_types import StateChanges
+    from domain.entity.gm_types import SessionEnd, StateChanges
 
 
 class StateMutationService:
@@ -43,7 +43,23 @@ class StateMutationService:
         self._apply_relationships(db, session_id, changes)
         self._apply_objectives(db, session_id, changes)
         self._apply_status_effects(db, session_id, changes)
+        self._apply_flags(db, session_id, changes)
         self._apply_session_end(db, session_id, changes)
+
+    def apply_session_end(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        session_end: SessionEnd,
+    ) -> None:
+        """Apply session end independently (for condition-triggered ends)."""
+        self.session_gw.update_status(
+            db,
+            session_id,
+            status="completed",
+            ending_type=session_end.ending_type,
+            ending_summary=session_end.ending_summary,
+        )
 
     def _apply_hp(
         self,
@@ -173,6 +189,27 @@ class StateMutationService:
         effects.extend(adds)
         effects = [e for e in effects if e not in removes]
         self.pc_gw.update_status_effects(db, pc.id, effects)
+
+    def _apply_flags(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        changes: StateChanges,
+    ) -> None:
+        if not changes.flag_changes:
+            return
+        sess = self.session_gw.get_by_id(db, session_id)
+        if sess is None:
+            return
+        state = dict(sess.current_state or {})
+        flags: dict[str, bool] = dict(state.get("flags", {}))
+        for fc in changes.flag_changes:
+            if fc.value:
+                flags[fc.flag_id] = True
+            else:
+                flags.pop(fc.flag_id, None)
+        state["flags"] = flags
+        self.session_gw.update_state(db, session_id, state)
 
     def _apply_session_end(
         self,

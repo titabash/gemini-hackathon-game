@@ -110,11 +110,6 @@
   "trpg": {
     "chooseAction": "行動を選択してください",
     "freeInput": "または自由に行動を記述...",
-    "rollCheck": "判定チェック",
-    "rollDifficulty": "難易度: $n",
-    "rollSuccess": "成功時: $text",
-    "rollFailure": "失敗時: $text",
-    "rollButton": "ダイスを振る",
     "clarifyTitle": "GMから確認があります",
     "repairTitle": "矛盾が検出されました",
     "repairContradiction": "問題: $text",

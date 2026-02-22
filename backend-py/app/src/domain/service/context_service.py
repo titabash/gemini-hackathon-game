@@ -99,6 +99,10 @@ class ContextService:
 
         pc = self._pc_gw.get_by_session(db, session_id)
 
+        max_turns = int(
+            getattr(scenario, "max_turns", 30) or 30,
+        )
+
         return GameContext(
             scenario_title=scenario.title,
             scenario_setting=scenario.description,
@@ -114,6 +118,7 @@ class ContextService:
             active_objectives=self._load_objectives(db, session_id),
             player_items=self._load_items(db, session_id),
             current_turn_number=int(sess.current_turn_number),
+            max_turns=max_turns,
             current_state=sess.current_state,
             available_backgrounds=self._load_backgrounds(
                 db,
@@ -126,9 +131,24 @@ class ContextService:
         context: GameContext,
         input_type: str,
         input_text: str,
+        *,
+        extra_sections: list[str] | None = None,
     ) -> str:
-        """Format CONTEXT_TEMPLATE with GameContext fields."""
-        return str(
+        """Format CONTEXT_TEMPLATE with GameContext fields.
+
+        Args:
+            context: Full game context for template variables.
+            input_type: Player input type (e.g. "do", "say").
+            input_text: Raw player input text.
+            extra_sections: Additional prompt sections appended after
+                the main template (e.g. soft-limit, condition progress,
+                action resolution).
+        """
+        remaining = max(
+            0,
+            context.max_turns - context.current_turn_number,
+        )
+        prompt = str(
             CONTEXT_TEMPLATE.format(
                 scenario_title=context.scenario_title,
                 scenario_setting=context.scenario_setting,
@@ -152,6 +172,8 @@ class ContextService:
                 ),
                 player_items=self._format_items(context.player_items),
                 current_turn_number=context.current_turn_number,
+                max_turns=context.max_turns,
+                remaining_turns=remaining,
                 current_state=json.dumps(context.current_state),
                 available_backgrounds=self._format_backgrounds(
                     context.available_backgrounds,
@@ -160,6 +182,10 @@ class ContextService:
                 input_text=input_text,
             )
         )
+        for section in extra_sections or []:
+            if section:
+                prompt += "\n" + section
+        return prompt
 
     def should_compress(
         self,

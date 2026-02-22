@@ -1,0 +1,1 @@
+ALTER TABLE "npcs" ADD COLUMN "emotion_images" jsonb;

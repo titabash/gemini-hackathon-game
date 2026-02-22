@@ -149,6 +149,7 @@ class Npcs(SQLModel, table=True):
     session_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('session_id', Uuid))
     image_path: Optional[str] = Field(default=None, sa_column=Column('image_path', Text))
     scenario_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('scenario_id', Uuid))
+    emotion_images: Optional[dict] = Field(default=None, sa_column=Column('emotion_images', JSONB))
 
     scenario: Optional['Scenarios'] = Relationship(back_populates='npcs')
     session: Optional['Sessions'] = Relationship(back_populates='npcs')

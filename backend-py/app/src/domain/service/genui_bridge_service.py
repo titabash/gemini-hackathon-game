@@ -20,6 +20,9 @@ from util.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Type alias for NPC images: name -> (default_path, emotion_images_map)
+NpcImageMap = dict[str, tuple[str | None, dict[str, str]]]
+
 
 def _sse(payload: dict[str, Any]) -> str:
     """Format a dict as an SSE data line."""
@@ -71,13 +74,13 @@ class GenuiBridgeService:
         self,
         decision: GmDecisionResponse,
         *,
-        npc_images: dict[str, str | None] | None = None,
+        npc_images: NpcImageMap | None = None,
     ) -> AsyncIterator[str]:
         """Yield SSE events with drip-feed for typewriter UX.
 
         Args:
             decision: The structured GM decision.
-            npc_images: Mapping of NPC name -> storage path (from DB).
+            npc_images: Mapping of NPC name -> (default_path, emotion_map).
         """
         # 1. Clear previous surfaces
         # NOTE: game-npcs is NOT deleted here.  The GenUiSurface widget for
@@ -191,7 +194,7 @@ class GenuiBridgeService:
     def _build_state_data(
         decision: GmDecisionResponse,
         *,
-        npc_images: dict[str, str | None] | None = None,
+        npc_images: NpcImageMap | None = None,
     ) -> dict[str, Any] | None:
         """Extract game state changes for Flame canvas updates."""
         data: dict[str, Any] = {}
@@ -229,11 +232,6 @@ class GenuiBridgeService:
                     "allowFreeInput": True,
                 },
             }
-        if dt == "roll" and decision.roll:
-            return {
-                "type": "rollPanel",
-                "properties": decision.roll.model_dump(),
-            }
         if dt == "clarify" and decision.clarify_question:
             return {
                 "type": "clarifyQuestion",
@@ -257,7 +255,7 @@ MAX_DISPLAY_NPCS = 3
 
 def _collect_npcs(
     decision: GmDecisionResponse,
-    npc_images: dict[str, str | None] | None,
+    npc_images: NpcImageMap | None,
     *,
     image_key: str,
     max_npcs: int | None = None,
@@ -266,7 +264,7 @@ def _collect_npcs(
 
     Args:
         decision: The GM decision containing NPC data.
-        npc_images: Mapping of NPC name -> storage path.
+        npc_images: Mapping of NPC name -> (default_path, emotion_map).
         image_key: Key name for the image path field
             (``"imagePath"`` for A2UI, ``"image_path"`` for Flame state).
         max_npcs: Maximum number of NPCs to return.  Dialogue NPCs
@@ -276,18 +274,23 @@ def _collect_npcs(
     images = npc_images or {}
 
     for intent in decision.npc_intents or []:
-        raw_path = images.get(intent.npc_name)
+        default_path, _emotion_map = images.get(intent.npc_name, (None, {}))
         npc_map[intent.npc_name] = {
             "name": intent.npc_name,
             "emotion": None,
-            image_key: (f"{SCENARIO_ASSETS_BUCKET}/{raw_path}" if raw_path else None),
+            image_key: (
+                f"{SCENARIO_ASSETS_BUCKET}/{default_path}" if default_path else None
+            ),
         }
     for dialogue in decision.npc_dialogues or []:
-        raw_path = images.get(dialogue.npc_name)
+        default_path, emotion_map = images.get(dialogue.npc_name, (None, {}))
+        resolved = default_path
+        if dialogue.emotion and dialogue.emotion in emotion_map:
+            resolved = emotion_map[dialogue.emotion]
         npc_map[dialogue.npc_name] = {
             "name": dialogue.npc_name,
             "emotion": dialogue.emotion,
-            image_key: (f"{SCENARIO_ASSETS_BUCKET}/{raw_path}" if raw_path else None),
+            image_key: (f"{SCENARIO_ASSETS_BUCKET}/{resolved}" if resolved else None),
         }
 
     all_npcs = list(npc_map.values())

@@ -77,6 +77,7 @@ export const scenarios = pgTable("scenarios", {
   createdBy: uuid("created_by").references(() => users.id, {
     onDelete: "set null",
   }),
+  maxTurns: integer("max_turns").notNull().default(30),
   isPublic: boolean("is_public").notNull().default(true),
   createdAt: timestamp("created_at", {
     withTimezone: true,
@@ -243,6 +244,7 @@ export const npcs = pgTable("npcs", {
   }),
   name: text("name").notNull(),
   imagePath: text("image_path"),
+  emotionImages: jsonb("emotion_images"),
   profile: jsonb("profile").notNull(),
   goals: jsonb("goals").notNull(),
   state: jsonb("state").notNull(),

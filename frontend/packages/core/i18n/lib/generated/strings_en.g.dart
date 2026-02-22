@@ -422,21 +422,6 @@ class TranslationsTrpgEn {
 	/// en: 'Or describe your own action...'
 	String get freeInput => 'Or describe your own action...';
 
-	/// en: 'Skill Check'
-	String get rollCheck => 'Skill Check';
-
-	/// en: 'Difficulty: $n'
-	String rollDifficulty({required Object n}) => 'Difficulty: ${n}';
-
-	/// en: 'On success: $text'
-	String rollSuccess({required Object text}) => 'On success: ${text}';
-
-	/// en: 'On failure: $text'
-	String rollFailure({required Object text}) => 'On failure: ${text}';
-
-	/// en: 'Roll the dice'
-	String get rollButton => 'Roll the dice';
-
 	/// en: 'The GM needs clarification'
 	String get clarifyTitle => 'The GM needs clarification';
 
@@ -608,11 +593,6 @@ extension on Translations {
 			'genui.processing' => 'Thinking...',
 			'trpg.chooseAction' => 'Choose your action',
 			'trpg.freeInput' => 'Or describe your own action...',
-			'trpg.rollCheck' => 'Skill Check',
-			'trpg.rollDifficulty' => ({required Object n}) => 'Difficulty: ${n}',
-			'trpg.rollSuccess' => ({required Object text}) => 'On success: ${text}',
-			'trpg.rollFailure' => ({required Object text}) => 'On failure: ${text}',
-			'trpg.rollButton' => 'Roll the dice',
 			'trpg.clarifyTitle' => 'The GM needs clarification',
 			'trpg.repairTitle' => 'Contradiction detected',
 			'trpg.repairContradiction' => ({required Object text}) => 'Issue: ${text}',

@@ -1,7 +1,5 @@
 // ignore_for_file: avoid_dynamic_calls
 
-import 'dart:math';
-
 import 'package:core_i18n/generated/strings.g.dart';
 import 'package:flutter/material.dart';
 import 'package:genui/genui.dart';
@@ -34,7 +32,6 @@ class GameCatalogItems {
       _processingIndicatorItem(),
       _npcGalleryItem(resolveImageUrl: resolveImageUrl),
       _choiceGroupItem(),
-      _rollPanelItem(),
       _clarifyQuestionItem(),
       _repairConfirmItem(),
       _continueButtonItem(),
@@ -188,86 +185,6 @@ class GameCatalogItems {
                   ),
                 );
               }),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // -- rollPanel -------------------------------------------------------------
-
-  static CatalogItem _rollPanelItem() {
-    return CatalogItem(
-      name: 'rollPanel',
-      dataSchema: S.object(
-        properties: {
-          'skill_name': S.string(),
-          'difficulty': S.integer(),
-          'stakes_success': S.string(),
-          'stakes_failure': S.string(),
-        },
-      ),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final skillName = data['skill_name'] as String? ?? '';
-        final difficulty = data['difficulty'] as int? ?? 0;
-        final stakesSuccess = data['stakes_success'] as String? ?? '';
-        final stakesFailure = data['stakes_failure'] as String? ?? '';
-
-        return VnOverlayContainer(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.casino, color: Colors.white70, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    '${t.trpg.rollCheck}: $skillName',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                t.trpg.rollDifficulty(n: difficulty),
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                t.trpg.rollSuccess(text: stakesSuccess),
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              Text(
-                t.trpg.rollFailure(text: stakesFailure),
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              const SizedBox(height: 12),
-              Center(
-                child: VnChoiceButton(
-                  text: t.trpg.rollButton,
-                  onPressed: () {
-                    final result = Random().nextInt(20) + 1;
-                    ctx.dispatchEvent(
-                      UserActionEvent(
-                        name: 'roll',
-                        sourceComponentId: ctx.id,
-                        context: {
-                          'inputType': 'roll_result',
-                          'inputText': result.toString(),
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ),
             ],
           ),
         );

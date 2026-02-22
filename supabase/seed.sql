@@ -25,6 +25,7 @@ INSERT INTO scenarios (
   initial_state,
   win_conditions,
   fail_conditions,
+  max_turns,
   thumbnail_path,
   created_by,
   is_public
@@ -204,6 +205,7 @@ INSERT INTO scenarios (
       "condition": "session.currentTurnNumber >= 30"
     }
   ]'::jsonb,
+  30,
   'scenarios/11111111-1111-1111-1111-111111111111/thumbnail.png',
   NULL,
   true

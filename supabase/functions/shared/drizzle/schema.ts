@@ -243,6 +243,7 @@ export const npcs = pgTable("npcs", {
   }),
   name: text("name").notNull(),
   imagePath: text("image_path"),
+  emotionImages: jsonb("emotion_images"),
   profile: jsonb("profile").notNull(),
   goals: jsonb("goals").notNull(),
   state: jsonb("state").notNull(),

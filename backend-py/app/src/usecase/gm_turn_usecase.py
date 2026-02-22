@@ -1,8 +1,8 @@
 """GM turn processing pipeline.
 
 Orchestrates the full turn lifecycle: validate session, build context,
-get GM decision via Gemini, apply state mutations, persist the turn
-record, and stream the result as SSE events.
+get GM decision via Gemini, apply state mutations, evaluate win/fail
+conditions, persist the turn record, and stream the result as SSE events.
 """
 
 from __future__ import annotations
@@ -11,14 +11,21 @@ import asyncio
 import json
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from domain.entity.models import SceneBackgrounds, Turns
+from domain.entity.gm_types import SessionEnd
+from domain.entity.models import Npcs, SceneBackgrounds, Turns
+from domain.service.action_resolution_service import ActionResolutionService
+from domain.service.condition_evaluation_service import (
+    ConditionEvaluationResult,
+    ConditionEvaluationService,
+)
 from domain.service.context_service import ContextService
-from domain.service.genui_bridge_service import GenuiBridgeService
+from domain.service.genui_bridge_service import GenuiBridgeService, NpcImageMap
 from domain.service.gm_decision_service import GmDecisionService
 from domain.service.state_mutation_service import StateMutationService
 from domain.service.storage_constants import SCENARIO_ASSETS_BUCKET
+from domain.service.turn_limit_service import TurnLimitService
 from gateway.context_summary_gateway import ContextSummaryGateway
 from gateway.npc_gateway import NpcGateway
 from gateway.scene_background_gateway import SceneBackgroundGateway
@@ -33,7 +40,12 @@ if TYPE_CHECKING:
 
     from sqlmodel import Session
 
-    from domain.entity.gm_types import GmDecisionResponse, GmTurnRequest
+    from domain.entity.gm_types import (
+        GameContext,
+        GmDecisionResponse,
+        GmTurnRequest,
+        StateChanges,
+    )
 
 logger = get_logger(__name__)
 
@@ -53,6 +65,9 @@ class GmTurnUseCase:
         self.storage_svc = StorageService()
         self.bg_gw = SceneBackgroundGateway()
         self.npc_gw = NpcGateway()
+        self.turn_limit_svc = TurnLimitService()
+        self.condition_svc = ConditionEvaluationService()
+        self.resolution_svc = ActionResolutionService()
 
     async def execute(
         self,
@@ -67,18 +82,18 @@ class GmTurnUseCase:
             yield _error_event("Session not active")
             return
 
-        # Build context and get GM decision
+        # Build context and resolve decision (with turn-limit checks)
         context = self.context_svc.build_context(db, session_id)
-        prompt = self.context_svc.build_prompt(
-            context,
-            request.input_type,
-            request.input_text,
-        )
-        decision = await self.decision_svc.decide(prompt)
+        decision = await self._resolve_decision(context, request)
 
         # Apply state mutations
         if decision.state_changes:
             self.mutation_svc.apply(db, session_id, decision.state_changes)
+
+        # Condition evaluation (after mutation, only if LLM didn't end)
+        llm_ended = _has_session_end(decision.state_changes)
+        if not llm_ended:
+            self._evaluate_and_apply(db, session_id, context, decision)
 
         # Persist turn
         self._persist_turn(request, decision, db, game_session)
@@ -130,6 +145,106 @@ class GmTurnUseCase:
             if gen_ref:
                 yield _image_event(gen_ref)
 
+    async def _resolve_decision(
+        self,
+        context: GameContext,
+        request: GmTurnRequest,
+    ) -> GmDecisionResponse:
+        """Check turn limits and return the appropriate decision."""
+        cur = context.current_turn_number
+        mx = context.max_turns
+        if self.turn_limit_svc.is_hard_limit_reached(cur, mx):
+            return self.turn_limit_svc.build_hard_limit_response(mx)
+
+        luck = self.resolution_svc.generate_luck_factor()
+        resolution_ctx = self.resolution_svc.build_resolution_context(
+            player_stats=dict(context.player.stats),
+            luck_factor=luck,
+        )
+        prompt = self.context_svc.build_prompt(
+            context,
+            request.input_type,
+            request.input_text,
+            extra_sections=[
+                self._build_soft_addition(context),
+                self._build_condition_progress(context),
+                resolution_ctx,
+            ],
+        )
+        return await self.decision_svc.decide(prompt)
+
+    def _build_soft_addition(self, context: GameContext) -> str:
+        """Return soft-limit prompt addition or empty string."""
+        cur = context.current_turn_number
+        mx = context.max_turns
+        if not self.turn_limit_svc.is_soft_limit_active(cur, mx):
+            return ""
+        remaining = self.turn_limit_svc.remaining_turns(cur, mx)
+        return str(
+            self.turn_limit_svc.build_soft_limit_prompt_addition(
+                remaining,
+            ),
+        )
+
+    def _build_condition_progress(self, context: GameContext) -> str:
+        """Build condition progress prompt text."""
+        flags = dict(context.current_state.get("flags", {}))
+        result = self.condition_svc.evaluate(
+            win_conditions=context.win_conditions,
+            fail_conditions=context.fail_conditions,
+            current_flags=flags,
+            player_stats=dict(context.player.stats),
+            current_turn=context.current_turn_number,
+        )
+        return str(self.condition_svc.build_progress_prompt(result))
+
+    def _evaluate_and_apply(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        context: GameContext,
+        decision: GmDecisionResponse,
+    ) -> None:
+        """Evaluate conditions and apply session end if triggered."""
+        flags = _compute_latest_flags(context, decision.state_changes)
+        stats = _compute_latest_stats(context, decision.state_changes)
+        result = self.condition_svc.evaluate(
+            win_conditions=context.win_conditions,
+            fail_conditions=context.fail_conditions,
+            current_flags=flags,
+            player_stats=stats,
+            current_turn=context.current_turn_number,
+        )
+        self._apply_condition_end(db, session_id, result)
+
+    def _apply_condition_end(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        result: ConditionEvaluationResult,
+    ) -> None:
+        """Apply session end based on condition evaluation result."""
+        if result.triggered_fail:
+            desc = str(result.triggered_fail.get("description", ""))
+            self.mutation_svc.apply_session_end(
+                db,
+                session_id,
+                SessionEnd(
+                    ending_type="bad_end",
+                    ending_summary=desc,
+                ),
+            )
+        elif result.triggered_win:
+            desc = str(result.triggered_win.get("description", ""))
+            self.mutation_svc.apply_session_end(
+                db,
+                session_id,
+                SessionEnd(
+                    ending_type="victory",
+                    ending_summary=desc,
+                ),
+            )
+
     def _resolve_background_image(
         self,
         db: Session,
@@ -171,22 +286,21 @@ class GmTurnUseCase:
         session_id: uuid.UUID,
         scenario_id: object,
         decision: GmDecisionResponse,
-    ) -> dict[str, str | None]:
-        """Build NPC name → image_path map and log each LLM-selected NPC."""
-        active_npcs = self.npc_gw.get_active_by_session(db, session_id)
-        npc_images: dict[str, str | None] = {
-            npc.name: npc.image_path for npc in active_npcs if npc.image_path
-        }
+    ) -> NpcImageMap:
+        """Build NPC name -> (default_path, emotion_map) and log each NPC."""
+        npc_images = _build_npc_image_entries(
+            self.npc_gw.get_active_by_session(db, session_id),
+        )
         if not npc_images:
-            scenario_npcs = self.npc_gw.get_by_scenario(db, scenario_id)
-            npc_images = {
-                npc.name: npc.image_path for npc in scenario_npcs if npc.image_path
-            }
+            npc_images = _build_npc_image_entries(
+                self.npc_gw.get_by_scenario(db, scenario_id),
+            )
 
         seen: set[str] = set()
         for dialogue in decision.npc_dialogues or []:
             seen.add(dialogue.npc_name)
-            path = npc_images.get(dialogue.npc_name)
+            entry = npc_images.get(dialogue.npc_name)
+            path = entry[0] if entry else None
             logger.info(
                 "Using LLM-selected NPC",
                 npc_name=dialogue.npc_name,
@@ -196,7 +310,8 @@ class GmTurnUseCase:
             )
         for intent in decision.npc_intents or []:
             if intent.npc_name not in seen:
-                path = npc_images.get(intent.npc_name)
+                entry = npc_images.get(intent.npc_name)
+                path = entry[0] if entry else None
                 logger.info(
                     "Using LLM-selected NPC",
                     npc_name=intent.npc_name,
@@ -269,6 +384,56 @@ class GmTurnUseCase:
                 description=description,
             )
             return None
+
+
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+
+def _has_session_end(changes: StateChanges | None) -> bool:
+    """Check if state_changes includes a session_end."""
+    return changes is not None and changes.session_end is not None
+
+
+def _compute_latest_flags(
+    context: GameContext,
+    changes: StateChanges | None,
+) -> dict[str, bool]:
+    """Compute latest flags from context + decision without DB re-read."""
+    flags: dict[str, bool] = dict(context.current_state.get("flags", {}))
+    if changes and changes.flag_changes:
+        for fc in changes.flag_changes:
+            if fc.value:
+                flags[fc.flag_id] = True
+            else:
+                flags.pop(fc.flag_id, None)
+    return flags
+
+
+def _compute_latest_stats(
+    context: GameContext,
+    changes: StateChanges | None,
+) -> dict[str, Any]:
+    """Compute latest stats from context + decision without DB re-read."""
+    stats: dict[str, Any] = dict(context.player.stats)
+    if changes and changes.hp_delta is not None:
+        stats["hp"] = stats.get("hp", 100) + changes.hp_delta
+    return stats
+
+
+def _build_npc_image_entries(npcs: list[Npcs]) -> NpcImageMap:
+    """Extract (default_path, emotion_map) for each NPC with an image."""
+    result: NpcImageMap = {}
+    for npc in npcs:
+        if not npc.image_path:
+            continue
+        emotion_map: dict[str, str] = {}
+        raw = getattr(npc, "emotion_images", None)
+        if raw and isinstance(raw, dict):
+            emotion_map = {k: v for k, v in raw.items() if isinstance(v, str) and v}
+        result[npc.name] = (npc.image_path, emotion_map)
+    return result
 
 
 def _error_event(message: str) -> str:

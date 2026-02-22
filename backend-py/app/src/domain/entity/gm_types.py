@@ -16,7 +16,7 @@ class GmTurnRequest(BaseModel):
     """Player turn input request."""
 
     session_id: str
-    input_type: Literal["start", "do", "say", "choice", "roll_result", "clarify_answer"]
+    input_type: Literal["start", "do", "say", "choice", "clarify_answer"]
     input_text: str
 
 
@@ -29,15 +29,6 @@ class ChoiceOption(BaseModel):
     id: str
     text: str
     hint: str | None = None
-
-
-class RollData(BaseModel):
-    """Dice roll parameters."""
-
-    skill_name: str
-    difficulty: int
-    stakes_success: str
-    stakes_failure: str
 
 
 class RepairData(BaseModel):
@@ -105,6 +96,13 @@ class SessionEnd(BaseModel):
     ending_summary: str
 
 
+class FlagChange(BaseModel):
+    """Flag mutation requested by GM decision."""
+
+    flag_id: str
+    value: bool
+
+
 class StateChanges(BaseModel):
     """Aggregated state mutations from a GM decision."""
 
@@ -116,6 +114,7 @@ class StateChanges(BaseModel):
     objective_updates: list[ObjectiveUpdate] | None = None
     status_effect_adds: list[str] | None = None
     status_effect_removes: list[str] | None = None
+    flag_changes: list[FlagChange] | None = None
     session_end: SessionEnd | None = None
 
 
@@ -125,14 +124,13 @@ class StateChanges(BaseModel):
 class GmDecisionResponse(BaseModel):
     """Gemini構造化出力スキーマ。1回の呼出で全情報を返す."""
 
-    decision_type: Literal["narrate", "choice", "roll", "clarify", "repair"]
+    decision_type: Literal["narrate", "choice", "clarify", "repair"]
     narration_text: str
 
     scene_description: str | None = None
     selected_background_id: str | None = None
 
     choices: list[ChoiceOption] | None = None
-    roll: RollData | None = None
     clarify_question: str | None = None
     repair: RepairData | None = None
 
@@ -216,5 +214,6 @@ class GameContext(BaseModel):
     active_objectives: list[ObjectiveSummary]
     player_items: list[ItemSummary]
     current_turn_number: int
+    max_turns: int = 30
     current_state: dict[str, Any]
     available_backgrounds: list[BackgroundResourceSummary] = []

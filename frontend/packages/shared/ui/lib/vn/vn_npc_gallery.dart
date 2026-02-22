@@ -159,17 +159,6 @@ class VnNpcGallery extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (npc.emotion != null && npc.emotion!.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      npc.emotion!,
-                      style: const TextStyle(
-                        color: Colors.white54,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),

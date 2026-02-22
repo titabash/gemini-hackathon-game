@@ -188,6 +188,7 @@ export type Database = {
       npcs: {
         Row: {
           created_at: string
+          emotion_images: Json | null
           goals: Json
           id: string
           image_path: string | null
@@ -203,6 +204,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          emotion_images?: Json | null
           goals: Json
           id?: string
           image_path?: string | null
@@ -218,6 +220,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          emotion_images?: Json | null
           goals?: Json
           id?: string
           image_path?: string | null
