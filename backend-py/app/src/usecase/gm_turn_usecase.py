@@ -18,6 +18,7 @@ from domain.service.context_service import ContextService
 from domain.service.genui_bridge_service import GenuiBridgeService
 from domain.service.gm_decision_service import GmDecisionService
 from domain.service.state_mutation_service import StateMutationService
+from domain.service.storage_constants import SCENARIO_ASSETS_BUCKET
 from gateway.context_summary_gateway import ContextSummaryGateway
 from gateway.npc_gateway import NpcGateway
 from gateway.scene_background_gateway import SceneBackgroundGateway
@@ -35,8 +36,6 @@ if TYPE_CHECKING:
     from domain.entity.gm_types import GmDecisionResponse, GmTurnRequest
 
 logger = get_logger(__name__)
-
-_SCENARIO_ASSETS_BUCKET = "scenario-assets"
 
 
 class GmTurnUseCase:
@@ -104,18 +103,12 @@ class GmTurnUseCase:
                     session_id=str(session_id),
                 )
 
-        # Build NPC name → image_path map from DB
-        active_npcs = self.npc_gw.get_active_by_session(db, session_id)
-        npc_images = {npc.name: npc.image_path for npc in active_npcs if npc.image_path}
-        # Fallback to scenario-level NPCs for image paths
-        if not npc_images:
-            scenario_npcs = self.npc_gw.get_by_scenario(
-                db,
-                game_session.scenario_id,
-            )
-            npc_images = {
-                npc.name: npc.image_path for npc in scenario_npcs if npc.image_path
-            }
+        npc_images = self._resolve_npc_images(
+            db,
+            session_id,
+            game_session.scenario_id,
+            decision,
+        )
 
         # Stream SSE events via bridge (text, state, surface, done)
         async for event in self.bridge_svc.stream_decision(
@@ -163,7 +156,7 @@ class GmTurnUseCase:
             )
             return None
 
-        bucket = _SCENARIO_ASSETS_BUCKET if bg.scenario_id else "generated-images"
+        bucket = SCENARIO_ASSETS_BUCKET if bg.scenario_id else "generated-images"
         logger.info(
             "Using LLM-selected background",
             bg_id=str(bg_id),
@@ -171,6 +164,47 @@ class GmTurnUseCase:
             path=bg.image_path,
         )
         return f"{bucket}/{bg.image_path}"
+
+    def _resolve_npc_images(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        scenario_id: object,
+        decision: GmDecisionResponse,
+    ) -> dict[str, str | None]:
+        """Build NPC name → image_path map and log each LLM-selected NPC."""
+        active_npcs = self.npc_gw.get_active_by_session(db, session_id)
+        npc_images: dict[str, str | None] = {
+            npc.name: npc.image_path for npc in active_npcs if npc.image_path
+        }
+        if not npc_images:
+            scenario_npcs = self.npc_gw.get_by_scenario(db, scenario_id)
+            npc_images = {
+                npc.name: npc.image_path for npc in scenario_npcs if npc.image_path
+            }
+
+        seen: set[str] = set()
+        for dialogue in decision.npc_dialogues or []:
+            seen.add(dialogue.npc_name)
+            path = npc_images.get(dialogue.npc_name)
+            logger.info(
+                "Using LLM-selected NPC",
+                npc_name=dialogue.npc_name,
+                source="dialogue",
+                image_path=path,
+                resolved=path is not None,
+            )
+        for intent in decision.npc_intents or []:
+            if intent.npc_name not in seen:
+                path = npc_images.get(intent.npc_name)
+                logger.info(
+                    "Using LLM-selected NPC",
+                    npc_name=intent.npc_name,
+                    source="intent",
+                    image_path=path,
+                    resolved=path is not None,
+                )
+        return npc_images
 
     def _persist_turn(
         self,

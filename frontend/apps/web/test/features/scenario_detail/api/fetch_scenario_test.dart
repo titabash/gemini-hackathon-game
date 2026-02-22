@@ -34,8 +34,12 @@ void main() {
         'title': 'Test Scenario',
         'description': 'Test description',
         'initial_state': {'hp': 100},
-        'win_conditions': {'boss_defeated': true},
-        'fail_conditions': {'hp_zero': true},
+        'win_conditions': [
+          {'boss_defeated': true},
+        ],
+        'fail_conditions': [
+          {'hp_zero': true},
+        ],
         'is_public': true,
       });
 

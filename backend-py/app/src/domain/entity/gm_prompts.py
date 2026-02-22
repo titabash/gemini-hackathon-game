@@ -42,6 +42,9 @@ You MUST:
 - NPCs act according to their goals, personality, and relationship with the player.
 - Include npc_intents to show NPC autonomous behavior.
 - Limit npc_dialogues to at most 2 NPCs per turn.
+- Display at most 3 NPCs on screen at any time.  When more than 3 NPCs are
+  present in the scene, select only the 3 most relevant for npc_intents and
+  npc_dialogues (prioritise speaking NPCs).
 
 ## Scene Background Selection
 - When the location changes or the visual environment transforms,

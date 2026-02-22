@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from domain.entity.models import Items, Objectives
 from gateway.item_gateway import ItemGateway
-from gateway.npc_gateway import NpcGateway
+from gateway.npc_gateway import NpcGateway, RelationshipDelta
 from gateway.objective_gateway import ObjectiveGateway
 from gateway.player_character_gateway import PlayerCharacterGateway
 from gateway.session_gateway import SessionGateway
@@ -40,7 +40,7 @@ class StateMutationService:
         self._apply_hp(db, session_id, changes)
         self._apply_items(db, session_id, changes)
         self._apply_location(db, session_id, changes)
-        self._apply_relationships(db, changes)
+        self._apply_relationships(db, session_id, changes)
         self._apply_objectives(db, session_id, changes)
         self._apply_status_effects(db, session_id, changes)
         self._apply_session_end(db, session_id, changes)
@@ -103,19 +103,23 @@ class StateMutationService:
     def _apply_relationships(
         self,
         db: Session,
+        session_id: uuid.UUID,
         changes: StateChanges,
     ) -> None:
+        npcs = self.npc_gw.get_active_by_session(db, session_id)
         for rc in changes.relationship_changes or []:
-            npcs = self.npc_gw.get_active_by_session(db, rc.npc_name)  # type: ignore[arg-type]
-            # Find NPC by name across all active NPCs
-            # This is a simplification; in practice we'd search by session
+            npc = next((n for n in npcs if n.name == rc.npc_name), None)
+            if npc is None:
+                continue
             self.npc_gw.update_relationship(
                 db,
-                npcs[0].id if npcs else None,  # type: ignore[arg-type]
-                affinity_delta=rc.affinity_delta,
-                trust_delta=rc.trust_delta,
-                fear_delta=rc.fear_delta,
-                debt_delta=rc.debt_delta,
+                npc.id,
+                RelationshipDelta(
+                    affinity=rc.affinity_delta,
+                    trust=rc.trust_delta,
+                    fear=rc.fear_delta,
+                    debt=rc.debt_delta,
+                ),
             )
 
     def _apply_objectives(

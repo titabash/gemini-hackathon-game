@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 ///
 /// Shows the current speaker name, sentence text, and a pulsing
 /// "next" indicator (▼) when there is more text to show.
-class NovelTextBox extends StatelessWidget {
-  const NovelTextBox({
+class VnTextBox extends StatelessWidget {
+  const VnTextBox({
     super.key,
     required this.text,
     this.speaker,
@@ -62,7 +62,7 @@ class NovelTextBox extends StatelessWidget {
 
             // Text content
             if (isProcessing)
-              const _ProcessingIndicator()
+              const VnProcessingIndicator()
             else
               Text(
                 text,
@@ -133,8 +133,9 @@ class _PulsingTriangleState extends State<_PulsingTriangle>
   }
 }
 
-class _ProcessingIndicator extends StatelessWidget {
-  const _ProcessingIndicator();
+/// Processing indicator for VN text box.
+class VnProcessingIndicator extends StatelessWidget {
+  const VnProcessingIndicator({super.key});
 
   @override
   Widget build(BuildContext context) {

@@ -14,6 +14,7 @@ dependencies:
 
   # GenUI SDK
   genui: ^0.7.0
+  json_schema_builder: ^0.1.3
 
   # State management
   hooks_riverpod: ^3.0.3
@@ -28,8 +29,12 @@ dependencies:
     path: ../api
   core_auth:
     path: ../auth
+  core_i18n:
+    path: ../i18n
   core_utils:
     path: ../utils
+  shared_ui:
+    path: ../../shared/ui
 
 dev_dependencies:
   flutter_test:

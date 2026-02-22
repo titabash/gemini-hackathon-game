@@ -5,10 +5,12 @@
 
 // Content Generator
 export 'content_generator/content_generator_config.dart';
+export 'content_generator/game_content_generator.dart';
 export 'content_generator/sse_content_generator.dart';
 
 // Catalog
 export 'catalog/app_catalog_items.dart';
+export 'catalog/game_catalog_items.dart';
 
 // Models
 export 'models/conversation_state.dart';

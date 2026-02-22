@@ -4,7 +4,6 @@ import 'dart:ui' as ui;
 import 'package:core_game/core_game.dart';
 import 'package:core_utils/core_utils.dart';
 import 'package:flame/components.dart';
-import 'package:flame/effects.dart';
 import 'package:flame/particles.dart' as flame_particles;
 import 'package:flutter/material.dart';
 
@@ -12,15 +11,14 @@ import '../../model/trpg_visual_state.dart';
 
 /// TRPG game canvas for the novel-game style.
 ///
-/// Renders an atmospheric background (gradient or generated image),
-/// NPC character tokens, and ambient particle effects.
+/// Renders an atmospheric background (gradient or generated image)
+/// and ambient particle effects. NPC display is handled by genui surfaces.
 class TrpgGame extends BaseGame {
   TrpgGame({required this.visualState});
 
   final ValueNotifier<TrpgVisualState> visualState;
 
   late final _SceneBackground _background;
-  final List<_NpcToken> _npcTokens = [];
 
   final _random = Random();
   double _particleTimer = 0;
@@ -53,26 +51,6 @@ class TrpgGame extends BaseGame {
     final state = visualState.value;
     _background.updateScene(state.sceneDescription);
     _background.updateBackgroundImage(state.backgroundImageUrl);
-    _updateNpcs(state.activeNpcs);
-  }
-
-  void _updateNpcs(List<NpcVisual> npcs) {
-    for (final token in _npcTokens) {
-      token.removeFromParent();
-    }
-    _npcTokens.clear();
-
-    for (var i = 0; i < npcs.length; i++) {
-      // Place NPCs along the bottom third, spread horizontally
-      final xFraction = (i + 1) / (npcs.length + 1);
-      final npc = _NpcToken(
-        name: npcs[i].name,
-        xFraction: xFraction,
-        imageUrl: npcs[i].imageUrl,
-      );
-      _npcTokens.add(npc);
-      add(npc);
-    }
   }
 
   void _spawnAmbientParticle() {
@@ -250,193 +228,6 @@ class _SceneBackground extends PositionComponent with HasGameReference {
       );
     } catch (e, st) {
       Logger.warning('Background image load exception: $url', e, st);
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// NPC Standing Portrait (novel-game style)
-// ---------------------------------------------------------------------------
-
-class _NpcToken extends PositionComponent with HasGameReference {
-  _NpcToken({required this.name, required this.xFraction, this.imageUrl});
-
-  final String name;
-  final String? imageUrl;
-
-  /// Horizontal position as a fraction of screen width (0.0 - 1.0).
-  final double xFraction;
-
-  /// Height of the standing portrait relative to screen height.
-  static const double _heightRatio = 0.65;
-
-  /// Radius for the fallback circle when no image is available.
-  static const double _fallbackRadius = 32;
-
-  final _bodyPaint = Paint()
-    ..color = const Color(0xFFCC6644)
-    ..style = PaintingStyle.fill;
-
-  final _shadowPaint = Paint()
-    ..color = const Color(0x44000000)
-    ..style = PaintingStyle.fill;
-
-  late TextPaint _namePaint;
-  late TextPaint _initialPaint;
-
-  ui.Image? _portrait;
-
-  @override
-  Future<void> onLoad() async {
-    await super.onLoad();
-    anchor = Anchor.bottomCenter;
-    priority = 9;
-
-    _namePaint = TextPaint(
-      style: const TextStyle(
-        fontSize: 14,
-        color: Colors.white,
-        fontWeight: FontWeight.w600,
-        shadows: [
-          Shadow(color: Colors.black, blurRadius: 8),
-          Shadow(color: Colors.black, blurRadius: 4),
-        ],
-      ),
-    );
-
-    _initialPaint = TextPaint(
-      style: const TextStyle(
-        fontSize: 22,
-        color: Colors.white,
-        fontWeight: FontWeight.bold,
-      ),
-    );
-
-    add(
-      MoveEffect.by(
-        Vector2(0, -2),
-        EffectController(
-          duration: 3.0,
-          reverseDuration: 3.0,
-          infinite: true,
-          curve: Curves.easeInOut,
-        ),
-      ),
-    );
-
-    _loadPortrait();
-  }
-
-  void _loadPortrait() {
-    final url = imageUrl;
-    if (url == null || url.isEmpty) return;
-    try {
-      final provider = NetworkImage(url);
-      final stream = provider.resolve(ImageConfiguration.empty);
-      stream.addListener(
-        ImageStreamListener(
-          (info, _) {
-            _portrait = info.image;
-            _recalculateSize();
-          },
-          onError: (error, stackTrace) {
-            Logger.debug('Failed to load NPC portrait: $url', error);
-          },
-        ),
-      );
-    } catch (e) {
-      Logger.debug('NPC portrait load exception: $url', e);
-    }
-  }
-
-  void _recalculateSize() {
-    if (!isMounted) return;
-    final gameSize = game.size;
-    final portraitHeight = gameSize.y * _heightRatio;
-
-    final portrait = _portrait;
-    if (portrait != null) {
-      final aspect = portrait.width / portrait.height;
-      size = Vector2(portraitHeight * aspect, portraitHeight);
-    } else {
-      size = Vector2(_fallbackRadius * 2, _fallbackRadius * 2);
-    }
-  }
-
-  @override
-  void onGameResize(Vector2 gameSize) {
-    super.onGameResize(gameSize);
-    position = Vector2(gameSize.x * xFraction, gameSize.y);
-    _recalculateSize();
-  }
-
-  @override
-  void render(Canvas canvas) {
-    final portrait = _portrait;
-    if (portrait != null) {
-      // Draw foot shadow
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(size.x / 2, size.y + 2),
-          width: size.x * 0.5,
-          height: 8,
-        ),
-        _shadowPaint,
-      );
-
-      // Draw standing portrait (full body, no clipping)
-      final src = Rect.fromLTWH(
-        0,
-        0,
-        portrait.width.toDouble(),
-        portrait.height.toDouble(),
-      );
-      final dst = Rect.fromLTWH(0, 0, size.x, size.y);
-      canvas.drawImageRect(portrait, src, dst, Paint());
-
-      // Name plate below feet
-      _namePaint.render(
-        canvas,
-        name,
-        Vector2(size.x / 2, size.y + 16),
-        anchor: Anchor.center,
-      );
-    } else {
-      // Fallback: small circle with initial
-      final cx = size.x / 2;
-      final cy = size.y / 2;
-
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(cx, size.y + 2),
-          width: _fallbackRadius * 1.5,
-          height: 6,
-        ),
-        _shadowPaint,
-      );
-
-      canvas.drawCircle(Offset(cx, cy), _fallbackRadius, _bodyPaint);
-
-      final borderPaint = Paint()
-        ..color = const Color(0xFFEE9966)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5;
-      canvas.drawCircle(Offset(cx, cy), _fallbackRadius, borderPaint);
-
-      final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-      _initialPaint.render(
-        canvas,
-        initial,
-        Vector2(cx, cy),
-        anchor: Anchor.center,
-      );
-
-      _namePaint.render(
-        canvas,
-        name,
-        Vector2(cx, size.y + 14),
-        anchor: Anchor.center,
-      );
     }
   }
 }
