@@ -5,42 +5,74 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from domain.entity.models import Npcs
-from gateway.npc_gateway import NpcGateway
+from domain.entity.models import NpcRelationships, Npcs
+from gateway.npc_gateway import NpcGateway, RelationshipDelta
 
 if TYPE_CHECKING:
     from sqlmodel import Session
 
-    from domain.entity.models import NpcRelationships, Sessions
+    from domain.entity.models import Sessions
 
 
 class TestNpcGateway:
     """Tests for NpcGateway operations."""
 
-    def test_get_active_by_session(
+    def test_get_by_session(
         self, db_session: Session, seed_session: Sessions, seed_npc: Npcs
     ) -> None:
-        """Verify get_active_by_session returns only active NPCs."""
+        """Verify get_by_session returns all NPCs for the session."""
         gw = NpcGateway()
 
-        result = gw.get_active_by_session(db_session, seed_session.id)
+        result = gw.get_by_session(db_session, seed_session.id)
 
         assert len(result) == 1
         assert result[0].name == "Merchant"
-        assert result[0].is_active is True
 
-    def test_get_active_by_session_excludes_inactive(
-        self, db_session: Session, seed_session: Sessions, seed_npc: Npcs
-    ) -> None:
-        """Verify inactive NPCs are excluded from results."""
+    def test_create(self, db_session: Session, seed_session: Sessions) -> None:
+        """Verify create persists a new NPC record."""
         gw = NpcGateway()
-        seed_npc.is_active = False
-        db_session.add(seed_npc)
-        db_session.commit()
+        npc = Npcs(
+            id=uuid.uuid4(),
+            session_id=seed_session.id,
+            name="Guard",
+            profile={"role": "guard"},
+            goals={"primary": "Guard the gate"},
+            state={"mood": "alert"},
+            location_x=0,
+            location_y=0,
+            created_at=seed_session.created_at,
+            updated_at=seed_session.updated_at,
+        )
 
-        result = gw.get_active_by_session(db_session, seed_session.id)
+        gw.create(db_session, npc)
 
-        assert result == []
+        result = gw.get_by_session(db_session, seed_session.id)
+        assert len(result) == 1
+        assert result[0].name == "Guard"
+
+    def test_create_relationship(self, db_session: Session, seed_npc: Npcs) -> None:
+        """Verify create_relationship persists a new relationship record."""
+        gw = NpcGateway()
+        rel = NpcRelationships(
+            id=uuid.uuid4(),
+            npc_id=seed_npc.id,
+            affinity=10,
+            trust=5,
+            fear=0,
+            debt=0,
+            flags={},
+            created_at=seed_npc.created_at,
+            updated_at=seed_npc.updated_at,
+        )
+
+        gw.create_relationship(db_session, rel)
+
+        result = gw.get_with_relationship(db_session, seed_npc.id)
+        assert result is not None
+        _, fetched_rel = result
+        assert fetched_rel is not None
+        assert fetched_rel.affinity == 10
+        assert fetched_rel.trust == 5
 
     def test_get_with_relationship(
         self,
@@ -92,10 +124,12 @@ class TestNpcGateway:
         gw.update_relationship(
             db_session,
             seed_npc.id,
-            affinity_delta=5,
-            trust_delta=-2,
-            fear_delta=1,
-            debt_delta=3,
+            RelationshipDelta(
+                affinity=5,
+                trust=-2,
+                fear=1,
+                debt=3,
+            ),
         )
 
         db_session.refresh(seed_npc_relationship)
@@ -103,3 +137,14 @@ class TestNpcGateway:
         assert seed_npc_relationship.trust == 3
         assert seed_npc_relationship.fear == 1
         assert seed_npc_relationship.debt == 3
+
+    def test_update_location(self, db_session: Session, seed_npc: Npcs) -> None:
+        """Verify update_location overwrites NPC coordinates."""
+        gw = NpcGateway()
+
+        gw.update_location(db_session, seed_npc.id, 10, 20)
+
+        refreshed = db_session.get(Npcs, seed_npc.id)
+        assert refreshed is not None
+        assert refreshed.location_x == 10
+        assert refreshed.location_y == 20

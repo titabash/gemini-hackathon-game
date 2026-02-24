@@ -50,6 +50,7 @@ class TranslationsJa extends Translations with BaseTranslations<AppLocale, Trans
 	@override late final _TranslationsGameJa game = _TranslationsGameJa._(_root);
 	@override late final _TranslationsGenuiJa genui = _TranslationsGenuiJa._(_root);
 	@override late final _TranslationsTrpgJa trpg = _TranslationsTrpgJa._(_root);
+	@override late final _TranslationsGameMenuJa gameMenu = _TranslationsGameMenuJa._(_root);
 	@override late final _TranslationsErrorJa error = _TranslationsErrorJa._(_root);
 }
 
@@ -241,6 +242,7 @@ class _TranslationsTrpgJa extends TranslationsTrpgEn {
 	@override String get chooseAction => '行動を選択してください';
 	@override String get freeInput => 'または自由に行動を記述...';
 	@override String get clarifyTitle => 'GMから確認があります';
+	@override String get clarifyHint => '回答を入力...';
 	@override String get repairTitle => '矛盾が検出されました';
 	@override String repairContradiction({required Object text}) => '問題: ${text}';
 	@override String repairFix({required Object text}) => '修正案: ${text}';
@@ -254,6 +256,26 @@ class _TranslationsTrpgJa extends TranslationsTrpgEn {
 	@override String get tapToContinue => 'タップして続ける';
 	@override String get narrator => 'ナレーター';
 	@override String get messageLog => 'メッセージログ';
+	@override String turnSeparator({required Object n}) => 'ターン ${n}';
+	@override String get you => 'あなた';
+	@override String get gm => 'GM';
+}
+
+// Path: gameMenu
+class _TranslationsGameMenuJa extends TranslationsGameMenuEn {
+	_TranslationsGameMenuJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String get newGame => 'スタート';
+	@override String get loadGame => 'ロード';
+	@override String get backToTitle => 'もどる';
+	@override String get savedSessions => 'セーブデータ';
+	@override String get noData => 'NO DATA';
+	@override String get noSavedSessions => 'セーブデータがありません';
+	@override String turnNumber({required Object n}) => 'ターン ${n}';
+	@override String lastPlayed({required Object time}) => '${time}';
 }
 
 // Path: error
@@ -371,6 +393,7 @@ extension on TranslationsJa {
 			'trpg.chooseAction' => '行動を選択してください',
 			'trpg.freeInput' => 'または自由に行動を記述...',
 			'trpg.clarifyTitle' => 'GMから確認があります',
+			'trpg.clarifyHint' => '回答を入力...',
 			'trpg.repairTitle' => '矛盾が検出されました',
 			'trpg.repairContradiction' => ({required Object text}) => '問題: ${text}',
 			'trpg.repairFix' => ({required Object text}) => '修正案: ${text}',
@@ -384,6 +407,17 @@ extension on TranslationsJa {
 			'trpg.tapToContinue' => 'タップして続ける',
 			'trpg.narrator' => 'ナレーター',
 			'trpg.messageLog' => 'メッセージログ',
+			'trpg.turnSeparator' => ({required Object n}) => 'ターン ${n}',
+			'trpg.you' => 'あなた',
+			'trpg.gm' => 'GM',
+			'gameMenu.newGame' => 'スタート',
+			'gameMenu.loadGame' => 'ロード',
+			'gameMenu.backToTitle' => 'もどる',
+			'gameMenu.savedSessions' => 'セーブデータ',
+			'gameMenu.noData' => 'NO DATA',
+			'gameMenu.noSavedSessions' => 'セーブデータがありません',
+			'gameMenu.turnNumber' => ({required Object n}) => 'ターン ${n}',
+			'gameMenu.lastPlayed' => ({required Object time}) => '${time}',
 			'error.generic' => 'エラーが発生しました',
 			'error.network' => 'ネットワークエラー',
 			'error.notFound' => '見つかりません',

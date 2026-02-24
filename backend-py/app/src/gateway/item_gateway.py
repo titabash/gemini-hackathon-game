@@ -62,3 +62,22 @@ class ItemGateway:
             item.quantity += quantity_delta
             session.add(item)
             session.commit()
+
+    def update_equipped(
+        self,
+        session: Session,
+        session_id: uuid.UUID,
+        name: str,
+        *,
+        is_equipped: bool,
+    ) -> None:
+        """Update the equipped status of an item."""
+        statement = select(Items).where(
+            Items.session_id == session_id,
+            Items.name == name,
+        )
+        item = session.exec(statement).first()
+        if item:
+            item.is_equipped = is_equipped
+            session.add(item)
+            session.commit()

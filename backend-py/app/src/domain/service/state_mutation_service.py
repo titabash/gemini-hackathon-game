@@ -37,10 +37,13 @@ class StateMutationService:
         changes: StateChanges,
     ) -> None:
         """Apply all state mutations atomically."""
-        self._apply_hp(db, session_id, changes)
+        self._apply_stats(db, session_id, changes)
         self._apply_items(db, session_id, changes)
+        self._apply_item_updates(db, session_id, changes)
         self._apply_location(db, session_id, changes)
         self._apply_relationships(db, session_id, changes)
+        self._apply_npc_states(db, session_id, changes)
+        self._apply_npc_locations(db, session_id, changes)
         self._apply_objectives(db, session_id, changes)
         self._apply_status_effects(db, session_id, changes)
         self._apply_flags(db, session_id, changes)
@@ -61,18 +64,19 @@ class StateMutationService:
             ending_summary=session_end.ending_summary,
         )
 
-    def _apply_hp(
+    def _apply_stats(
         self,
         db: Session,
         session_id: uuid.UUID,
         changes: StateChanges,
     ) -> None:
-        if changes.hp_delta is None:
+        if not changes.stats_delta:
             return
         pc = self.pc_gw.get_by_session(db, session_id)
         if pc:
             stats = dict(pc.stats)
-            stats["hp"] = stats.get("hp", 100) + changes.hp_delta
+            for key, delta in changes.stats_delta.items():
+                stats[key] = stats.get(key, 0) + delta
             self.pc_gw.update_stats(db, pc.id, stats)
 
     def _apply_items(
@@ -99,6 +103,28 @@ class StateMutationService:
         for name in changes.removed_items or []:
             self.item_gw.delete_by_name(db, session_id, name)
 
+    def _apply_item_updates(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        changes: StateChanges,
+    ) -> None:
+        for iu in changes.item_updates or []:
+            if iu.quantity_delta is not None:
+                self.item_gw.update_quantity(
+                    db,
+                    session_id,
+                    iu.name,
+                    iu.quantity_delta,
+                )
+            if iu.is_equipped is not None:
+                self.item_gw.update_equipped(
+                    db,
+                    session_id,
+                    iu.name,
+                    is_equipped=iu.is_equipped,
+                )
+
     def _apply_location(
         self,
         db: Session,
@@ -122,7 +148,7 @@ class StateMutationService:
         session_id: uuid.UUID,
         changes: StateChanges,
     ) -> None:
-        npcs = self.npc_gw.get_active_by_session(db, session_id)
+        npcs = self.npc_gw.get_by_session(db, session_id)
         for rc in changes.relationship_changes or []:
             npc = next((n for n in npcs if n.name == rc.npc_name), None)
             if npc is None:
@@ -137,6 +163,36 @@ class StateMutationService:
                     debt=rc.debt_delta,
                 ),
             )
+
+    def _apply_npc_states(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        changes: StateChanges,
+    ) -> None:
+        if not changes.npc_state_updates:
+            return
+        npcs = self.npc_gw.get_by_session(db, session_id)
+        for nsu in changes.npc_state_updates:
+            npc = next((n for n in npcs if n.name == nsu.npc_name), None)
+            if npc is None:
+                continue
+            self.npc_gw.update_state(db, npc.id, nsu.state)
+
+    def _apply_npc_locations(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        changes: StateChanges,
+    ) -> None:
+        if not changes.npc_location_changes:
+            return
+        npcs = self.npc_gw.get_by_session(db, session_id)
+        for nlc in changes.npc_location_changes:
+            npc = next((n for n in npcs if n.name == nlc.npc_name), None)
+            if npc is None:
+                continue
+            self.npc_gw.update_location(db, npc.id, nlc.x, nlc.y)
 
     def _apply_objectives(
         self,

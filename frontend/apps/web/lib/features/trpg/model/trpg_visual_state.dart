@@ -6,6 +6,7 @@ class TrpgVisualState {
     this.locationName,
     this.sceneDescription,
     this.activeNpcs = const [],
+    this.currentSpeaker,
     this.hp = 100,
     this.maxHp = 100,
     this.playerName = 'Player',
@@ -15,6 +16,9 @@ class TrpgVisualState {
   final String? locationName;
   final String? sceneDescription;
   final List<NpcVisual> activeNpcs;
+
+  /// Name of the NPC currently speaking (used for highlight/dim).
+  final String? currentSpeaker;
   final int hp;
   final int maxHp;
   final String playerName;
@@ -24,19 +28,25 @@ class TrpgVisualState {
     String? locationName,
     String? sceneDescription,
     List<NpcVisual>? activeNpcs,
+    String? Function()? currentSpeaker,
     int? hp,
     int? maxHp,
     String? playerName,
-    String? backgroundImageUrl,
+    String? Function()? backgroundImageUrl,
   }) {
     return TrpgVisualState(
       locationName: locationName ?? this.locationName,
       sceneDescription: sceneDescription ?? this.sceneDescription,
       activeNpcs: activeNpcs ?? this.activeNpcs,
+      currentSpeaker: currentSpeaker != null
+          ? currentSpeaker()
+          : this.currentSpeaker,
       hp: hp ?? this.hp,
       maxHp: maxHp ?? this.maxHp,
       playerName: playerName ?? this.playerName,
-      backgroundImageUrl: backgroundImageUrl ?? this.backgroundImageUrl,
+      backgroundImageUrl: backgroundImageUrl != null
+          ? backgroundImageUrl()
+          : this.backgroundImageUrl,
     );
   }
 }

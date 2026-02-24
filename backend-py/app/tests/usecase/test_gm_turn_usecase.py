@@ -1,7 +1,8 @@
 """Tests for GmTurnUseCase turn-limit and condition evaluation integration.
 
 Verifies hard-limit bypass, soft-limit prompt injection,
-normal-turn passthrough, and condition-triggered session endings.
+normal-turn passthrough, condition-triggered session endings,
+and assetReady pipeline for node-based backgrounds.
 """
 
 from __future__ import annotations
@@ -12,9 +13,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.domain.entity.gm_types import (
+    CharacterDisplay,
     FlagChange,
     GmDecisionResponse,
     GmTurnRequest,
+    SceneNode,
     SessionEnd,
     StateChanges,
 )
@@ -60,11 +63,46 @@ def _fake_session(
 def _fake_decision(
     *,
     state_changes: StateChanges | None = None,
+    nodes: list[SceneNode] | None = None,
 ) -> GmDecisionResponse:
     return GmDecisionResponse(
         decision_type="narrate",
         narration_text="You see a dark room.",
         state_changes=state_changes,
+        nodes=nodes,
+    )
+
+
+def _fake_nodes_decision() -> GmDecisionResponse:
+    """Build a decision with SceneNode list for node-based tests."""
+    return GmDecisionResponse(
+        decision_type="narrate",
+        narration_text="Summary.",
+        nodes=[
+            SceneNode(
+                type="narration",
+                text="A dark cave.",
+                background="cave_01",
+            ),
+            SceneNode(
+                type="dialogue",
+                text="Hello!",
+                speaker="Guard",
+                background="A misty forest clearing",
+                characters=[
+                    CharacterDisplay(
+                        npc_name="Guard",
+                        expression="anger",
+                        position="left",
+                    ),
+                ],
+            ),
+            SceneNode(
+                type="narration",
+                text="Another cave scene.",
+                background="cave_01",
+            ),
+        ],
     )
 
 
@@ -88,7 +126,7 @@ def _stub_common(uc: object, *, turn_return: int) -> None:
     uc.context_gw.get_by_session = MagicMock(  # type: ignore[attr-defined]
         return_value=None,
     )
-    uc.npc_gw.get_active_by_session = MagicMock(  # type: ignore[attr-defined]
+    uc.npc_gw.get_by_session = MagicMock(  # type: ignore[attr-defined]
         return_value=[],
     )
     uc.npc_gw.get_by_scenario = MagicMock(  # type: ignore[attr-defined]
@@ -471,9 +509,9 @@ class TestConditionEvaluation:
             uc.context_svc.build_context = MagicMock(return_value=ctx)
             uc.context_svc.build_prompt = MagicMock(return_value="prompt")
 
-            # HP delta makes HP go to 0
+            # stats_delta makes HP go to 0
             decision = _fake_decision(
-                state_changes=StateChanges(hp_delta=-10),
+                state_changes=StateChanges(stats_delta={"hp": -10}),
             )
             uc.decision_svc.decide = AsyncMock(return_value=decision)
             _stub_common(uc, turn_return=11)
@@ -595,3 +633,779 @@ class TestConditionEvaluation:
             await _collect(uc.execute(_make_request(), MagicMock()))
 
             uc.mutation_svc.apply_session_end.assert_not_called()
+
+
+class TestCollectRequiredAssets:
+    """Tests for _collect_required_assets node background collection."""
+
+    def test_collect_deduplicates_backgrounds(self) -> None:
+        """Same background ID appearing in multiple nodes → single entry."""
+        from src.usecase.gm_turn_usecase import _collect_required_assets
+
+        nodes = [
+            SceneNode(type="narration", text="A.", background="cave_01"),
+            SceneNode(type="narration", text="B.", background="cave_01"),
+            SceneNode(type="dialogue", text="C.", speaker="X"),
+        ]
+        result = _collect_required_assets(nodes)
+        assert len(result) == 1
+        assert result[0] == "cave_01"
+
+    def test_collect_multiple_unique_backgrounds(self) -> None:
+        """Different backgrounds should all be collected."""
+        from src.usecase.gm_turn_usecase import _collect_required_assets
+
+        nodes = [
+            SceneNode(type="narration", text="A.", background="cave_01"),
+            SceneNode(type="narration", text="B.", background="forest_02"),
+            SceneNode(
+                type="narration",
+                text="C.",
+                background="A misty forest",
+            ),
+        ]
+        result = _collect_required_assets(nodes)
+        assert len(result) == 3
+
+    def test_collect_skips_none_backgrounds(self) -> None:
+        """Nodes without background should not produce entries."""
+        from src.usecase.gm_turn_usecase import _collect_required_assets
+
+        nodes = [
+            SceneNode(type="narration", text="A."),
+            SceneNode(type="dialogue", text="B.", speaker="X"),
+        ]
+        result = _collect_required_assets(nodes)
+        assert result == []
+
+    def test_collect_empty_nodes(self) -> None:
+        """Empty node list should return empty list."""
+        from src.usecase.gm_turn_usecase import _collect_required_assets
+
+        result = _collect_required_assets([])
+        assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Helpers for assetReady tests
+# ---------------------------------------------------------------------------
+
+_UUID_BG = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
+def _parse_sse_events(raw_events: list[str]) -> list[dict[str, Any]]:
+    """Parse SSE event strings into dicts."""
+    results: list[dict[str, Any]] = []
+    import json
+
+    for raw in raw_events:
+        if raw.startswith("data: "):
+            payload = json.loads(raw[len("data: ") :].strip())
+            results.append(payload)
+    return results
+
+
+def _fake_bg_record(
+    *,
+    bg_id: str = _UUID_BG,
+    image_path: str = "backgrounds/cave.png",
+    scenario_id: str | None = "11111111-1111-1111-1111-111111111111",
+) -> MagicMock:
+    """Create a fake SceneBackgrounds row."""
+    import uuid as _uuid
+
+    rec = MagicMock()
+    rec.id = _uuid.UUID(bg_id)
+    rec.image_path = image_path
+    rec.scenario_id = _uuid.UUID(scenario_id) if scenario_id else None
+    return rec
+
+
+def _setup_uc_for_asset_test(
+    uc: object,
+    *,
+    decision: GmDecisionResponse,
+) -> None:
+    """Common setup for asset resolution tests."""
+    uc.session_gw.get_by_id = MagicMock(  # type: ignore[attr-defined]
+        return_value=_fake_session(turn=5),
+    )
+    ctx = _CtxBuilder().build()
+    uc.context_svc.build_context = MagicMock(  # type: ignore[attr-defined]
+        return_value=ctx,
+    )
+    uc.context_svc.build_prompt = MagicMock(  # type: ignore[attr-defined]
+        return_value="prompt",
+    )
+    uc.decision_svc.decide = AsyncMock(  # type: ignore[attr-defined]
+        return_value=decision,
+    )
+    _stub_common(uc, turn_return=6)
+    uc.bridge_svc.stream_decision = _empty_stream  # type: ignore[attr-defined]
+
+
+# ---------------------------------------------------------------------------
+# assetReady pipeline tests
+# ---------------------------------------------------------------------------
+
+
+class TestResolveNodeAssets:
+    """Tests for _resolve_node_assets and execute() branching."""
+
+    @pytest.mark.asyncio
+    async def test_uuid_background_resolved_from_db(self) -> None:
+        """Node background that is a UUID → DB lookup → assetReady."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            decision = _fake_decision(
+                nodes=[
+                    SceneNode(
+                        type="narration",
+                        text="A cave.",
+                        background=_UUID_BG,
+                    ),
+                ],
+            )
+            _setup_uc_for_asset_test(uc, decision=decision)
+
+            uc.bg_gw.find_by_id = MagicMock(
+                return_value=_fake_bg_record(),
+            )
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            asset_events = [e for e in parsed if e.get("type") == "assetReady"]
+
+            assert len(asset_events) == 1
+            assert asset_events[0]["key"] == _UUID_BG
+            assert "scenario-assets/" in asset_events[0]["path"]
+
+    @pytest.mark.asyncio
+    async def test_text_background_triggers_generation(self) -> None:
+        """Node background that is free text → image generation → assetReady."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            desc = "A misty forest clearing"
+            decision = _fake_decision(
+                nodes=[
+                    SceneNode(
+                        type="narration",
+                        text="Trees.",
+                        background=desc,
+                    ),
+                ],
+            )
+            _setup_uc_for_asset_test(uc, decision=decision)
+
+            uc.bg_gw.find_by_id = MagicMock(return_value=None)
+            uc.bg_gw.find_by_description = MagicMock(return_value=None)
+            uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/img.png",
+            )
+            uc.bg_gw.create = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            asset_events = [e for e in parsed if e.get("type") == "assetReady"]
+
+            assert len(asset_events) == 1
+            assert asset_events[0]["key"] == desc
+            assert "generated-images/" in asset_events[0]["path"]
+            uc.gemini.generate_image.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_mixed_uuid_and_text_backgrounds(self) -> None:
+        """UUID + text backgrounds in one decision → both resolved."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            decision = _fake_decision(
+                nodes=[
+                    SceneNode(
+                        type="narration",
+                        text="A.",
+                        background=_UUID_BG,
+                    ),
+                    SceneNode(
+                        type="narration",
+                        text="B.",
+                        background="Dark dungeon",
+                    ),
+                ],
+            )
+            _setup_uc_for_asset_test(uc, decision=decision)
+
+            uc.bg_gw.find_by_id = MagicMock(
+                return_value=_fake_bg_record(),
+            )
+            uc.bg_gw.find_by_description = MagicMock(return_value=None)
+            uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/dungeon.png",
+            )
+            uc.bg_gw.create = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            asset_events = [e for e in parsed if e.get("type") == "assetReady"]
+
+            assert len(asset_events) == 2
+
+    @pytest.mark.asyncio
+    async def test_duplicate_backgrounds_resolved_once(self) -> None:
+        """Same background on multiple nodes → resolved only once."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            decision = _fake_decision(
+                nodes=[
+                    SceneNode(
+                        type="narration",
+                        text="A.",
+                        background=_UUID_BG,
+                    ),
+                    SceneNode(
+                        type="narration",
+                        text="B.",
+                        background=_UUID_BG,
+                    ),
+                ],
+            )
+            _setup_uc_for_asset_test(uc, decision=decision)
+
+            uc.bg_gw.find_by_id = MagicMock(
+                return_value=_fake_bg_record(),
+            )
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            asset_events = [e for e in parsed if e.get("type") == "assetReady"]
+
+            assert len(asset_events) == 1
+            uc.bg_gw.find_by_id.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_nodes_path_skips_legacy_image_update(self) -> None:
+        """Decision with nodes → no imageUpdate event (assetReady only)."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            decision = GmDecisionResponse(
+                decision_type="narrate",
+                narration_text="Summary.",
+                scene_description="A forest scene",
+                selected_background_id=_UUID_BG,
+                nodes=[
+                    SceneNode(
+                        type="narration",
+                        text="Trees.",
+                        background=_UUID_BG,
+                    ),
+                ],
+            )
+            _setup_uc_for_asset_test(uc, decision=decision)
+
+            uc.bg_gw.find_by_id = MagicMock(
+                return_value=_fake_bg_record(),
+            )
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            image_events = [e for e in parsed if e.get("type") == "imageUpdate"]
+
+            assert image_events == []
+
+    @pytest.mark.asyncio
+    async def test_no_nodes_uses_legacy_image_update(self) -> None:
+        """Decision without nodes → legacy imageUpdate path."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            decision = GmDecisionResponse(
+                decision_type="narrate",
+                narration_text="Summary.",
+                selected_background_id=_UUID_BG,
+            )
+            _setup_uc_for_asset_test(uc, decision=decision)
+
+            uc.bg_gw.find_by_id = MagicMock(
+                return_value=_fake_bg_record(),
+            )
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            image_events = [e for e in parsed if e.get("type") == "imageUpdate"]
+
+            assert len(image_events) == 1
+            assert "scenario-assets/" in image_events[0]["path"]
+
+    @pytest.mark.asyncio
+    async def test_text_description_reuses_cached_image(self) -> None:
+        """Text background that was previously generated → cache hit, no gen."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            desc = "A misty forest clearing"
+            decision = _fake_decision(
+                nodes=[
+                    SceneNode(
+                        type="narration",
+                        text="Trees.",
+                        background=desc,
+                    ),
+                ],
+            )
+            _setup_uc_for_asset_test(uc, decision=decision)
+
+            # bg_gw.find_by_description returns a cached record
+            uc.bg_gw.find_by_description = MagicMock(
+                return_value=_fake_bg_record(
+                    image_path="sessions/cached.png",
+                    scenario_id=None,
+                ),
+            )
+            uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            asset_events = [e for e in parsed if e.get("type") == "assetReady"]
+
+            assert len(asset_events) == 1
+            assert "generated-images/" in asset_events[0]["path"]
+            # Gemini should NOT be called (cache hit)
+            uc.gemini.generate_image.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Helpers for NPC emotion asset tests
+# ---------------------------------------------------------------------------
+
+
+def _fake_npc_record(
+    *,
+    name: str = "Guard",
+    image_path: str | None = "npcs/guard_default.png",
+    emotion_images: dict[str, str] | None = None,
+    session_id: str = "00000000-0000-0000-0000-000000000001",
+) -> MagicMock:
+    """Create a fake Npcs row."""
+    import uuid as _uuid
+
+    rec = MagicMock()
+    rec.id = _uuid.uuid4()
+    rec.name = name
+    rec.image_path = image_path
+    rec.emotion_images = emotion_images
+    rec.session_id = _uuid.UUID(session_id)
+    rec.profile = {"description": "A sturdy guard"}
+    return rec
+
+
+def _setup_npc_emotion_test(
+    uc: object,
+    *,
+    nodes: list[SceneNode],
+    npc_records: list[MagicMock] | None = None,
+) -> None:
+    """Common setup for NPC emotion asset tests."""
+    decision = _fake_decision(nodes=nodes)
+    _setup_uc_for_asset_test(uc, decision=decision)
+    # Background resolution stubs (no BG assets in these tests)
+    uc.bg_gw.find_by_id = MagicMock(return_value=None)  # type: ignore[attr-defined]
+    uc.bg_gw.find_by_description = MagicMock(  # type: ignore[attr-defined]
+        return_value=None,
+    )
+    # NPC records for npc_images resolution
+    records = npc_records or []
+    uc.npc_gw.get_by_session = MagicMock(  # type: ignore[attr-defined]
+        return_value=records,
+    )
+    if records:
+        uc.npc_gw.get_by_scenario = MagicMock(  # type: ignore[attr-defined]
+            return_value=records,
+        )
+
+
+def _npc_asset_events(parsed: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Filter assetReady events with NPC keys."""
+    return [
+        e
+        for e in parsed
+        if e.get("type") == "assetReady" and str(e.get("key", "")).startswith("npc:")
+    ]
+
+
+# ---------------------------------------------------------------------------
+# NPC emotion asset pipeline tests
+# ---------------------------------------------------------------------------
+
+
+class TestResolveNpcEmotionAssets:
+    """Tests for NPC emotion image resolution in node-based mode."""
+
+    @pytest.mark.asyncio
+    async def test_emotion_image_exists_yields_asset_ready(self) -> None:
+        """NPC has emotion image in DB → assetReady with emotion key."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Halt!",
+                    speaker="Guard",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Guard",
+                            expression="anger",
+                        ),
+                    ],
+                ),
+            ]
+            guard = _fake_npc_record(
+                name="Guard",
+                image_path="npcs/guard_default.png",
+                emotion_images={"anger": "npcs/guard_anger.png"},
+            )
+            _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[guard])
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            # Expect emotion-specific + default
+            keys = {e["key"] for e in npc_events}
+            assert "npc:Guard:anger" in keys
+            assert "npc:Guard:default" in keys
+            anger_ev = next(e for e in npc_events if e["key"] == "npc:Guard:anger")
+            assert "guard_anger.png" in anger_ev["path"]
+
+    @pytest.mark.asyncio
+    async def test_default_image_sent_for_npc(self) -> None:
+        """NPC with default image → assetReady with 'npc:{name}:default'."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Hello.",
+                    speaker="Merchant",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Merchant",
+                            expression=None,
+                        ),
+                    ],
+                ),
+            ]
+            merchant = _fake_npc_record(
+                name="Merchant",
+                image_path="npcs/merchant_default.png",
+                emotion_images=None,
+            )
+            _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[merchant])
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            keys = {e["key"] for e in npc_events}
+            assert "npc:Merchant:default" in keys
+
+    @pytest.mark.asyncio
+    async def test_missing_emotion_triggers_generation(self) -> None:
+        """NPC has default but no emotion variant → generate → assetReady."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Hmm?",
+                    speaker="Guard",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Guard",
+                            expression="surprise",
+                        ),
+                    ],
+                ),
+            ]
+            guard = _fake_npc_record(
+                name="Guard",
+                image_path="npcs/guard_default.png",
+                emotion_images={"anger": "npcs/guard_anger.png"},
+            )
+            _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[guard])
+            uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/guard_surprise.png",
+            )
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            keys = {e["key"] for e in npc_events}
+            assert "npc:Guard:surprise" in keys
+            assert "npc:Guard:default" in keys
+            uc.gemini.generate_image.assert_called_once()
+            uc.npc_gw.update_emotion_image.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_image_npc_generates_default(self) -> None:
+        """NPC without any images → generate portrait → assetReady."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Hey!",
+                    speaker="Bandit",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Bandit",
+                            expression="anger",
+                        ),
+                    ],
+                ),
+            ]
+            # NPC exists in DB but has no images
+            bandit = _fake_npc_record(
+                name="Bandit",
+                image_path=None,
+                emotion_images=None,
+            )
+            _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[bandit])
+            uc.npc_gw.find_by_name_and_session = MagicMock(
+                return_value=bandit,
+            )
+            uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/bandit_anger.png",
+            )
+            uc.npc_gw.update_image_path = MagicMock()
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            assert len(npc_events) >= 1
+            keys = {e["key"] for e in npc_events}
+            assert "npc:Bandit:anger" in keys
+            uc.gemini.generate_image.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_dedup_same_npc_expression(self) -> None:
+        """Same (npc, expression) in multiple nodes → only 1 assetReady."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Stop!",
+                    speaker="Guard",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Guard",
+                            expression="anger",
+                        ),
+                    ],
+                ),
+                SceneNode(
+                    type="dialogue",
+                    text="I said stop!",
+                    speaker="Guard",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Guard",
+                            expression="anger",
+                        ),
+                    ],
+                ),
+            ]
+            guard = _fake_npc_record(
+                name="Guard",
+                image_path="npcs/guard_default.png",
+                emotion_images={"anger": "npcs/guard_anger.png"},
+            )
+            _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[guard])
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            # "npc:Guard:anger" should appear exactly once
+            anger_events = [e for e in npc_events if e["key"] == "npc:Guard:anger"]
+            assert len(anger_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_no_characters_no_npc_events(self) -> None:
+        """Nodes without characters → no NPC assetReady events."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="narration",
+                    text="Empty room.",
+                ),
+            ]
+            _setup_npc_emotion_test(uc, nodes=nodes)
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            assert npc_events == []

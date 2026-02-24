@@ -28,6 +28,17 @@ class SceneBackgroundGateway:
         )
         return list(session.exec(statement).all())
 
+    def find_all_by_session(
+        self,
+        session: Session,
+        session_id: uuid.UUID,
+    ) -> list[SceneBackgrounds]:
+        """Find all backgrounds generated during a session."""
+        statement = select(SceneBackgrounds).where(
+            SceneBackgrounds.session_id == session_id,
+        )
+        return list(session.exec(statement).all())
+
     def find_by_id(
         self,
         session: Session,
@@ -36,6 +47,23 @@ class SceneBackgroundGateway:
         """Find a background by its primary key."""
         statement = select(SceneBackgrounds).where(
             SceneBackgrounds.id == bg_id,
+        )
+        return session.exec(statement).first()
+
+    def find_by_description(
+        self,
+        session: Session,
+        session_id: uuid.UUID,
+        description: str,
+    ) -> SceneBackgrounds | None:
+        """Find a cached background by description within a session."""
+        statement = (
+            select(SceneBackgrounds)
+            .where(
+                SceneBackgrounds.session_id == session_id,
+                SceneBackgrounds.description == description,
+            )
+            .limit(1)
         )
         return session.exec(statement).first()
 

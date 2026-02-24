@@ -192,7 +192,6 @@ export type Database = {
           goals: Json
           id: string
           image_path: string | null
-          is_active: boolean
           location_x: number
           location_y: number
           name: string
@@ -208,7 +207,6 @@ export type Database = {
           goals: Json
           id?: string
           image_path?: string | null
-          is_active?: boolean
           location_x?: number
           location_y?: number
           name: string
@@ -224,7 +222,6 @@ export type Database = {
           goals?: Json
           id?: string
           image_path?: string | null
-          is_active?: boolean
           location_x?: number
           location_y?: number
           name?: string
@@ -348,6 +345,7 @@ export type Database = {
           id: string
           initial_state: Json
           is_public: boolean
+          max_turns: number
           thumbnail_path: string | null
           title: string
           updated_at: string
@@ -361,6 +359,7 @@ export type Database = {
           id?: string
           initial_state: Json
           is_public?: boolean
+          max_turns?: number
           thumbnail_path?: string | null
           title: string
           updated_at?: string
@@ -374,6 +373,7 @@ export type Database = {
           id?: string
           initial_state?: Json
           is_public?: boolean
+          max_turns?: number
           thumbnail_path?: string | null
           title?: string
           updated_at?: string
@@ -437,6 +437,7 @@ export type Database = {
       sessions: {
         Row: {
           created_at: string
+          current_node_index: number
           current_state: Json
           current_turn_number: number
           ending_summary: string | null
@@ -450,6 +451,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          current_node_index?: number
           current_state: Json
           current_turn_number?: number
           ending_summary?: string | null
@@ -463,6 +465,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          current_node_index?: number
           current_state?: Json
           current_turn_number?: number
           ending_summary?: string | null
@@ -567,13 +570,12 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      gm_decision_type: "narrate" | "choice" | "roll" | "clarify" | "repair"
+      gm_decision_type: "narrate" | "choice" | "clarify" | "repair"
       input_type:
         | "start"
         | "do"
         | "say"
         | "choice"
-        | "roll_result"
         | "clarify_answer"
         | "system"
       objective_status: "active" | "completed" | "failed"
@@ -708,16 +710,8 @@ export const Constants = {
   },
   public: {
     Enums: {
-      gm_decision_type: ["narrate", "choice", "roll", "clarify", "repair"],
-      input_type: [
-        "start",
-        "do",
-        "say",
-        "choice",
-        "roll_result",
-        "clarify_answer",
-        "system",
-      ],
+      gm_decision_type: ["narrate", "choice", "clarify", "repair"],
+      input_type: ["start", "do", "say", "choice", "clarify_answer", "system"],
       objective_status: ["active", "completed", "failed"],
       session_status: ["active", "completed", "abandoned"],
     },

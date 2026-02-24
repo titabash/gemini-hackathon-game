@@ -23,6 +23,7 @@ from domain.service.condition_evaluation_service import (
 from domain.service.context_service import ContextService
 from domain.service.genui_bridge_service import GenuiBridgeService, NpcImageMap
 from domain.service.gm_decision_service import GmDecisionService
+from domain.service.npc_clone_service import NpcCloneService
 from domain.service.state_mutation_service import StateMutationService
 from domain.service.storage_constants import SCENARIO_ASSETS_BUCKET
 from domain.service.turn_limit_service import TurnLimitService
@@ -65,6 +66,7 @@ class GmTurnUseCase:
         self.storage_svc = StorageService()
         self.bg_gw = SceneBackgroundGateway()
         self.npc_gw = NpcGateway()
+        self.clone_svc = NpcCloneService()
         self.turn_limit_svc = TurnLimitService()
         self.condition_svc = ConditionEvaluationService()
         self.resolution_svc = ActionResolutionService()
@@ -81,6 +83,8 @@ class GmTurnUseCase:
         if not game_session or game_session.status != "active":
             yield _error_event("Session not active")
             return
+
+        self._maybe_clone_npcs(request, db, session_id, game_session)
 
         # Build context and resolve decision (with turn-limit checks)
         context = self.context_svc.build_context(db, session_id)
@@ -132,18 +136,37 @@ class GmTurnUseCase:
         ):
             yield event
 
-        # Resolve background image: ID-based lookup first, then generate
-        image_ref = self._resolve_background_image(db, decision)
-        if image_ref:
-            yield _image_event(image_ref)
-        elif decision.scene_description:
-            gen_ref = await self._generate_and_upload_image(
+        # Resolve background images
+        async for event in self._resolve_backgrounds(
+            db,
+            session_id,
+            decision,
+        ):
+            yield event
+
+        # Resolve NPC emotion images (node mode only)
+        if decision.nodes:
+            async for event in self._resolve_npc_emotion_assets(
                 db,
                 session_id,
-                decision.scene_description,
-            )
-            if gen_ref:
-                yield _image_event(gen_ref)
+                decision.nodes,
+                npc_images,
+            ):
+                yield event
+
+    def _maybe_clone_npcs(
+        self,
+        request: GmTurnRequest,
+        db: Session,
+        session_id: uuid.UUID,
+        game_session: object,
+    ) -> None:
+        """Clone scenario NPCs into the session on the first turn."""
+        if request.input_type != "start":
+            return
+        sid = game_session.scenario_id  # type: ignore[attr-defined]
+        state = game_session.current_state  # type: ignore[attr-defined]
+        self.clone_svc.clone_npcs_for_session(db, sid, session_id, state)
 
     async def _resolve_decision(
         self,
@@ -245,6 +268,33 @@ class GmTurnUseCase:
                 ),
             )
 
+    async def _resolve_backgrounds(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        decision: GmDecisionResponse,
+    ) -> AsyncIterator[str]:
+        """Route to node-based or legacy background resolution."""
+        if decision.nodes:
+            async for event in self._resolve_node_assets(
+                db,
+                session_id,
+                decision.nodes,
+            ):
+                yield event
+        else:
+            image_ref = self._resolve_background_image(db, decision)
+            if image_ref:
+                yield _image_event(image_ref)
+            elif decision.scene_description:
+                gen_ref = await self._generate_and_upload_image(
+                    db,
+                    session_id,
+                    decision.scene_description,
+                )
+                if gen_ref:
+                    yield _image_event(gen_ref)
+
     def _resolve_background_image(
         self,
         db: Session,
@@ -289,7 +339,7 @@ class GmTurnUseCase:
     ) -> NpcImageMap:
         """Build NPC name -> (default_path, emotion_map) and log each NPC."""
         npc_images = _build_npc_image_entries(
-            self.npc_gw.get_active_by_session(db, session_id),
+            self.npc_gw.get_by_session(db, session_id),
         )
         if not npc_images:
             npc_images = _build_npc_image_entries(
@@ -343,6 +393,208 @@ class GmTurnUseCase:
         )
         self.turn_gw.create(db, turn)
 
+    async def _resolve_node_assets(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        nodes: list[Any],
+    ) -> AsyncIterator[str]:
+        """Resolve background assets for scene nodes."""
+        backgrounds = _collect_required_assets(nodes)
+        if not backgrounds:
+            return
+
+        # Phase 1: DB lookups (UUID by id, text by description)
+        unresolved: list[str] = []
+        for bg_key in backgrounds:
+            # Try UUID lookup first
+            try:
+                bg_id = uuid.UUID(bg_key)
+                bg = self.bg_gw.find_by_id(db, bg_id)
+                if bg and bg.image_path:
+                    bucket = (
+                        SCENARIO_ASSETS_BUCKET if bg.scenario_id else "generated-images"
+                    )
+                    yield _asset_ready_event(
+                        bg_key,
+                        f"{bucket}/{bg.image_path}",
+                    )
+                    continue
+            except ValueError:
+                pass
+            # Try description-based cache lookup
+            cached = self.bg_gw.find_by_description(
+                db,
+                session_id,
+                bg_key,
+            )
+            if cached and cached.image_path:
+                yield _asset_ready_event(
+                    bg_key,
+                    f"generated-images/{cached.image_path}",
+                )
+                continue
+            unresolved.append(bg_key)
+
+        if not unresolved:
+            return
+
+        # Phase 2: Parallel image generation (Gemini API)
+        tasks = [
+            self.gemini.generate_image(f"Fantasy RPG scene: {desc}")
+            for desc in unresolved
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        # Sequential: upload + DB cache + yield events
+        for desc, result in zip(unresolved, results, strict=True):
+            if isinstance(result, BaseException) or result is None:
+                logger.warning("Node asset generation failed", key=desc)
+                continue
+            try:
+                storage_path = await asyncio.to_thread(
+                    self.storage_svc.upload_image,
+                    str(session_id),
+                    result,
+                )
+                self.bg_gw.create(
+                    db,
+                    SceneBackgrounds(
+                        id=uuid.uuid4(),
+                        session_id=session_id,
+                        location_name=desc[:100],
+                        image_path=storage_path,
+                        description=desc,
+                        created_at=datetime.now(UTC),
+                    ),
+                )
+                yield _asset_ready_event(
+                    desc,
+                    f"generated-images/{storage_path}",
+                )
+            except Exception:
+                logger.warning("Node asset upload failed", key=desc)
+
+    async def _resolve_npc_emotion_assets(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        nodes: list[Any],
+        npc_images: NpcImageMap,
+    ) -> AsyncIterator[str]:
+        """Resolve NPC emotion images for scene nodes."""
+        chars = _collect_npc_character_assets(nodes)
+        if not chars:
+            return
+
+        sent: set[str] = set()
+
+        for npc_name, expression in chars:
+            default_path, emotion_map = npc_images.get(
+                npc_name,
+                (None, {}),
+            )
+
+            # Send default image once per NPC
+            default_key = f"npc:{npc_name}:default"
+            if default_path and default_key not in sent:
+                sent.add(default_key)
+                yield _asset_ready_event(
+                    default_key,
+                    f"{SCENARIO_ASSETS_BUCKET}/{default_path}",
+                )
+
+            # Resolve emotion-specific image
+            asset_key = f"npc:{npc_name}:{expression or 'default'}"
+            if asset_key in sent:
+                continue
+            sent.add(asset_key)
+
+            if expression and expression in emotion_map:
+                yield _asset_ready_event(
+                    asset_key,
+                    f"{SCENARIO_ASSETS_BUCKET}/{emotion_map[expression]}",
+                )
+                continue
+
+            if not expression:
+                continue
+
+            # Generate missing emotion image
+            event = await self._generate_npc_emotion(
+                db,
+                session_id,
+                npc_name,
+                expression,
+                npc_images,
+            )
+            if event:
+                yield _asset_ready_event(
+                    asset_key,
+                    event,
+                )
+
+    async def _generate_npc_emotion(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        npc_name: str,
+        expression: str,
+        npc_images: NpcImageMap,
+    ) -> str | None:
+        """Generate, upload, and cache an NPC emotion image.
+
+        Returns the storage path string on success, None on failure.
+        """
+        npc_rec = self.npc_gw.find_by_name_and_session(
+            db,
+            session_id,
+            npc_name,
+        )
+        profile_desc = ""
+        if npc_rec and npc_rec.profile:
+            profile_desc = str(npc_rec.profile.get("description", ""))
+
+        prompt = (
+            f"Fantasy RPG character portrait: {npc_name}, "
+            f"{expression} expression. {profile_desc}"
+        )
+        try:
+            image_bytes = await self.gemini.generate_image(prompt)
+            if not image_bytes:
+                return None
+
+            storage_path = await asyncio.to_thread(
+                self.storage_svc.upload_image,
+                str(session_id),
+                image_bytes,
+            )
+
+            # Cache in DB
+            if npc_rec:
+                has_default = bool(npc_images.get(npc_name, (None,))[0])
+                if not has_default:
+                    self.npc_gw.update_image_path(
+                        db,
+                        npc_rec.id,
+                        storage_path,
+                    )
+                self.npc_gw.update_emotion_image(
+                    db,
+                    npc_rec.id,
+                    expression,
+                    storage_path,
+                )
+
+            return f"generated-images/{storage_path}"
+        except Exception:
+            logger.warning(
+                "NPC emotion image generation failed",
+                npc_name=npc_name,
+                expression=expression,
+            )
+            return None
+
     async def _generate_and_upload_image(
         self,
         db: Session,
@@ -391,6 +643,43 @@ class GmTurnUseCase:
 # ---------------------------------------------------------------------------
 
 
+def _collect_npc_character_assets(
+    nodes: list[Any],
+) -> list[tuple[str, str | None]]:
+    """Collect unique (npc_name, expression) pairs from scene nodes."""
+    seen: set[tuple[str, str | None]] = set()
+    result: list[tuple[str, str | None]] = []
+    for node in nodes:
+        characters = getattr(node, "characters", None)
+        if not characters:
+            continue
+        for ch in characters:
+            name = ch.npc_name if hasattr(ch, "npc_name") else None
+            if not name:
+                continue
+            expr = ch.expression if hasattr(ch, "expression") else None
+            pair = (name, expr)
+            if pair not in seen:
+                seen.add(pair)
+                result.append(pair)
+    return result
+
+
+def _collect_required_assets(nodes: list[Any]) -> list[str]:
+    """Collect unique background references from scene nodes.
+
+    Returns deduplicated list of background values (IDs or descriptions).
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for node in nodes:
+        bg = node.background if hasattr(node, "background") else None
+        if bg and bg not in seen:
+            seen.add(bg)
+            result.append(bg)
+    return result
+
+
 def _has_session_end(changes: StateChanges | None) -> bool:
     """Check if state_changes includes a session_end."""
     return changes is not None and changes.session_end is not None
@@ -417,8 +706,9 @@ def _compute_latest_stats(
 ) -> dict[str, Any]:
     """Compute latest stats from context + decision without DB re-read."""
     stats: dict[str, Any] = dict(context.player.stats)
-    if changes and changes.hp_delta is not None:
-        stats["hp"] = stats.get("hp", 100) + changes.hp_delta
+    if changes and changes.stats_delta:
+        for key, delta in changes.stats_delta.items():
+            stats[key] = stats.get(key, 0) + delta
     return stats
 
 
@@ -453,6 +743,15 @@ def _image_event(path: str) -> str:
     """
     payload = json.dumps(
         {"type": "imageUpdate", "path": path},
+        ensure_ascii=False,
+    )
+    return f"data: {payload}\n\n"
+
+
+def _asset_ready_event(key: str, path: str) -> str:
+    """Build an SSE assetReady event string."""
+    payload = json.dumps(
+        {"type": "assetReady", "key": key, "path": path},
         ensure_ascii=False,
     )
     return f"data: {payload}\n\n"

@@ -174,7 +174,6 @@ def seed_npc(
         state={"mood": "neutral"},
         location_x=5,
         location_y=3,
-        is_active=True,
         created_at=_now(),
         updated_at=_now(),
     )

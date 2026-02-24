@@ -1,0 +1,1 @@
+ALTER TABLE "scenarios" ADD COLUMN "max_turns" integer DEFAULT 30 NOT NULL;

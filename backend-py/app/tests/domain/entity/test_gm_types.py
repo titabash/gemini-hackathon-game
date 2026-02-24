@@ -5,6 +5,7 @@ for all Gemini structured output types.
 """
 
 from src.domain.entity.gm_types import (
+    CharacterDisplay,
     ChoiceOption,
     FlagChange,
     GameContext,
@@ -21,6 +22,7 @@ from src.domain.entity.gm_types import (
     PlayerSummary,
     RelationshipChange,
     RepairData,
+    SceneNode,
     SessionEnd,
     StateChanges,
     TurnSummary,
@@ -141,7 +143,7 @@ class TestGmDecisionResponse:
             decision_type="narrate",
             narration_text="You found a potion.",
             state_changes=StateChanges(
-                hp_delta=10,
+                stats_delta={"hp": 10},
                 new_items=[NewItem(name="Health Potion", description="Heals 50 HP")],
                 objective_updates=[
                     ObjectiveUpdate(
@@ -152,7 +154,7 @@ class TestGmDecisionResponse:
             ),
         )
         assert resp.state_changes is not None
-        assert resp.state_changes.hp_delta == 10
+        assert resp.state_changes.stats_delta == {"hp": 10}
         assert resp.state_changes.new_items is not None
         assert len(resp.state_changes.new_items) == 1
 
@@ -209,6 +211,77 @@ class TestGmDecisionResponse:
         assert resp.state_changes.session_end is not None
         assert resp.state_changes.session_end.ending_type == "victory"
 
+    def test_with_nodes(self) -> None:
+        """Decision with nodes should store SceneNode list."""
+        resp = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Summary of nodes.",
+            nodes=[
+                SceneNode(
+                    type="narration",
+                    text="The forest grows quiet.",
+                    background="forest_01",
+                ),
+                SceneNode(
+                    type="dialogue",
+                    text="Hello, traveler!",
+                    speaker="Innkeeper",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Innkeeper",
+                            expression="joy",
+                            position="center",
+                        ),
+                    ],
+                ),
+                SceneNode(
+                    type="choice",
+                    text="What will you do?",
+                    choices=[
+                        ChoiceOption(id="a", text="Stay"),
+                        ChoiceOption(id="b", text="Leave"),
+                    ],
+                ),
+            ],
+        )
+        assert resp.nodes is not None
+        assert len(resp.nodes) == 3
+        assert resp.nodes[0].type == "narration"
+        assert resp.nodes[1].speaker == "Innkeeper"
+        assert resp.nodes[2].choices is not None
+
+    def test_nodes_default_none(self) -> None:
+        """Nodes should default to None for backward compatibility."""
+        resp = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="No nodes.",
+        )
+        assert resp.nodes is None
+
+    def test_with_nodes_json_roundtrip(self) -> None:
+        """Decision with nodes should serialize and deserialize."""
+        resp = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="Summary.",
+            nodes=[
+                SceneNode(
+                    type="dialogue",
+                    text="Pick carefully.",
+                    speaker="Guide",
+                ),
+                SceneNode(
+                    type="choice",
+                    text="Choose.",
+                    choices=[ChoiceOption(id="a", text="Go")],
+                ),
+            ],
+        )
+        data = resp.model_dump_json()
+        restored = GmDecisionResponse.model_validate_json(data)
+        assert restored.nodes is not None
+        assert len(restored.nodes) == 2
+        assert restored.nodes[0].speaker == "Guide"
+
 
 class TestStateChanges:
     """Tests for state change sub-models."""
@@ -237,7 +310,7 @@ class TestStateChanges:
     def test_empty_state_changes(self) -> None:
         """All fields should be optional."""
         sc = StateChanges()
-        assert sc.hp_delta is None
+        assert sc.stats_delta is None
         assert sc.new_items is None
 
 
@@ -386,7 +459,7 @@ class TestFlagChange:
     def test_state_changes_with_flags_json_roundtrip(self) -> None:
         """StateChanges with flag_changes should serialize correctly."""
         sc = StateChanges(
-            hp_delta=-5,
+            stats_delta={"hp": -5},
             flag_changes=[
                 FlagChange(flag_id="key_found", value=True),
             ],
@@ -397,4 +470,4 @@ class TestFlagChange:
         assert len(restored.flag_changes) == 1
         assert restored.flag_changes[0].flag_id == "key_found"
         assert restored.flag_changes[0].value is True
-        assert restored.hp_delta == -5
+        assert restored.stats_delta == {"hp": -5}

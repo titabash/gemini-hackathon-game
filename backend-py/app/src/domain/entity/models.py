@@ -49,6 +49,7 @@ class Scenarios(SQLModel, table=True):
     is_public: bool = Field(sa_column=Column('is_public', Boolean, nullable=False, server_default=text('true')))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    max_turns: int = Field(sa_column=Column('max_turns', Integer, nullable=False, server_default=text('30')))
     thumbnail_path: Optional[str] = Field(default=None, sa_column=Column('thumbnail_path', Text))
     created_by: Optional[uuid.UUID] = Field(default=None, sa_column=Column('created_by', Uuid))
 
@@ -74,6 +75,7 @@ class Sessions(SQLModel, table=True):
     current_turn_number: int = Field(sa_column=Column('current_turn_number', Integer, nullable=False, server_default=text('0')))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+    current_node_index: int = Field(sa_column=Column('current_node_index', Integer, nullable=False, server_default=text('0')))
     ending_summary: Optional[str] = Field(default=None, sa_column=Column('ending_summary', Text))
     ending_type: Optional[str] = Field(default=None, sa_column=Column('ending_type', Text))
 
@@ -143,7 +145,6 @@ class Npcs(SQLModel, table=True):
     state: dict = Field(sa_column=Column('state', JSONB, nullable=False))
     location_x: int = Field(sa_column=Column('location_x', Integer, nullable=False, server_default=text('0')))
     location_y: int = Field(sa_column=Column('location_y', Integer, nullable=False, server_default=text('0')))
-    is_active: bool = Field(sa_column=Column('is_active', Boolean, nullable=False, server_default=text('true')))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     updated_at: datetime.datetime = Field(sa_column=Column('updated_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
     session_id: Optional[uuid.UUID] = Field(default=None, sa_column=Column('session_id', Uuid))
@@ -227,9 +228,9 @@ class Turns(SQLModel, table=True):
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
     session_id: uuid.UUID = Field(sa_column=Column('session_id', Uuid, nullable=False))
     turn_number: int = Field(sa_column=Column('turn_number', Integer, nullable=False))
-    input_type: str = Field(sa_column=Column('input_type', Enum('start', 'do', 'say', 'choice', 'roll_result', 'clarify_answer', 'system', name='input_type'), nullable=False))
+    input_type: str = Field(sa_column=Column('input_type', Enum('start', 'do', 'say', 'choice', 'clarify_answer', 'system', name='input_type'), nullable=False))
     input_text: str = Field(sa_column=Column('input_text', Text, nullable=False, server_default=text("''::text")))
-    gm_decision_type: str = Field(sa_column=Column('gm_decision_type', Enum('narrate', 'choice', 'roll', 'clarify', 'repair', name='gm_decision_type'), nullable=False))
+    gm_decision_type: str = Field(sa_column=Column('gm_decision_type', Enum('narrate', 'choice', 'clarify', 'repair', name='gm_decision_type'), nullable=False))
     output: dict = Field(sa_column=Column('output', JSONB, nullable=False))
     created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
 

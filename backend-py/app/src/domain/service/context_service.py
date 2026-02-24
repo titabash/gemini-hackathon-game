@@ -123,6 +123,7 @@ class ContextService:
             available_backgrounds=self._load_backgrounds(
                 db,
                 sess.scenario_id,
+                session_id,
             ),
         )
 
@@ -307,7 +308,7 @@ class ContextService:
         db: Session,
         session_id: uuid.UUID,
     ) -> list[NpcSummary]:
-        npcs = self._npc_gw.get_active_by_session(db, session_id)
+        npcs = self._npc_gw.get_by_session(db, session_id)
         result: list[NpcSummary] = []
         for npc in npcs:
             pair = self._npc_gw.get_with_relationship(db, npc.id)
@@ -327,6 +328,8 @@ class ContextService:
                     goals=npc.goals,
                     state=npc.state,
                     relationship=rel_dict,
+                    location_x=int(npc.location_x),
+                    location_y=int(npc.location_y),
                 ),
             )
         return result
@@ -365,17 +368,26 @@ class ContextService:
         self,
         db: Session,
         scenario_id: uuid.UUID,
+        session_id: uuid.UUID,
     ) -> list[BackgroundResourceSummary]:
-        """Load all base-asset backgrounds for the scenario."""
+        """Load scenario + session-generated backgrounds."""
         rows = self._bg_gw.find_all_by_scenario(db, scenario_id)
-        return [
-            BackgroundResourceSummary(
-                id=str(bg.id),
-                location_name=bg.location_name,
-                description=bg.description,
+        rows += self._bg_gw.find_all_by_session(db, session_id)
+        seen: set[str] = set()
+        result: list[BackgroundResourceSummary] = []
+        for bg in rows:
+            bg_id = str(bg.id)
+            if bg_id in seen:
+                continue
+            seen.add(bg_id)
+            result.append(
+                BackgroundResourceSummary(
+                    id=bg_id,
+                    location_name=bg.location_name,
+                    description=bg.description,
+                ),
             )
-            for bg in rows
-        ]
+        return result
 
     @staticmethod
     def _format_turns(turns: list[TurnSummary]) -> str:
@@ -392,6 +404,7 @@ class ContextService:
             f" goals={json.dumps(n.goals)}"
             f" state={json.dumps(n.state)}"
             f" rel={json.dumps(n.relationship)}"
+            f" location=({n.location_x}, {n.location_y})"
             for n in npcs
         )
 

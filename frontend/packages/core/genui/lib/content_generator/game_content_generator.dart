@@ -14,7 +14,7 @@ const _backendUrl = String.fromEnvironment(
 const _gmServerUrl = '$_backendUrl/api/gm/turn';
 
 /// A [ContentGenerator] for the TRPG game that handles both A2UI messages
-/// and game-specific SSE events (text, stateUpdate, imageUpdate).
+/// and game-specific SSE events (text, stateUpdate, imageUpdate, nodesReady).
 class GameContentGenerator implements ContentGenerator {
   GameContentGenerator({required this.sseClientFactory});
 
@@ -35,6 +35,10 @@ class GameContentGenerator implements ContentGenerator {
       StreamController<String>.broadcast();
   final StreamController<void> _doneController =
       StreamController<void>.broadcast();
+  final StreamController<List<Map<String, dynamic>>> _nodesReadyController =
+      StreamController<List<Map<String, dynamic>>>.broadcast();
+  final StreamController<Map<String, dynamic>> _assetReadyController =
+      StreamController<Map<String, dynamic>>.broadcast();
 
   SseConnection? _activeConnection;
   StreamSubscription<SseMessage>? _activeSubscription;
@@ -60,6 +64,14 @@ class GameContentGenerator implements ContentGenerator {
 
   /// Stream that emits when the GM turn is complete.
   Stream<void> get doneStream => _doneController.stream;
+
+  /// Stream of scene node lists for visual novel page-by-page playback.
+  Stream<List<Map<String, dynamic>>> get nodesReadyStream =>
+      _nodesReadyController.stream;
+
+  /// Stream of individual asset completion events (background, NPC image).
+  Stream<Map<String, dynamic>> get assetReadyStream =>
+      _assetReadyController.stream;
 
   /// Send a game turn to the GM backend via SSE.
   Future<void> sendTurn({
@@ -162,6 +174,23 @@ class GameContentGenerator implements ContentGenerator {
         _textController.add(decoded['content'] as String? ?? '');
         return;
       }
+      if (type == 'nodesReady') {
+        final nodes =
+            (decoded['nodes'] as List<dynamic>?)
+                ?.cast<Map<String, dynamic>>()
+                .toList() ??
+            [];
+        _nodesReadyController.add(nodes);
+        return;
+      }
+      if (type == 'assetReady') {
+        final data = <String, dynamic>{
+          'key': decoded['key'] as String? ?? '',
+          'path': decoded['path'] as String? ?? '',
+        };
+        _assetReadyController.add(data);
+        return;
+      }
       if (type == 'stateUpdate') {
         final data = decoded['data'] as Map<String, dynamic>? ?? {};
         _gameStateController.add(data);
@@ -205,6 +234,8 @@ class GameContentGenerator implements ContentGenerator {
     _gameStateController.close();
     _gameImageController.close();
     _doneController.close();
+    _nodesReadyController.close();
+    _assetReadyController.close();
     _isProcessing.dispose();
   }
 }

@@ -1,0 +1,1365 @@
+{
+  "id": "61ae45ea-41a1-410f-a65c-905ec5a67cfe",
+  "prevId": "6cdc1850-2767-45fd-893b-dcd3408db600",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.context_summaries": {
+      "name": "context_summaries",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "plot_essentials": {
+          "name": "plot_essentials",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "short_term_summary": {
+          "name": "short_term_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "confirmed_facts": {
+          "name": "confirmed_facts",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_updated_turn": {
+          "name": "last_updated_turn",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "context_summaries_session_id_sessions_id_fk": {
+          "name": "context_summaries_session_id_sessions_id_fk",
+          "tableFrom": "context_summaries",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "context_summaries_session_id_unique": {
+          "name": "context_summaries_session_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "session_id"
+          ]
+        }
+      },
+      "policies": {
+        "all_policy_context_summaries": {
+          "name": "all_policy_context_summaries",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = context_summaries.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  ",
+          "withCheck": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = context_summaries.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        },
+        "select_policy_context_summaries": {
+          "name": "select_policy_context_summaries",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = context_summaries.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.items": {
+      "name": "items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "type": {
+          "name": "type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "image_path": {
+          "name": "image_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "is_equipped": {
+          "name": "is_equipped",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "items_session_id_sessions_id_fk": {
+          "name": "items_session_id_sessions_id_fk",
+          "tableFrom": "items",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "all_policy_items": {
+          "name": "all_policy_items",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = items.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  ",
+          "withCheck": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = items.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        },
+        "select_policy_items": {
+          "name": "select_policy_items",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = items.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.npc_relationships": {
+      "name": "npc_relationships",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "npc_id": {
+          "name": "npc_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "affinity": {
+          "name": "affinity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "trust": {
+          "name": "trust",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "fear": {
+          "name": "fear",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "debt": {
+          "name": "debt",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "flags": {
+          "name": "flags",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "npc_relationships_npc_id_npcs_id_fk": {
+          "name": "npc_relationships_npc_id_npcs_id_fk",
+          "tableFrom": "npc_relationships",
+          "tableTo": "npcs",
+          "columnsFrom": [
+            "npc_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "npc_relationships_npc_id_unique": {
+          "name": "npc_relationships_npc_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "npc_id"
+          ]
+        }
+      },
+      "policies": {
+        "all_policy_npc_relationships": {
+          "name": "all_policy_npc_relationships",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM npcs\n      JOIN sessions ON sessions.id = npcs.session_id\n      WHERE npcs.id = npc_relationships.npc_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  ",
+          "withCheck": "\n    EXISTS (\n      SELECT 1 FROM npcs\n      JOIN sessions ON sessions.id = npcs.session_id\n      WHERE npcs.id = npc_relationships.npc_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        },
+        "select_policy_npc_relationships": {
+          "name": "select_policy_npc_relationships",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM npcs\n      JOIN sessions ON sessions.id = npcs.session_id\n      WHERE npcs.id = npc_relationships.npc_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.npcs": {
+      "name": "npcs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "scenario_id": {
+          "name": "scenario_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_path": {
+          "name": "image_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "emotion_images": {
+          "name": "emotion_images",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profile": {
+          "name": "profile",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "goals": {
+          "name": "goals",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location_x": {
+          "name": "location_x",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "location_y": {
+          "name": "location_y",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "npcs_scenario_id_scenarios_id_fk": {
+          "name": "npcs_scenario_id_scenarios_id_fk",
+          "tableFrom": "npcs",
+          "tableTo": "scenarios",
+          "columnsFrom": [
+            "scenario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "npcs_session_id_sessions_id_fk": {
+          "name": "npcs_session_id_sessions_id_fk",
+          "tableFrom": "npcs",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "all_policy_npcs": {
+          "name": "all_policy_npcs",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    (\n      scenario_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM scenarios\n        WHERE scenarios.id = npcs.scenario_id\n        AND scenarios.created_by = (SELECT auth.uid())\n      )\n    )\n    OR\n    (\n      session_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM sessions\n        WHERE sessions.id = npcs.session_id\n        AND sessions.user_id = (SELECT auth.uid())\n      )\n    )\n  ",
+          "withCheck": "\n    (\n      scenario_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM scenarios\n        WHERE scenarios.id = npcs.scenario_id\n        AND scenarios.created_by = (SELECT auth.uid())\n      )\n    )\n    OR\n    (\n      session_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM sessions\n        WHERE sessions.id = npcs.session_id\n        AND sessions.user_id = (SELECT auth.uid())\n      )\n    )\n  "
+        },
+        "insert_policy_npcs_service_role": {
+          "name": "insert_policy_npcs_service_role",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "service_role"
+          ],
+          "withCheck": "true"
+        },
+        "select_policy_npcs": {
+          "name": "select_policy_npcs",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "\n    (\n      scenario_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM scenarios\n        WHERE scenarios.id = npcs.scenario_id\n        AND (scenarios.is_public = true OR scenarios.created_by = (SELECT auth.uid()))\n      )\n    )\n    OR\n    (\n      session_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM sessions\n        WHERE sessions.id = npcs.session_id\n        AND sessions.user_id = (SELECT auth.uid())\n      )\n    )\n  "
+        }
+      },
+      "checkConstraints": {
+        "npcs_at_least_one_parent": {
+          "name": "npcs_at_least_one_parent",
+          "value": "scenario_id IS NOT NULL OR session_id IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.objectives": {
+      "name": "objectives",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "status": {
+          "name": "status",
+          "type": "objective_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "sort_order": {
+          "name": "sort_order",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "objectives_session_id_sessions_id_fk": {
+          "name": "objectives_session_id_sessions_id_fk",
+          "tableFrom": "objectives",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "all_policy_objectives": {
+          "name": "all_policy_objectives",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = objectives.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  ",
+          "withCheck": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = objectives.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        },
+        "select_policy_objectives": {
+          "name": "select_policy_objectives",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = objectives.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.player_characters": {
+      "name": "player_characters",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_path": {
+          "name": "image_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "stats": {
+          "name": "stats",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status_effects": {
+          "name": "status_effects",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "location_x": {
+          "name": "location_x",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "location_y": {
+          "name": "location_y",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "player_characters_session_id_sessions_id_fk": {
+          "name": "player_characters_session_id_sessions_id_fk",
+          "tableFrom": "player_characters",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "player_characters_session_id_unique": {
+          "name": "player_characters_session_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "session_id"
+          ]
+        }
+      },
+      "policies": {
+        "all_policy_player_characters": {
+          "name": "all_policy_player_characters",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = player_characters.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  ",
+          "withCheck": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = player_characters.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        },
+        "select_policy_player_characters": {
+          "name": "select_policy_player_characters",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = player_characters.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.scenarios": {
+      "name": "scenarios",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "initial_state": {
+          "name": "initial_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "win_conditions": {
+          "name": "win_conditions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fail_conditions": {
+          "name": "fail_conditions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "thumbnail_path": {
+          "name": "thumbnail_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by": {
+          "name": "created_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "max_turns": {
+          "name": "max_turns",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 30
+        },
+        "is_public": {
+          "name": "is_public",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "scenarios_created_by_users_id_fk": {
+          "name": "scenarios_created_by_users_id_fk",
+          "tableFrom": "scenarios",
+          "tableTo": "users",
+          "columnsFrom": [
+            "created_by"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "all_policy_scenarios": {
+          "name": "all_policy_scenarios",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = created_by",
+          "withCheck": "(SELECT auth.uid()) = created_by"
+        },
+        "insert_policy_scenarios_service_role": {
+          "name": "insert_policy_scenarios_service_role",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "service_role"
+          ],
+          "withCheck": "true"
+        },
+        "select_policy_scenarios": {
+          "name": "select_policy_scenarios",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "is_public = true OR (SELECT auth.uid()) = created_by"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.scene_backgrounds": {
+      "name": "scene_backgrounds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "scenario_id": {
+          "name": "scenario_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location_name": {
+          "name": "location_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "image_path": {
+          "name": "image_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "scene_backgrounds_scenario_id_scenarios_id_fk": {
+          "name": "scene_backgrounds_scenario_id_scenarios_id_fk",
+          "tableFrom": "scene_backgrounds",
+          "tableTo": "scenarios",
+          "columnsFrom": [
+            "scenario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "scene_backgrounds_session_id_sessions_id_fk": {
+          "name": "scene_backgrounds_session_id_sessions_id_fk",
+          "tableFrom": "scene_backgrounds",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "all_policy_scene_backgrounds": {
+          "name": "all_policy_scene_backgrounds",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    (\n      scenario_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM scenarios\n        WHERE scenarios.id = scene_backgrounds.scenario_id\n        AND scenarios.created_by = (SELECT auth.uid())\n      )\n    )\n    OR\n    (\n      session_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM sessions\n        WHERE sessions.id = scene_backgrounds.session_id\n        AND sessions.user_id = (SELECT auth.uid())\n      )\n    )\n  ",
+          "withCheck": "\n    (\n      scenario_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM scenarios\n        WHERE scenarios.id = scene_backgrounds.scenario_id\n        AND scenarios.created_by = (SELECT auth.uid())\n      )\n    )\n    OR\n    (\n      session_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM sessions\n        WHERE sessions.id = scene_backgrounds.session_id\n        AND sessions.user_id = (SELECT auth.uid())\n      )\n    )\n  "
+        },
+        "insert_policy_scene_backgrounds_service_role": {
+          "name": "insert_policy_scene_backgrounds_service_role",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "service_role"
+          ],
+          "withCheck": "true"
+        },
+        "select_policy_scene_backgrounds": {
+          "name": "select_policy_scene_backgrounds",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "\n    (\n      scenario_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM scenarios\n        WHERE scenarios.id = scene_backgrounds.scenario_id\n        AND (scenarios.is_public = true OR scenarios.created_by = (SELECT auth.uid()))\n      )\n    )\n    OR\n    (\n      session_id IS NOT NULL AND EXISTS (\n        SELECT 1 FROM sessions\n        WHERE sessions.id = scene_backgrounds.session_id\n        AND sessions.user_id = (SELECT auth.uid())\n      )\n    )\n  "
+        }
+      },
+      "checkConstraints": {
+        "at_least_one_parent": {
+          "name": "at_least_one_parent",
+          "value": "scenario_id IS NOT NULL OR session_id IS NOT NULL"
+        }
+      },
+      "isRLSEnabled": true
+    },
+    "public.sessions": {
+      "name": "sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scenario_id": {
+          "name": "scenario_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "title": {
+          "name": "title",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "status": {
+          "name": "status",
+          "type": "session_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "current_state": {
+          "name": "current_state",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "current_turn_number": {
+          "name": "current_turn_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "ending_summary": {
+          "name": "ending_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ending_type": {
+          "name": "ending_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "sessions_user_id_users_id_fk": {
+          "name": "sessions_user_id_users_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "sessions_scenario_id_scenarios_id_fk": {
+          "name": "sessions_scenario_id_scenarios_id_fk",
+          "tableFrom": "sessions",
+          "tableTo": "scenarios",
+          "columnsFrom": [
+            "scenario_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {
+        "all_policy_sessions": {
+          "name": "all_policy_sessions",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = user_id",
+          "withCheck": "(SELECT auth.uid()) = user_id"
+        },
+        "select_policy_sessions": {
+          "name": "select_policy_sessions",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = user_id"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.turns": {
+      "name": "turns",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "session_id": {
+          "name": "session_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_number": {
+          "name": "turn_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_type": {
+          "name": "input_type",
+          "type": "input_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "input_text": {
+          "name": "input_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "gm_decision_type": {
+          "name": "gm_decision_type",
+          "type": "gm_decision_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "output": {
+          "name": "output",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "turns_session_id_sessions_id_fk": {
+          "name": "turns_session_id_sessions_id_fk",
+          "tableFrom": "turns",
+          "tableTo": "sessions",
+          "columnsFrom": [
+            "session_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "turns_session_id_turn_number_key": {
+          "name": "turns_session_id_turn_number_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "session_id",
+            "turn_number"
+          ]
+        }
+      },
+      "policies": {
+        "all_policy_turns": {
+          "name": "all_policy_turns",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = turns.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  ",
+          "withCheck": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = turns.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        },
+        "select_policy_turns": {
+          "name": "select_policy_turns",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "authenticated"
+          ],
+          "using": "\n    EXISTS (\n      SELECT 1 FROM sessions\n      WHERE sessions.id = turns.session_id\n      AND sessions.user_id = (SELECT auth.uid())\n    )\n  "
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
+    "public.users": {
+      "name": "users",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "display_name": {
+          "name": "display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "''"
+        },
+        "account_name": {
+          "name": "account_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "avatar_path": {
+          "name": "avatar_path",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp (3) with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "users_account_name_unique": {
+          "name": "users_account_name_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "account_name"
+          ]
+        }
+      },
+      "policies": {
+        "edit_policy_users": {
+          "name": "edit_policy_users",
+          "as": "PERMISSIVE",
+          "for": "ALL",
+          "to": [
+            "authenticated"
+          ],
+          "using": "(SELECT auth.uid()) = id",
+          "withCheck": "(SELECT auth.uid()) = id"
+        },
+        "insert_policy_users": {
+          "name": "insert_policy_users",
+          "as": "PERMISSIVE",
+          "for": "INSERT",
+          "to": [
+            "supabase_auth_admin"
+          ],
+          "withCheck": "true"
+        },
+        "select_policy_users": {
+          "name": "select_policy_users",
+          "as": "PERMISSIVE",
+          "for": "SELECT",
+          "to": [
+            "anon",
+            "authenticated"
+          ],
+          "using": "true"
+        }
+      },
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    }
+  },
+  "enums": {
+    "public.gm_decision_type": {
+      "name": "gm_decision_type",
+      "schema": "public",
+      "values": [
+        "narrate",
+        "choice",
+        "clarify",
+        "repair"
+      ]
+    },
+    "public.input_type": {
+      "name": "input_type",
+      "schema": "public",
+      "values": [
+        "start",
+        "do",
+        "say",
+        "choice",
+        "clarify_answer",
+        "system"
+      ]
+    },
+    "public.objective_status": {
+      "name": "objective_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "completed",
+        "failed"
+      ]
+    },
+    "public.session_status": {
+      "name": "session_status",
+      "schema": "public",
+      "values": [
+        "active",
+        "completed",
+        "abandoned"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

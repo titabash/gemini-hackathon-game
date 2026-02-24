@@ -12,12 +12,14 @@ from typing import Any
 import pytest
 
 from src.domain.entity.gm_types import (
+    CharacterDisplay,
     ChoiceOption,
     GmDecisionResponse,
     LocationChange,
     NpcDialogue,
     NpcIntent,
     RepairData,
+    SceneNode,
     StateChanges,
 )
 from src.domain.service.genui_bridge_service import (
@@ -495,16 +497,16 @@ class TestBuildStateData:
         assert result is not None
         assert result["scene_description"] == "A vast underground cavern."
 
-    def test_hp_delta(self) -> None:
-        """HP delta should be included."""
+    def test_stats_delta(self) -> None:
+        """Stats delta should be included."""
         decision = GmDecisionResponse(
             decision_type="narrate",
             narration_text="Ouch!",
-            state_changes=StateChanges(hp_delta=-5),
+            state_changes=StateChanges(stats_delta={"hp": -5, "san": -3}),
         )
         result = GenuiBridgeService._build_state_data(decision)
         assert result is not None
-        assert result["hp_delta"] == -5
+        assert result["stats_delta"] == {"hp": -5, "san": -3}
 
     def test_location_change(self) -> None:
         """Location change should be serialized."""
@@ -1009,3 +1011,157 @@ class TestStreamDecision:
         npcs = state_events[0]["data"]["active_npcs"]
         # stateUpdate should keep raw bucket-prefixed path (no full URL)
         assert npcs[0]["image_path"] == "scenario-assets/npcs/elf.png"
+
+
+# ---------------------------------------------------------------------------
+# Node-based stream tests
+# ---------------------------------------------------------------------------
+
+
+class TestStreamDecisionWithNodes:
+    """Tests for stream_decision() when nodes are present."""
+
+    @pytest.mark.asyncio
+    async def test_nodes_ready_event_emitted(self) -> None:
+        """When nodes present, nodesReady event should be emitted."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Summary.",
+            nodes=[
+                SceneNode(type="narration", text="The forest grows quiet."),
+                SceneNode(
+                    type="dialogue",
+                    text="Hello!",
+                    speaker="Innkeeper",
+                    characters=[
+                        CharacterDisplay(npc_name="Innkeeper", expression="joy"),
+                    ],
+                ),
+            ],
+        )
+        svc = GenuiBridgeService()
+        svc.WORD_DELAY = 0
+
+        raw_events = await _collect_stream(svc, decision)
+        parsed = _parse_raw_events(raw_events)
+
+        nodes_ready = [p for p in parsed if p.get("type") == "nodesReady"]
+        assert len(nodes_ready) == 1
+        assert len(nodes_ready[0]["nodes"]) == 2
+        assert nodes_ready[0]["nodes"][0]["type"] == "narration"
+        assert nodes_ready[0]["nodes"][1]["speaker"] == "Innkeeper"
+
+    @pytest.mark.asyncio
+    async def test_nodes_ready_includes_all_fields(self) -> None:
+        """NodesReady event should include all SceneNode fields."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Summary.",
+            nodes=[
+                SceneNode(
+                    type="dialogue",
+                    text="Welcome!",
+                    speaker="Guard",
+                    background="tavern_01",
+                    characters=[
+                        CharacterDisplay(
+                            npc_name="Guard",
+                            expression="anger",
+                            position="left",
+                        ),
+                    ],
+                ),
+            ],
+        )
+        svc = GenuiBridgeService()
+        svc.WORD_DELAY = 0
+
+        raw_events = await _collect_stream(svc, decision)
+        parsed = _parse_raw_events(raw_events)
+
+        nodes_ready = [p for p in parsed if p.get("type") == "nodesReady"]
+        node = nodes_ready[0]["nodes"][0]
+        assert node["background"] == "tavern_01"
+        assert node["characters"][0]["npc_name"] == "Guard"
+        assert node["characters"][0]["position"] == "left"
+
+    @pytest.mark.asyncio
+    async def test_without_nodes_no_nodes_ready(self) -> None:
+        """When nodes is None, nodesReady event should NOT be emitted."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Normal text.",
+            nodes=None,
+        )
+        svc = GenuiBridgeService()
+        svc.WORD_DELAY = 0
+
+        raw_events = await _collect_stream(svc, decision)
+        parsed = _parse_raw_events(raw_events)
+
+        nodes_ready = [p for p in parsed if p.get("type") == "nodesReady"]
+        assert len(nodes_ready) == 0
+
+    @pytest.mark.asyncio
+    async def test_nodes_stream_still_has_done(self) -> None:
+        """Node-based stream should still end with done event."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Summary.",
+            nodes=[
+                SceneNode(type="narration", text="A quiet scene."),
+            ],
+        )
+        svc = GenuiBridgeService()
+        svc.WORD_DELAY = 0
+
+        raw_events = await _collect_stream(svc, decision)
+        parsed = _parse_raw_events(raw_events)
+        event_types = [_classify_event(p) for p in parsed]
+
+        assert event_types[-1] == "done"
+
+    @pytest.mark.asyncio
+    async def test_nodes_stream_has_state_update(self) -> None:
+        """Node-based stream should still emit stateUpdate when present."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Summary.",
+            nodes=[
+                SceneNode(type="narration", text="Moving on."),
+            ],
+            state_changes=StateChanges(
+                location_change=LocationChange(
+                    location_name="Cave",
+                    x=10,
+                    y=20,
+                ),
+            ),
+        )
+        svc = GenuiBridgeService()
+        svc.WORD_DELAY = 0
+
+        raw_events = await _collect_stream(svc, decision)
+        parsed = _parse_raw_events(raw_events)
+
+        state_events = [p for p in parsed if p.get("type") == "stateUpdate"]
+        assert len(state_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_nodes_with_text_streaming_skipped(self) -> None:
+        """When nodes present, typewriter text streaming should be skipped."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="This should not stream word-by-word.",
+            nodes=[
+                SceneNode(type="narration", text="Node text instead."),
+            ],
+        )
+        svc = GenuiBridgeService()
+        svc.WORD_DELAY = 0
+
+        raw_events = await _collect_stream(svc, decision)
+        parsed = _parse_raw_events(raw_events)
+
+        text_events = [p for p in parsed if p.get("type") == "text"]
+        assert len(text_events) == 0

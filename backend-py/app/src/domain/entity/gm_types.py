@@ -103,19 +103,75 @@ class FlagChange(BaseModel):
     value: bool
 
 
+class NpcStateUpdate(BaseModel):
+    """NPC internal state mutation requested by GM decision."""
+
+    npc_name: str
+    state: dict[str, object]
+
+
+class ItemUpdate(BaseModel):
+    """Existing item mutation requested by GM decision."""
+
+    name: str
+    quantity_delta: int | None = None
+    is_equipped: bool | None = None
+
+
+class NpcLocationChange(BaseModel):
+    """NPC location change requested by GM decision."""
+
+    npc_name: str
+    x: int
+    y: int
+
+
 class StateChanges(BaseModel):
     """Aggregated state mutations from a GM decision."""
 
-    hp_delta: int | None = None
+    stats_delta: dict[str, int] | None = None
     new_items: list[NewItem] | None = None
     removed_items: list[str] | None = None
+    item_updates: list[ItemUpdate] | None = None
     location_change: LocationChange | None = None
     relationship_changes: list[RelationshipChange] | None = None
+    npc_state_updates: list[NpcStateUpdate] | None = None
+    npc_location_changes: list[NpcLocationChange] | None = None
     objective_updates: list[ObjectiveUpdate] | None = None
     status_effect_adds: list[str] | None = None
     status_effect_removes: list[str] | None = None
     flag_changes: list[FlagChange] | None = None
     session_end: SessionEnd | None = None
+
+
+# --- Scene Node Types (Visual Novel node-based output) ---
+
+
+class CharacterDisplay(BaseModel):
+    """Character display specification for a scene node."""
+
+    npc_name: str
+    expression: str | None = None  # joy, anger, sadness, pleasure, surprise
+    position: str = "center"  # left, center, right
+
+
+class SceneNode(BaseModel):
+    """Single visual novel page with complete visual state."""
+
+    type: Literal["narration", "dialogue", "choice"]
+    text: str
+    speaker: str | None = None
+    background: str | None = None
+    characters: list[CharacterDisplay] | None = None
+    choices: list[ChoiceOption] | None = None
+
+    # Future extension fields (field-only, no processing yet)
+    cg: str | None = None
+    cg_clear: bool = False
+    bgm: str | None = None
+    bgm_stop: bool = False
+    se: str | None = None
+    voice_id: str | None = None
 
 
 # --- GM Decision Response (Gemini structured output) ---
@@ -126,6 +182,8 @@ class GmDecisionResponse(BaseModel):
 
     decision_type: Literal["narrate", "choice", "clarify", "repair"]
     narration_text: str
+
+    nodes: list[SceneNode] | None = None
 
     scene_description: str | None = None
     selected_background_id: str | None = None
@@ -179,6 +237,8 @@ class NpcSummary(BaseModel):
     goals: dict[str, Any]
     state: dict[str, Any]
     relationship: dict[str, Any]
+    location_x: int = 0
+    location_y: int = 0
 
 
 class ObjectiveSummary(BaseModel):

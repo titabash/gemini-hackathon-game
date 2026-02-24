@@ -235,6 +235,17 @@ class GameCatalogItems {
                   height: 1.5,
                 ),
               ),
+              const SizedBox(height: 12),
+              _VnTextInput(
+                hint: t.trpg.clarifyHint,
+                onSubmit: (text) => ctx.dispatchEvent(
+                  UserActionEvent(
+                    name: 'clarifyAnswer',
+                    sourceComponentId: ctx.id,
+                    context: {'inputType': 'clarify_answer', 'inputText': text},
+                  ),
+                ),
+              ),
             ],
           ),
         );

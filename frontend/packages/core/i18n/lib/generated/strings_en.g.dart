@@ -51,6 +51,7 @@ class Translations with BaseTranslations<AppLocale, Translations> {
 	late final TranslationsGameEn game = TranslationsGameEn.internal(_root);
 	late final TranslationsGenuiEn genui = TranslationsGenuiEn.internal(_root);
 	late final TranslationsTrpgEn trpg = TranslationsTrpgEn.internal(_root);
+	late final TranslationsGameMenuEn gameMenu = TranslationsGameMenuEn.internal(_root);
 	late final TranslationsErrorEn error = TranslationsErrorEn.internal(_root);
 }
 
@@ -425,6 +426,9 @@ class TranslationsTrpgEn {
 	/// en: 'The GM needs clarification'
 	String get clarifyTitle => 'The GM needs clarification';
 
+	/// en: 'Type your answer...'
+	String get clarifyHint => 'Type your answer...';
+
 	/// en: 'Contradiction detected'
 	String get repairTitle => 'Contradiction detected';
 
@@ -463,6 +467,48 @@ class TranslationsTrpgEn {
 
 	/// en: 'Message Log'
 	String get messageLog => 'Message Log';
+
+	/// en: 'Turn $n'
+	String turnSeparator({required Object n}) => 'Turn ${n}';
+
+	/// en: 'You'
+	String get you => 'You';
+
+	/// en: 'GM'
+	String get gm => 'GM';
+}
+
+// Path: gameMenu
+class TranslationsGameMenuEn {
+	TranslationsGameMenuEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: 'Start'
+	String get newGame => 'Start';
+
+	/// en: 'Load'
+	String get loadGame => 'Load';
+
+	/// en: 'Back'
+	String get backToTitle => 'Back';
+
+	/// en: 'SAVE DATA'
+	String get savedSessions => 'SAVE DATA';
+
+	/// en: 'NO DATA'
+	String get noData => 'NO DATA';
+
+	/// en: 'No saved games found'
+	String get noSavedSessions => 'No saved games found';
+
+	/// en: 'Turn $n'
+	String turnNumber({required Object n}) => 'Turn ${n}';
+
+	/// en: '$time'
+	String lastPlayed({required Object time}) => '${time}';
 }
 
 // Path: error
@@ -594,6 +640,7 @@ extension on Translations {
 			'trpg.chooseAction' => 'Choose your action',
 			'trpg.freeInput' => 'Or describe your own action...',
 			'trpg.clarifyTitle' => 'The GM needs clarification',
+			'trpg.clarifyHint' => 'Type your answer...',
 			'trpg.repairTitle' => 'Contradiction detected',
 			'trpg.repairContradiction' => ({required Object text}) => 'Issue: ${text}',
 			'trpg.repairFix' => ({required Object text}) => 'Proposed fix: ${text}',
@@ -607,6 +654,17 @@ extension on Translations {
 			'trpg.tapToContinue' => 'Tap to continue',
 			'trpg.narrator' => 'Narrator',
 			'trpg.messageLog' => 'Message Log',
+			'trpg.turnSeparator' => ({required Object n}) => 'Turn ${n}',
+			'trpg.you' => 'You',
+			'trpg.gm' => 'GM',
+			'gameMenu.newGame' => 'Start',
+			'gameMenu.loadGame' => 'Load',
+			'gameMenu.backToTitle' => 'Back',
+			'gameMenu.savedSessions' => 'SAVE DATA',
+			'gameMenu.noData' => 'NO DATA',
+			'gameMenu.noSavedSessions' => 'No saved games found',
+			'gameMenu.turnNumber' => ({required Object n}) => 'Turn ${n}',
+			'gameMenu.lastPlayed' => ({required Object time}) => '${time}',
 			'error.generic' => 'An error occurred',
 			'error.network' => 'Network error',
 			'error.notFound' => 'Not found',

@@ -26,17 +26,36 @@ class RelationshipDelta:
 class NpcGateway:
     """Gateway for NPC database operations."""
 
-    def get_active_by_session(
+    def get_by_session(
         self,
         session: Session,
         session_id: uuid.UUID,
     ) -> list[Npcs]:
-        """Get all active NPCs for a session."""
+        """Get all NPCs for a session."""
         statement = select(Npcs).where(
             Npcs.session_id == session_id,
-            Npcs.is_active == True,  # noqa: E712
         )
         return list(session.exec(statement).all())
+
+    def create(
+        self,
+        session: Session,
+        npc: Npcs,
+    ) -> None:
+        """Persist a new NPC record."""
+        session.add(npc)
+        session.commit()
+        session.refresh(npc)
+
+    def create_relationship(
+        self,
+        session: Session,
+        rel: NpcRelationships,
+    ) -> None:
+        """Persist a new NPC relationship record."""
+        session.add(rel)
+        session.commit()
+        session.refresh(rel)
 
     def get_by_scenario(
         self,
@@ -81,6 +100,73 @@ class NpcGateway:
         session.add(record)
         session.commit()
         session.refresh(record)
+
+    def update_location(
+        self,
+        session: Session,
+        npc_id: uuid.UUID,
+        x: int,
+        y: int,
+    ) -> None:
+        """Update the location of an NPC."""
+        statement = select(Npcs).where(Npcs.id == npc_id)
+        record = session.exec(statement).first()
+        if record is None:
+            msg = f"NPC {npc_id} not found"
+            raise ValueError(msg)
+        record.location_x = x
+        record.location_y = y
+        session.add(record)
+        session.commit()
+        session.refresh(record)
+
+    def find_by_name_and_session(
+        self,
+        session: Session,
+        session_id: uuid.UUID,
+        name: str,
+    ) -> Npcs | None:
+        """Find an NPC by name within a session."""
+        statement = select(Npcs).where(
+            Npcs.session_id == session_id,
+            Npcs.name == name,
+        )
+        return session.exec(statement).first()
+
+    def update_image_path(
+        self,
+        session: Session,
+        npc_id: uuid.UUID,
+        image_path: str,
+    ) -> None:
+        """Set the default image_path for an NPC."""
+        statement = select(Npcs).where(Npcs.id == npc_id)
+        record = session.exec(statement).first()
+        if record is None:
+            msg = f"NPC {npc_id} not found"
+            raise ValueError(msg)
+        record.image_path = image_path
+        session.add(record)
+        session.commit()
+
+    def update_emotion_image(
+        self,
+        session: Session,
+        npc_id: uuid.UUID,
+        emotion: str,
+        image_path: str,
+    ) -> None:
+        """Add or update a single emotion image entry."""
+        statement = select(Npcs).where(Npcs.id == npc_id)
+        record = session.exec(statement).first()
+        if record is None:
+            msg = f"NPC {npc_id} not found"
+            raise ValueError(msg)
+        images = dict(record.emotion_images or {})
+        images[emotion] = image_path
+        record.emotion_images = images
+        session.add(record)
+        session.commit()
 
     def update_relationship(
         self,

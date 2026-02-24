@@ -111,6 +111,7 @@
     "chooseAction": "Choose your action",
     "freeInput": "Or describe your own action...",
     "clarifyTitle": "The GM needs clarification",
+    "clarifyHint": "Type your answer...",
     "repairTitle": "Contradiction detected",
     "repairContradiction": "Issue: $text",
     "repairFix": "Proposed fix: $text",
@@ -123,7 +124,20 @@
     "processing": "The GM is thinking...",
     "tapToContinue": "Tap to continue",
     "narrator": "Narrator",
-    "messageLog": "Message Log"
+    "messageLog": "Message Log",
+    "turnSeparator": "Turn $n",
+    "you": "You",
+    "gm": "GM"
+  },
+  "gameMenu": {
+    "newGame": "Start",
+    "loadGame": "Load",
+    "backToTitle": "Back",
+    "savedSessions": "SAVE DATA",
+    "noData": "NO DATA",
+    "noSavedSessions": "No saved games found",
+    "turnNumber": "Turn $n",
+    "lastPlayed": "$time"
   },
   "error": {
     "generic": "An error occurred",

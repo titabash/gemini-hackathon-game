@@ -6,7 +6,9 @@ import '../../pages/auth/ui/verify_otp_page.dart';
 import '../../pages/game/ui/game_page.dart';
 import '../../pages/game_detail/ui/game_detail_page.dart';
 import '../../pages/game_list/ui/game_list_page.dart';
+import '../../pages/game_menu/ui/game_menu_page.dart';
 import '../../pages/onboarding/ui/onboarding_page.dart';
+import '../../pages/saved_sessions/ui/saved_sessions_page.dart';
 import 'auth_notifier.dart';
 
 part 'app_router.g.dart';
@@ -81,6 +83,22 @@ GoRouter appRouter(Ref ref) {
         builder: (context, state) {
           final scenarioId = state.pathParameters['id']!;
           return GameDetailPage(scenarioId: scenarioId);
+        },
+      ),
+      GoRoute(
+        path: '/scenarios/:id/menu',
+        name: 'gameMenu',
+        builder: (context, state) {
+          final scenarioId = state.pathParameters['id']!;
+          return GameMenuPage(scenarioId: scenarioId);
+        },
+      ),
+      GoRoute(
+        path: '/scenarios/:id/menu/saves',
+        name: 'savedSessions',
+        builder: (context, state) {
+          final scenarioId = state.pathParameters['id']!;
+          return SavedSessionsPage(scenarioId: scenarioId);
         },
       ),
       GoRoute(

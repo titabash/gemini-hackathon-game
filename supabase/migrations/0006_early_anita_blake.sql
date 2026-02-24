@@ -1,0 +1,1 @@
+ALTER TABLE "sessions" ADD COLUMN "current_node_index" integer DEFAULT 0 NOT NULL;

@@ -11,7 +11,6 @@ export const sessionStatusEnum = pgEnum("session_status", [
 export const gmDecisionTypeEnum = pgEnum("gm_decision_type", [
   "narrate",
   "choice",
-  "roll",
   "clarify",
   "repair",
 ]);
@@ -22,7 +21,6 @@ export const inputTypeEnum = pgEnum("input_type", [
   "do",
   "say",
   "choice",
-  "roll_result",
   "clarify_answer",
   "system",
 ]);

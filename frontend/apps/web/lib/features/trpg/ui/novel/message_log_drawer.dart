@@ -3,11 +3,35 @@ import 'package:flutter/material.dart';
 
 import '../../model/trpg_session_provider.dart';
 
-/// Drawer that shows the full conversation history.
-class MessageLogDrawer extends StatelessWidget {
+/// Drawer that shows the full conversation history with turn separators.
+class MessageLogDrawer extends StatefulWidget {
   const MessageLogDrawer({super.key, required this.messages});
 
   final List<TrpgMessage> messages;
+
+  @override
+  State<MessageLogDrawer> createState() => _MessageLogDrawerState();
+}
+
+class _MessageLogDrawerState extends State<MessageLogDrawer> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    // Scroll to bottom after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -25,7 +49,7 @@ class MessageLogDrawer extends StatelessWidget {
             ],
           ),
           Expanded(
-            child: messages.isEmpty
+            child: widget.messages.isEmpty
                 ? Center(
                     child: Text(
                       t.trpg.emptyState,
@@ -35,14 +59,57 @@ class MessageLogDrawer extends StatelessWidget {
                     ),
                   )
                 : ListView.builder(
+                    controller: _scrollController,
                     padding: const EdgeInsets.all(12),
-                    itemCount: messages.length,
+                    itemCount: widget.messages.length,
                     itemBuilder: (context, index) {
-                      final msg = messages[index];
-                      return _LogEntry(message: msg);
+                      final msg = widget.messages[index];
+                      final prevTurn = index > 0
+                          ? widget.messages[index - 1].turnNumber
+                          : null;
+                      final showSeparator =
+                          msg.turnNumber != null && msg.turnNumber != prevTurn;
+
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (showSeparator)
+                            _TurnSeparator(turnNumber: msg.turnNumber!),
+                          _LogEntry(message: msg),
+                        ],
+                      );
                     },
                   ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TurnSeparator extends StatelessWidget {
+  const _TurnSeparator({required this.turnNumber});
+
+  final int turnNumber;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          const Expanded(child: Divider()),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              t.trpg.turnSeparator(n: turnNumber),
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          const Expanded(child: Divider()),
         ],
       ),
     );
@@ -59,13 +126,16 @@ class _LogEntry extends StatelessWidget {
     final isUser = message.role == 'user';
     final theme = Theme.of(context);
 
+    // For GM messages with a speaker, show the NPC name
+    final label = isUser ? t.trpg.you : message.speaker ?? t.trpg.gm;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            isUser ? 'You' : 'GM',
+            label,
             style: theme.textTheme.labelSmall?.copyWith(
               color: isUser
                   ? theme.colorScheme.primary

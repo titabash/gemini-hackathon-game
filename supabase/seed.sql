@@ -299,8 +299,7 @@ INSERT INTO npcs (
   goals,
   state,
   location_x,
-  location_y,
-  is_active
+  location_y
 ) VALUES (
   '33333333-3333-3333-3333-333333333301',
   '11111111-1111-1111-1111-111111111111',
@@ -310,7 +309,7 @@ INSERT INTO npcs (
   '{"speechStyle": "ぶっきらぼうだが根は悪くない。敬語は使わない", "values": "金と信頼を重視。嘘を嫌う", "taboo": "過去の失敗について触れられること"}'::jsonb,
   '{"shortTerm": "探索者から報酬を得る", "midTerm": "倉庫街の利権を守る", "longTerm": "裏社会から足を洗う"}'::jsonb,
   '{"hp": 80, "mood": "cautious", "flags": []}'::jsonb,
-  3, 4, true
+  3, 4
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -325,8 +324,7 @@ INSERT INTO npcs (
   goals,
   state,
   location_x,
-  location_y,
-  is_active
+  location_y
 ) VALUES (
   '33333333-3333-3333-3333-333333333302',
   '11111111-1111-1111-1111-111111111111',
@@ -336,7 +334,7 @@ INSERT INTO npcs (
   '{"speechStyle": "無口。必要最低限しか話さない", "values": "命令に忠実。仲間を裏切らない", "taboo": "組織の情報を漏らすこと"}'::jsonb,
   '{"shortTerm": "倉庫の入口を守る", "midTerm": "ボスからの評価を上げる", "longTerm": "組織内で昇格する"}'::jsonb,
   '{"hp": 90, "mood": "alert", "flags": ["armed"]}'::jsonb,
-  12, 3, true
+  12, 3
 )
 ON CONFLICT (id) DO NOTHING;
 
@@ -351,8 +349,7 @@ INSERT INTO npcs (
   goals,
   state,
   location_x,
-  location_y,
-  is_active
+  location_y
 ) VALUES (
   '33333333-3333-3333-3333-333333333303',
   '11111111-1111-1111-1111-111111111111',
@@ -362,6 +359,6 @@ INSERT INTO npcs (
   '{"speechStyle": "丁寧で穏やか。恐怖で声が震えている", "values": "家族を大切にする一般人。正直者", "taboo": "なし（一般人のため特別な禁則はない）"}'::jsonb,
   '{"shortTerm": "この場所から逃げ出したい", "midTerm": "家族のもとに帰る", "longTerm": "平穏な日常に戻る"}'::jsonb,
   '{"hp": 40, "mood": "terrified", "flags": ["restrained", "weakened"]}'::jsonb,
-  14, 6, false
+  14, 6
 )
 ON CONFLICT (id) DO NOTHING;

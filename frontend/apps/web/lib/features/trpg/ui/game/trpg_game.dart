@@ -213,6 +213,8 @@ class _SceneBackground extends PositionComponent with HasGameReference {
       stream.addListener(
         ImageStreamListener(
           (info, _) {
+            // Staleness check: ignore if a newer URL was requested
+            if (_imageUrl != url) return;
             _loadedImage = info.image;
             _loadedImageUrl = url;
             Logger.debug('Background image loaded successfully');

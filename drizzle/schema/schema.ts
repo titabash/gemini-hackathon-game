@@ -134,6 +134,7 @@ export const sessions = pgTable("sessions", {
   status: sessionStatusEnum("status").notNull().default("active"),
   currentState: jsonb("current_state").notNull(),
   currentTurnNumber: integer("current_turn_number").notNull().default(0),
+  currentNodeIndex: integer("current_node_index").notNull().default(0),
   endingSummary: text("ending_summary"),
   endingType: text("ending_type"),
   createdAt: timestamp("created_at", {
@@ -250,7 +251,6 @@ export const npcs = pgTable("npcs", {
   state: jsonb("state").notNull(),
   locationX: integer("location_x").notNull().default(0),
   locationY: integer("location_y").notNull().default(0),
-  isActive: boolean("is_active").notNull().default(true),
   createdAt: timestamp("created_at", {
     withTimezone: true,
     precision: 3,

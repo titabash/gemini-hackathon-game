@@ -82,27 +82,32 @@ class GenuiBridgeService:
             decision: The structured GM decision.
             npc_images: Mapping of NPC name -> (default_path, emotion_map).
         """
+        has_nodes = bool(decision.nodes)
+
         # 1. Clear previous surfaces
-        # NOTE: game-npcs is NOT deleted here.  The GenUiSurface widget for
-        # NPC gallery is always mounted (not mode-dependent), so deleting the
-        # surface would dispose its ValueNotifier while the widget still holds
-        # a reference to it.  Subsequent surfaceUpdate creates a *new* notifier
-        # the widget never sees, leaving it permanently blank.  Instead we
-        # always overwrite the surface in-place (step 3.5).
         yield _a2ui_delete("game-narration")
         yield _a2ui_delete("game-surface")
 
-        # 2. Text streaming (typewriter)
-        for dialogue in decision.npc_dialogues or []:
-            prefix = f"[{dialogue.npc_name}] "
-            for word in self._split_words(prefix + dialogue.dialogue):
+        if has_nodes:
+            # Node-based path: emit all nodes at once for frontend NodePlayer
+            yield _sse(
+                {
+                    "type": "nodesReady",
+                    "nodes": [n.model_dump() for n in decision.nodes or []],
+                }
+            )
+        else:
+            # Legacy flat-text path: typewriter streaming
+            for dialogue in decision.npc_dialogues or []:
+                prefix = f"[{dialogue.npc_name}] "
+                for word in self._split_words(prefix + dialogue.dialogue):
+                    yield self._text_event(word)
+                    await asyncio.sleep(self.WORD_DELAY)
+                yield self._text_event("\n")
+
+            for word in self._split_words(decision.narration_text):
                 yield self._text_event(word)
                 await asyncio.sleep(self.WORD_DELAY)
-            yield self._text_event("\n")
-
-        for word in self._split_words(decision.narration_text):
-            yield self._text_event(word)
-            await asyncio.sleep(self.WORD_DELAY)
 
         # 3. Game state update (location, HP, scene, NPC visual data)
         state_data = self._build_state_data(
@@ -112,7 +117,7 @@ class GenuiBridgeService:
         if state_data:
             yield _sse({"type": "stateUpdate", "data": state_data})
 
-        # 3.5. NPC gallery surface (A2UI) — raw storage paths for frontend resolution
+        # 3.5. NPC gallery surface (A2UI) — raw storage paths
         npc_list = _collect_npcs(
             decision,
             npc_images,
@@ -127,8 +132,6 @@ class GenuiBridgeService:
             image_paths=[n.get("imagePath") for n in npc_list],
             speakers=speakers,
         )
-        # Always emit the gallery (even when empty) so the existing
-        # ValueNotifier is updated in-place rather than left stale.
         yield _a2ui_surface(
             "game-npcs",
             "npcGallery",
@@ -204,8 +207,8 @@ class GenuiBridgeService:
             sc = decision.state_changes
             if sc.location_change:
                 data["location"] = sc.location_change.model_dump()
-            if sc.hp_delta is not None:
-                data["hp_delta"] = sc.hp_delta
+            if sc.stats_delta:
+                data["stats_delta"] = sc.stats_delta
 
         # NPC visual data for Flame canvas (TrpgVisualState.activeNpcs)
         npc_list = _collect_npcs(

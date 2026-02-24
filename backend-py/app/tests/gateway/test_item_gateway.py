@@ -5,9 +5,8 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
-from gateway.item_gateway import ItemGateway
-
 from domain.entity.models import Items
+from gateway.item_gateway import ItemGateway
 from tests.gateway.conftest import _now
 
 if TYPE_CHECKING:
@@ -86,3 +85,30 @@ class TestItemGateway:
         refreshed = db_session.get(Items, seed_item.id)
         assert refreshed is not None
         assert refreshed.quantity == 2
+
+    def test_update_equipped(
+        self,
+        db_session: Session,
+        seed_session: Sessions,
+        seed_item: Items,
+    ) -> None:
+        """Verify update_equipped toggles the equipped flag."""
+        gw = ItemGateway()
+
+        gw.update_equipped(
+            db_session, seed_session.id, "Health Potion", is_equipped=True
+        )
+
+        refreshed = db_session.get(Items, seed_item.id)
+        assert refreshed is not None
+        assert refreshed.is_equipped is True
+
+    def test_update_equipped_missing_item(
+        self,
+        db_session: Session,
+        seed_session: Sessions,
+    ) -> None:
+        """Verify update_equipped on missing item does not raise."""
+        gw = ItemGateway()
+
+        gw.update_equipped(db_session, seed_session.id, "Nonexistent", is_equipped=True)

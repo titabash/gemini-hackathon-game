@@ -111,6 +111,7 @@
     "chooseAction": "行動を選択してください",
     "freeInput": "または自由に行動を記述...",
     "clarifyTitle": "GMから確認があります",
+    "clarifyHint": "回答を入力...",
     "repairTitle": "矛盾が検出されました",
     "repairContradiction": "問題: $text",
     "repairFix": "修正案: $text",
@@ -123,7 +124,20 @@
     "processing": "GMが考えています...",
     "tapToContinue": "タップして続ける",
     "narrator": "ナレーター",
-    "messageLog": "メッセージログ"
+    "messageLog": "メッセージログ",
+    "turnSeparator": "ターン $n",
+    "you": "あなた",
+    "gm": "GM"
+  },
+  "gameMenu": {
+    "newGame": "スタート",
+    "loadGame": "ロード",
+    "backToTitle": "もどる",
+    "savedSessions": "セーブデータ",
+    "noData": "NO DATA",
+    "noSavedSessions": "セーブデータがありません",
+    "turnNumber": "ターン $n",
+    "lastPlayed": "$time"
   },
   "error": {
     "generic": "エラーが発生しました",

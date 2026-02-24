@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from domain.entity.models import ContextSummaries
-from gateway.context_summary_gateway import ContextSummaryGateway
+from gateway.context_summary_gateway import ContextSummaryData, ContextSummaryGateway
 
 if TYPE_CHECKING:
     from sqlmodel import Session
@@ -50,10 +50,12 @@ class TestContextSummaryGateway:
         result = gw.upsert(
             db_session,
             seed_session.id,
-            plot_essentials={"event": "battle"},
-            short_term_summary="A battle began.",
-            confirmed_facts={"enemy": "goblin"},
-            last_updated_turn=1,
+            ContextSummaryData(
+                plot_essentials={"event": "battle"},
+                short_term_summary="A battle began.",
+                confirmed_facts={"enemy": "goblin"},
+                last_updated_turn=1,
+            ),
         )
 
         assert result.session_id == seed_session.id
@@ -72,10 +74,12 @@ class TestContextSummaryGateway:
         result = gw.upsert(
             db_session,
             seed_session.id,
-            plot_essentials={"event": "victory"},
-            short_term_summary="The hero won.",
-            confirmed_facts={"outcome": "win"},
-            last_updated_turn=5,
+            ContextSummaryData(
+                plot_essentials={"event": "victory"},
+                short_term_summary="The hero won.",
+                confirmed_facts={"outcome": "win"},
+                last_updated_turn=5,
+            ),
         )
 
         assert result.session_id == seed_session.id

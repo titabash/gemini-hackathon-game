@@ -6,6 +6,7 @@ import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_ui/vn/vn.dart';
 
+import '../../model/scene_node.dart';
 import '../../model/trpg_session_provider.dart';
 import '../../model/trpg_visual_state.dart';
 import 'hud_overlay_widget.dart';
@@ -44,10 +45,7 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
 
   void _onAdvance() {
     final session = ref.read(trpgSessionProvider);
-    final advanced = session.textPager.advance();
-    if (!advanced) {
-      session.onPagingComplete();
-    }
+    session.advancePaging();
   }
 
   @override
@@ -88,9 +86,23 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
               left: 0,
               right: 0,
               top: 80,
-              child: GenUiSurface(
-                host: session.processor,
-                surfaceId: 'game-npcs',
+              child: ValueListenableBuilder<TrpgVisualState>(
+                valueListenable: session.visualState,
+                builder: (context, vs, _) {
+                  final npcs = vs.activeNpcs
+                      .map(
+                        (npc) => VnNpcData(
+                          name: npc.name,
+                          emotion: npc.emotion,
+                          imagePath: npc.imageUrl,
+                        ),
+                      )
+                      .toList();
+                  final speakers = [
+                    if (vs.currentSpeaker != null) vs.currentSpeaker!,
+                  ];
+                  return VnNpcGallery(npcs: npcs, speakers: speakers);
+                },
               ),
             ),
 
@@ -132,6 +144,34 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
 
   /// Paging mode: sentence-by-sentence text display at bottom.
   Widget _buildPagingOverlay(TrpgSessionNotifier session) {
+    if (session.useNodePlayer) {
+      return _buildNodePagingOverlay(session);
+    }
+    return _buildTextPagingOverlay(session);
+  }
+
+  /// Node-based paging: display current scene node text and speaker.
+  Widget _buildNodePagingOverlay(TrpgSessionNotifier session) {
+    return Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: ValueListenableBuilder<SceneNode?>(
+        valueListenable: session.nodePlayer.currentNode,
+        builder: (context, node, _) {
+          return VnTextBox(
+            text: node?.text ?? '',
+            speaker: node?.speaker,
+            showNextIndicator: true,
+            onAdvance: _onAdvance,
+          );
+        },
+      ),
+    );
+  }
+
+  /// Legacy text paging: sentence-by-sentence display.
+  Widget _buildTextPagingOverlay(TrpgSessionNotifier session) {
     return Positioned(
       bottom: 0,
       left: 0,

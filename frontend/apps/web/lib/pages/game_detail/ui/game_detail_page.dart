@@ -1,11 +1,9 @@
 import 'package:core_i18n/generated/strings.g.dart';
-import 'package:core_utils/core_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../../features/scenario_detail/api/fetch_scenario.dart';
-import '../../../features/start_game/api/create_session.dart';
 import '../../../shared/ui/storage_image.dart';
 
 /// ゲーム詳細ページ
@@ -94,7 +92,8 @@ class GameDetailPage extends ConsumerWidget {
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
-                        onPressed: () => _startGame(context, ref),
+                        onPressed: () =>
+                            context.go('/scenarios/$scenarioId/menu'),
                         icon: const Icon(Icons.play_arrow),
                         label: Text(t.scenarioDetail.play),
                         style: FilledButton.styleFrom(
@@ -110,25 +109,5 @@ class GameDetailPage extends ConsumerWidget {
         ),
       ),
     );
-  }
-
-  Future<void> _startGame(BuildContext context, WidgetRef ref) async {
-    try {
-      final session = await ref
-          .read(createSessionProvider.notifier)
-          .create(scenarioId: scenarioId);
-
-      if (!context.mounted) return;
-      context.go('/game/${session.id}');
-    } catch (e, st) {
-      Logger.error('Failed to start game', e, st);
-      if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(t.scenarioDetail.startError),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
-    }
   }
 }
