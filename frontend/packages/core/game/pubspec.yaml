@@ -17,7 +17,7 @@ dependencies:
   flame_riverpod: ^5.5.2
 
   # State management
-  hooks_riverpod: ^3.0.3
+  hooks_riverpod: ^3.2.1
   riverpod_annotation: ^4.0.0
 
   # Immutable models
