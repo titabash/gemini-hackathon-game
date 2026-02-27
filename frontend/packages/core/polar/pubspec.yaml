@@ -15,7 +15,7 @@ dependencies:
   flutter:
     sdk: flutter
   freezed_annotation: ^3.0.0
-  hooks_riverpod: ^3.0.3
+  hooks_riverpod: ^3.2.1
   json_annotation: ^4.9.0
   retrofit: ^4.6.0
   riverpod: ^3.0.3
