@@ -12,6 +12,7 @@ const _backendUrl = String.fromEnvironment(
   defaultValue: 'http://localhost:4040',
 );
 const _gmServerUrl = '$_backendUrl/api/gm/turn';
+const _maxAutoTurnsPerRequest = 5;
 
 /// A [ContentGenerator] for the TRPG game that handles both A2UI messages
 /// and game-specific SSE events (text, stateUpdate, imageUpdate, nodesReady).
@@ -33,11 +34,13 @@ class GameContentGenerator implements ContentGenerator {
       StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<String> _gameImageController =
       StreamController<String>.broadcast();
-  final StreamController<void> _doneController =
-      StreamController<void>.broadcast();
+  final StreamController<Map<String, dynamic>> _doneController =
+      StreamController<Map<String, dynamic>>.broadcast();
   final StreamController<List<Map<String, dynamic>>> _nodesReadyController =
       StreamController<List<Map<String, dynamic>>>.broadcast();
   final StreamController<Map<String, dynamic>> _assetReadyController =
+      StreamController<Map<String, dynamic>>.broadcast();
+  final StreamController<Map<String, dynamic>> _bgmUpdateController =
       StreamController<Map<String, dynamic>>.broadcast();
 
   SseConnection? _activeConnection;
@@ -62,8 +65,8 @@ class GameContentGenerator implements ContentGenerator {
   /// Stream of background image paths ({bucket}/{objectPath}).
   Stream<String> get gameImageStream => _gameImageController.stream;
 
-  /// Stream that emits when the GM turn is complete.
-  Stream<void> get doneStream => _doneController.stream;
+  /// Stream that emits when each GM turn is complete.
+  Stream<Map<String, dynamic>> get doneStream => _doneController.stream;
 
   /// Stream of scene node lists for visual novel page-by-page playback.
   Stream<List<Map<String, dynamic>>> get nodesReadyStream =>
@@ -73,6 +76,19 @@ class GameContentGenerator implements ContentGenerator {
   Stream<Map<String, dynamic>> get assetReadyStream =>
       _assetReadyController.stream;
 
+  /// Stream of BGM updates (ready-to-play URL only).
+  Stream<Map<String, dynamic>> get bgmUpdateStream =>
+      _bgmUpdateController.stream;
+
+  /// Stops the currently active SSE turn stream, if any.
+  void cancelActiveTurn() {
+    _activeSubscription?.cancel();
+    _activeSubscription = null;
+    _activeConnection?.close();
+    _activeConnection = null;
+    _isProcessing.value = false;
+  }
+
   /// Send a game turn to the GM backend via SSE.
   Future<void> sendTurn({
     required String sessionId,
@@ -80,16 +96,16 @@ class GameContentGenerator implements ContentGenerator {
     required String inputText,
     String? authToken,
   }) async {
-    _isProcessing.value = true;
-
     try {
-      _activeSubscription?.cancel();
-      _activeConnection?.close();
+      cancelActiveTurn();
+      _isProcessing.value = true;
 
       final payload = <String, dynamic>{
         'session_id': sessionId,
         'input_type': inputType,
         'input_text': inputText,
+        'auto_advance_until_user_action': true,
+        'max_auto_turns': _maxAutoTurnsPerRequest,
       };
 
       final headers = <String, String>{
@@ -148,7 +164,6 @@ class GameContentGenerator implements ContentGenerator {
   void _handleSseMessage(SseMessage sseMessage) {
     if (sseMessage.isDone) {
       _isProcessing.value = false;
-      _doneController.add(null);
       return;
     }
 
@@ -200,9 +215,30 @@ class GameContentGenerator implements ContentGenerator {
         _gameImageController.add(decoded['path'] as String? ?? '');
         return;
       }
+      if (type == 'bgmUpdate') {
+        _bgmUpdateController.add({
+          'path': decoded['path'] as String? ?? '',
+          'mood': decoded['mood'] as String? ?? '',
+        });
+        return;
+      }
+      if (type == 'bgmGenerating') {
+        _bgmUpdateController.add({
+          'generating': true,
+          'mood': decoded['mood'] as String? ?? '',
+        });
+        return;
+      }
       if (type == 'done') {
-        _isProcessing.value = false;
-        _doneController.add(null);
+        final doneData = <String, dynamic>{
+          'turn_number': decoded['turn_number'] as int?,
+          'requires_user_action': decoded['requires_user_action'] == true,
+          'is_ending': decoded['is_ending'] == true,
+          'will_continue': decoded['will_continue'] == true,
+          'stop_reason': decoded['stop_reason'] as String?,
+        };
+        _isProcessing.value = doneData['will_continue'] == true;
+        _doneController.add(doneData);
         return;
       }
       if (type == 'error') {
@@ -226,8 +262,7 @@ class GameContentGenerator implements ContentGenerator {
 
   @override
   void dispose() {
-    _activeSubscription?.cancel();
-    _activeConnection?.close();
+    cancelActiveTurn();
     _a2uiController.close();
     _errorController.close();
     _textController.close();
@@ -236,6 +271,7 @@ class GameContentGenerator implements ContentGenerator {
     _doneController.close();
     _nodesReadyController.close();
     _assetReadyController.close();
+    _bgmUpdateController.close();
     _isProcessing.dispose();
   }
 }

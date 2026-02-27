@@ -14,6 +14,33 @@ class GamePage extends HookConsumerWidget {
 
   final String sessionId;
 
+  Future<void> _onClosePressed(BuildContext context, WidgetRef ref) async {
+    final shouldClose = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(t.common.confirm),
+        content: Text(t.game.exitToTitleConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => dialogContext.pop(false),
+            child: Text(t.common.cancel),
+          ),
+          FilledButton(
+            onPressed: () => dialogContext.pop(true),
+            child: Text(t.common.close),
+          ),
+        ],
+      ),
+    );
+
+    if (!context.mounted || shouldClose != true) return;
+
+    await ref.read(trpgSessionProvider).reset();
+    if (!context.mounted) return;
+    context.goNamed('home');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final session = ref.watch(trpgSessionProvider);
@@ -24,8 +51,8 @@ class GamePage extends HookConsumerWidget {
       session
         ..reset()
         ..initSession(sessionId);
-      return null;
-    }, [sessionId]);
+      return session.reset;
+    }, [session, sessionId]);
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -33,9 +60,9 @@ class GamePage extends HookConsumerWidget {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(
-          onPressed: () => context.go('/'),
-          icon: const Icon(Icons.arrow_back, color: Colors.white),
-          tooltip: t.game.backToList,
+          onPressed: () => _onClosePressed(context, ref),
+          icon: const Icon(Icons.close, color: Colors.white),
+          tooltip: t.common.close,
         ),
       ),
       body: NovelGameSurface(sessionId: sessionId, game: game),

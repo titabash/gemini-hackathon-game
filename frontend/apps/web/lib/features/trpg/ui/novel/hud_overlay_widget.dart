@@ -8,10 +8,18 @@ class HudOverlayWidget extends StatelessWidget {
   const HudOverlayWidget({
     super.key,
     required this.visualState,
+    required this.bgmPlaying,
+    required this.bgmMuted,
+    required this.bgmGenerating,
+    this.onBgmToggle,
     this.onMessageLogTap,
   });
 
   final TrpgVisualState visualState;
+  final bool bgmPlaying;
+  final bool bgmMuted;
+  final bool bgmGenerating;
+  final VoidCallback? onBgmToggle;
   final VoidCallback? onMessageLogTap;
 
   @override
@@ -67,6 +75,25 @@ class HudOverlayWidget extends StatelessWidget {
                     icon: Icons.history,
                     tooltip: t.trpg.messageLog,
                     onTap: onMessageLogTap!,
+                  ),
+                ],
+                if (onBgmToggle != null) ...[
+                  const SizedBox(height: 8),
+                  _CircleButton(
+                    icon: !bgmPlaying || bgmMuted
+                        ? Icons.music_off
+                        : Icons.music_note,
+                    tooltip: !bgmPlaying || bgmMuted
+                        ? t.trpg.bgmOff
+                        : t.trpg.bgmOn,
+                    onTap: onBgmToggle!,
+                  ),
+                ],
+                if (bgmGenerating) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    t.trpg.bgmGenerating,
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
                   ),
                 ],
               ],

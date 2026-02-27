@@ -215,6 +215,7 @@ class _TranslationsGameJa extends TranslationsGameEn {
 	@override String get restart => 'リスタート';
 	@override String get loading => 'ゲームを読み込み中...';
 	@override String get backToList => 'ゲーム一覧に戻る';
+	@override String get exitToTitleConfirm => 'ゲームを終了してタイトル画面に戻りますか？';
 }
 
 // Path: genui
@@ -256,6 +257,9 @@ class _TranslationsTrpgJa extends TranslationsTrpgEn {
 	@override String get tapToContinue => 'タップして続ける';
 	@override String get narrator => 'ナレーター';
 	@override String get messageLog => 'メッセージログ';
+	@override String get bgmOn => 'BGM: ON';
+	@override String get bgmOff => 'BGM: OFF';
+	@override String get bgmGenerating => 'BGM生成中...';
 	@override String turnSeparator({required Object n}) => 'ターン ${n}';
 	@override String get you => 'あなた';
 	@override String get gm => 'GM';
@@ -384,6 +388,7 @@ extension on TranslationsJa {
 			'game.restart' => 'リスタート',
 			'game.loading' => 'ゲームを読み込み中...',
 			'game.backToList' => 'ゲーム一覧に戻る',
+			'game.exitToTitleConfirm' => 'ゲームを終了してタイトル画面に戻りますか？',
 			'genui.title' => 'AIチャット',
 			'genui.inputHint' => 'メッセージを入力...',
 			'genui.send' => '送信',
@@ -407,6 +412,9 @@ extension on TranslationsJa {
 			'trpg.tapToContinue' => 'タップして続ける',
 			'trpg.narrator' => 'ナレーター',
 			'trpg.messageLog' => 'メッセージログ',
+			'trpg.bgmOn' => 'BGM: ON',
+			'trpg.bgmOff' => 'BGM: OFF',
+			'trpg.bgmGenerating' => 'BGM生成中...',
 			'trpg.turnSeparator' => ({required Object n}) => 'ターン ${n}',
 			'trpg.you' => 'あなた',
 			'trpg.gm' => 'GM',

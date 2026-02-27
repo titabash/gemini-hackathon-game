@@ -97,7 +97,8 @@
     "score": "スコア: {n}",
     "restart": "リスタート",
     "loading": "ゲームを読み込み中...",
-    "backToList": "ゲーム一覧に戻る"
+    "backToList": "ゲーム一覧に戻る",
+    "exitToTitleConfirm": "ゲームを終了してタイトル画面に戻りますか？"
   },
   "genui": {
     "title": "AIチャット",
@@ -125,6 +126,9 @@
     "tapToContinue": "タップして続ける",
     "narrator": "ナレーター",
     "messageLog": "メッセージログ",
+    "bgmOn": "BGM: ON",
+    "bgmOff": "BGM: OFF",
+    "bgmGenerating": "BGM生成中...",
     "turnSeparator": "ターン $n",
     "you": "あなた",
     "gm": "GM"

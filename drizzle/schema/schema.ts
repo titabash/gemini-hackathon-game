@@ -762,6 +762,72 @@ export const insertPolicySceneBackgroundsServiceRole = pgPolicy(
   },
 ).link(sceneBackgrounds);
 
+// ===== BGM Cache テーブル（RLS付き） =====
+// シナリオ×ムードごとの生成BGMキャッシュ
+export const bgm = pgTable(
+  "bgm",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    scenarioId: uuid("scenario_id")
+      .notNull()
+      .references(() => scenarios.id, { onDelete: "cascade" }),
+    mood: text("mood").notNull(),
+    audioPath: text("audio_path").notNull(),
+    promptUsed: text("prompt_used").notNull(),
+    durationSeconds: integer("duration_seconds").notNull().default(60),
+    createdAt: timestamp("created_at", {
+      withTimezone: true,
+      precision: 3,
+    })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => ({
+    scenarioMoodUnique: unique("bgm_scenario_id_mood_key").on(
+      table.scenarioId,
+      table.mood,
+    ),
+  }),
+).enableRLS();
+
+// ===== BGM Cache RLS ポリシー =====
+// 公開シナリオまたは自分のシナリオに紐づくBGMは閲覧可能
+export const selectPolicyBgm = pgPolicy("select_policy_bgm", {
+  for: "select",
+  to: ["anon", "authenticated"],
+  using: sql`
+    EXISTS (
+      SELECT 1 FROM scenarios
+      WHERE scenarios.id = bgm.scenario_id
+      AND (
+        scenarios.is_public = true
+        OR scenarios.created_by = (SELECT auth.uid())
+      )
+    )
+  `,
+}).link(bgm);
+
+// 生成バックエンド（service_role）のみINSERT可能
+export const insertPolicyBgmServiceRole = pgPolicy(
+  "insert_policy_bgm_service_role",
+  {
+    for: "insert",
+    to: "service_role",
+    withCheck: sql`true`,
+  },
+).link(bgm);
+
+// 生成バックエンド（service_role）のみUPDATE可能
+export const updatePolicyBgmServiceRole = pgPolicy(
+  "update_policy_bgm_service_role",
+  {
+    for: "update",
+    to: "service_role",
+    using: sql`true`,
+    withCheck: sql`true`,
+  },
+).link(bgm);
+
 // ===== 型エクスポート（Inferで自動推論） =====
 import type { InferInsertModel, InferSelectModel } from "drizzle-orm";
 
@@ -777,6 +843,7 @@ export type ContextSummary = InferSelectModel<typeof contextSummaries>;
 export type Objective = InferSelectModel<typeof objectives>;
 export type Item = InferSelectModel<typeof items>;
 export type SceneBackground = InferSelectModel<typeof sceneBackgrounds>;
+export type Bgm = InferSelectModel<typeof bgm>;
 
 // INSERT型（新規作成時の型）
 export type NewUser = InferInsertModel<typeof users>;
@@ -790,3 +857,4 @@ export type NewContextSummary = InferInsertModel<typeof contextSummaries>;
 export type NewObjective = InferInsertModel<typeof objectives>;
 export type NewItem = InferInsertModel<typeof items>;
 export type NewSceneBackground = InferInsertModel<typeof sceneBackgrounds>;
+export type NewBgm = InferInsertModel<typeof bgm>;

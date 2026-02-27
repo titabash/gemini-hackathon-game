@@ -95,6 +95,34 @@ String? findEffectiveBackground(List<SceneNode> nodes, int fromIndex) {
   return null;
 }
 
+/// Normalize a BGM mood string: trim + lowercase, empty becomes null.
+String? normalizeMood(String? mood) {
+  final normalized = (mood ?? '').trim().toLowerCase();
+  return normalized.isEmpty ? null : normalized;
+}
+
+/// Resolve the effective BGM mood at [targetIndex] by scanning nodes 0..[targetIndex].
+///
+/// Returns the last active mood considering `bgm` and `bgmStop` directives,
+/// or null if no BGM is active at the given position.
+String? resolveNodeBgmMoodAtIndex(List<SceneNode> nodes, int targetIndex) {
+  if (nodes.isEmpty) return null;
+  final end = targetIndex.clamp(0, nodes.length - 1);
+
+  String? activeMood;
+  for (var i = 0; i <= end; i++) {
+    final node = nodes[i];
+    final mood = normalizeMood(node.bgm);
+    if (node.bgmStop && mood == null) {
+      activeMood = null;
+    }
+    if (mood != null) {
+      activeMood = mood;
+    }
+  }
+  return activeMood;
+}
+
 /// Build a summary text from scene nodes.
 ///
 /// Dialogue nodes include `[speaker] text`, narration nodes use text only.

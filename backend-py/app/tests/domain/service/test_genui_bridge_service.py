@@ -602,6 +602,33 @@ class TestBuildSurfaceProperties:
         assert result["type"] == "continueButton"
         assert result["properties"] == {}
 
+    def test_narrate_surface_hidden_when_continue_disabled(self) -> None:
+        """Narrate surface should be omitted when continue is disabled."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The end.",
+        )
+        result = GenuiBridgeService._build_surface_properties(
+            decision,
+            show_continue_button=False,
+        )
+        assert result is None
+
+    def test_narrate_surface_continue_or_input_when_handoff(self) -> None:
+        """Narrate handoff should return continueOrInput surface."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The end.",
+        )
+        result = GenuiBridgeService._build_surface_properties(
+            decision,
+            show_continue_button=True,
+            show_continue_input_cta=True,
+        )
+        assert result is not None
+        assert result["type"] == "continueOrInput"
+        assert result["properties"] == {}
+
     def test_choice_without_choices_returns_none(self) -> None:
         """Choice decision without choices list should return None."""
         decision = GmDecisionResponse(

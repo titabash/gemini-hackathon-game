@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_ui/vn/vn.dart';
 
 import '../../model/scene_node.dart';
+import '../../model/bgm_player_notifier.dart';
 import '../../model/trpg_session_provider.dart';
 import '../../model/trpg_visual_state.dart';
 import 'hud_overlay_widget.dart';
@@ -35,6 +36,7 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
     final text = overrideText ?? '';
     if (text.isEmpty) return;
 
+    ref.read(bgmPlayerProvider).onUserGesture();
     final session = ref.read(trpgSessionProvider);
     session.sendTurn(
       sessionId: widget.sessionId,
@@ -44,6 +46,7 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
   }
 
   void _onAdvance() {
+    ref.read(bgmPlayerProvider).onUserGesture();
     final session = ref.read(trpgSessionProvider);
     session.advancePaging();
   }
@@ -51,6 +54,7 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(trpgSessionProvider);
+    final bgmPlayer = ref.watch(bgmPlayerProvider);
 
     return Scaffold(
       key: _scaffoldKey,
@@ -61,82 +65,106 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
           return MessageLogDrawer(messages: msgs);
         },
       ),
-      body: KeyboardListener(
-        focusNode: FocusNode(),
-        autofocus: true,
-        onKeyEvent: (event) {
-          if (event is KeyDownEvent) {
-            final mode = session.displayMode.value;
-            if (mode == NovelDisplayMode.paging) {
-              if (event.logicalKey == LogicalKeyboardKey.space ||
-                  event.logicalKey == LogicalKeyboardKey.enter) {
-                _onAdvance();
+      body: Listener(
+        behavior: HitTestBehavior.translucent,
+        onPointerDown: (_) => bgmPlayer.onUserGesture(),
+        child: KeyboardListener(
+          focusNode: FocusNode(),
+          autofocus: true,
+          onKeyEvent: (event) {
+            if (event is KeyDownEvent) {
+              bgmPlayer.onUserGesture();
+              final mode = session.displayMode.value;
+              if (mode == NovelDisplayMode.paging) {
+                if (event.logicalKey == LogicalKeyboardKey.space ||
+                    event.logicalKey == LogicalKeyboardKey.enter) {
+                  _onAdvance();
+                }
               }
             }
-          }
-        },
-        child: Stack(
-          children: [
-            // Layer 1: Flame game (full screen)
-            Positioned.fill(child: GameContainer(game: widget.game)),
+          },
+          child: Stack(
+            children: [
+              // Layer 1: Flame game (full screen)
+              Positioned.fill(child: GameContainer(game: widget.game)),
 
-            // Layer 2: NPC gallery (full-height, bottom-aligned)
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              top: 80,
-              child: ValueListenableBuilder<TrpgVisualState>(
-                valueListenable: session.visualState,
-                builder: (context, vs, _) {
-                  final npcs = vs.activeNpcs
-                      .map(
-                        (npc) => VnNpcData(
-                          name: npc.name,
-                          emotion: npc.emotion,
-                          imagePath: npc.imageUrl,
-                        ),
-                      )
-                      .toList();
-                  final speakers = [
-                    if (vs.currentSpeaker != null) vs.currentSpeaker!,
-                  ];
-                  return VnNpcGallery(npcs: npcs, speakers: speakers);
+              // Layer 2: NPC gallery (full-height, bottom-aligned)
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                top: 80,
+                child: ValueListenableBuilder<TrpgVisualState>(
+                  valueListenable: session.visualState,
+                  builder: (context, vs, _) {
+                    final npcs = vs.activeNpcs
+                        .map(
+                          (npc) => VnNpcData(
+                            name: npc.name,
+                            emotion: npc.emotion,
+                            imagePath: npc.imageUrl,
+                          ),
+                        )
+                        .toList();
+                    final speakers = [
+                      if (vs.currentSpeaker != null) vs.currentSpeaker!,
+                    ];
+                    return VnNpcGallery(npcs: npcs, speakers: speakers);
+                  },
+                ),
+              ),
+
+              // Layer 3: Bottom area (mode-dependent)
+              ValueListenableBuilder<NovelDisplayMode>(
+                valueListenable: session.displayMode,
+                builder: (context, mode, _) {
+                  return switch (mode) {
+                    NovelDisplayMode.paging => _buildPagingOverlay(session),
+                    NovelDisplayMode.surface => _buildSurfaceOverlay(session),
+                    NovelDisplayMode.input => _buildInputOverlay(session),
+                    NovelDisplayMode.processing => _buildProcessingOverlay(),
+                  };
                 },
               ),
-            ),
 
-            // Layer 3: Bottom area (mode-dependent)
-            ValueListenableBuilder<NovelDisplayMode>(
-              valueListenable: session.displayMode,
-              builder: (context, mode, _) {
-                return switch (mode) {
-                  NovelDisplayMode.paging => _buildPagingOverlay(session),
-                  NovelDisplayMode.surface => _buildSurfaceOverlay(session),
-                  NovelDisplayMode.input => _buildInputOverlay(session),
-                  NovelDisplayMode.processing => _buildProcessingOverlay(),
-                };
-              },
-            ),
-
-            // Layer 4: HUD overlay (top, always visible)
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: ValueListenableBuilder<TrpgVisualState>(
-                valueListenable: session.visualState,
-                builder: (context, vs, _) {
-                  return HudOverlayWidget(
-                    visualState: vs,
-                    onMessageLogTap: () {
-                      _scaffoldKey.currentState?.openEndDrawer();
-                    },
-                  );
-                },
+              // Layer 4: HUD overlay (top, always visible)
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: ValueListenableBuilder<TrpgVisualState>(
+                  valueListenable: session.visualState,
+                  builder: (context, vs, _) {
+                    return ValueListenableBuilder<bool>(
+                      valueListenable: bgmPlayer.isMuted,
+                      builder: (context, muted, _) {
+                        return ValueListenableBuilder<bool>(
+                          valueListenable: bgmPlayer.isPlaying,
+                          builder: (context, playing, _) {
+                            return ValueListenableBuilder<bool>(
+                              valueListenable: bgmPlayer.isGenerating,
+                              builder: (context, generating, _) {
+                                return HudOverlayWidget(
+                                  visualState: vs,
+                                  bgmPlaying: playing,
+                                  bgmMuted: muted,
+                                  bgmGenerating: generating,
+                                  onBgmToggle: bgmPlayer.toggleMute,
+                                  onMessageLogTap: () {
+                                    _scaffoldKey.currentState?.openEndDrawer();
+                                  },
+                                );
+                              },
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

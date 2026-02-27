@@ -50,6 +50,20 @@
       "when": 1771872965924,
       "tag": "0006_early_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1771950660503,
+      "tag": "0007_absent_supernaut",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1771957243163,
+      "tag": "0008_bgm_table_reconcile",
+      "breakpoints": true
     }
   ]
 }

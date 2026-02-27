@@ -1,4 +1,4 @@
-[38;5;142m[dotenvx@1.52.0] injecting env (9) from env/backend/local.env[39m
+[38;5;142m[dotenvx@1.52.0] injecting env (10) from env/backend/local.env[39m
 export type Json =
   | string
   | number
@@ -52,6 +52,44 @@ export type Database = {
           id?: number
         }
         Relationships: []
+      }
+      bgm: {
+        Row: {
+          audio_path: string
+          created_at: string
+          duration_seconds: number
+          id: string
+          mood: string
+          prompt_used: string
+          scenario_id: string
+        }
+        Insert: {
+          audio_path: string
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          mood: string
+          prompt_used: string
+          scenario_id: string
+        }
+        Update: {
+          audio_path?: string
+          created_at?: string
+          duration_seconds?: number
+          id?: string
+          mood?: string
+          prompt_used?: string
+          scenario_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bgm_scenario_id_scenarios_id_fk"
+            columns: ["scenario_id"]
+            isOneToOne: false
+            referencedRelation: "scenarios"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       context_summaries: {
         Row: {

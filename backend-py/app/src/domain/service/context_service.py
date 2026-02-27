@@ -50,6 +50,34 @@ logger = get_logger(__name__)
 
 COMPRESSION_INTERVAL = 5
 
+
+def extract_nodes_text(output: dict[str, object]) -> str:
+    """Extract text from scene nodes in turn output.
+
+    Formats each node on its own line with clear labels
+    so the LLM can easily identify what was already said.
+    """
+    nodes = output.get("nodes") or []
+    if not isinstance(nodes, list):
+        return ""
+    lines: list[str] = []
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        node_type = node.get("type", "")
+        speaker = node.get("speaker")
+        text = node.get("text", "")
+        if not text:
+            continue
+        if node_type == "dialogue" and speaker:
+            lines.append(f'  [{speaker}] "{text}"')
+        elif node_type == "narration":
+            lines.append(f"  (narration) {text}")
+        elif node_type == "choice":
+            lines.append(f"  (choice prompt) {text}")
+    return "\n".join(lines)
+
+
 _DEFAULT_PLAYER = PlayerSummary(
     name="Adventurer",
     stats={},
@@ -125,6 +153,14 @@ class ContextService:
                 sess.scenario_id,
                 session_id,
             ),
+            previous_bgm_mood=self._extract_previous_bgm_mood(
+                db,
+                session_id,
+            ),
+            previous_background=self._extract_previous_background(
+                db,
+                session_id,
+            ),
         )
 
     def build_prompt(
@@ -179,9 +215,80 @@ class ContextService:
                 available_backgrounds=self._format_backgrounds(
                     context.available_backgrounds,
                 ),
+                previous_background_section=(
+                    self._format_background_state_section(
+                        context.previous_background,
+                    )
+                ),
+                previous_bgm_mood_section=self._format_bgm_section(
+                    context.previous_bgm_mood,
+                ),
                 input_type=input_type,
                 input_text=input_text,
             )
+        )
+        for section in extra_sections or []:
+            if section:
+                prompt += "\n" + section
+        return prompt
+
+    def build_prompt_cache_seed(self, context: GameContext) -> str:
+        """Build stable prompt prefix for explicit Gemini cache."""
+        return (
+            f"# Scenario: {context.scenario_title}\n"
+            f"{context.scenario_setting}\n\n"
+            f"{context.system_prompt}\n\n"
+            "# Win Conditions\n"
+            f"{json.dumps(context.win_conditions)}\n\n"
+            "# Fail Conditions\n"
+            f"{json.dumps(context.fail_conditions)}\n"
+        )
+
+    def build_prompt_delta(
+        self,
+        context: GameContext,
+        input_type: str,
+        input_text: str,
+        *,
+        extra_sections: list[str] | None = None,
+    ) -> str:
+        """Build dynamic-only prompt body for use with cached prefix."""
+        remaining = max(
+            0,
+            context.max_turns - context.current_turn_number,
+        )
+        prompt = (
+            "# Plot Essentials\n"
+            f"{json.dumps(context.plot_essentials)}\n\n"
+            "# Available Scene Backgrounds\n"
+            f"{self._format_backgrounds(context.available_backgrounds)}\n\n"
+            "# Story So Far\n"
+            f"{context.short_term_summary}\n\n"
+            "# Confirmed Facts\n"
+            f"{json.dumps(context.confirmed_facts)}\n\n"
+            "# Recent Turns\n"
+            f"{self._format_turns(context.recent_turns)}\n\n"
+            "# Player Character\n"
+            f"Name: {context.player.name}\n"
+            f"Stats: {json.dumps(context.player.stats)}\n"
+            f"Status Effects: {', '.join(context.player.status_effects)}\n"
+            f"Location: ({context.player.location_x}, {context.player.location_y})\n\n"
+            "# Active NPCs\n"
+            f"{self._format_npcs(context.active_npcs)}\n\n"
+            "# Active Objectives\n"
+            f"{self._format_objectives(context.active_objectives)}\n\n"
+            "# Player Items\n"
+            f"{self._format_items(context.player_items)}\n\n"
+            "# Current Game State\n"
+            f"Turn: {context.current_turn_number} / {context.max_turns} "
+            f"(Remaining: {remaining})\n"
+            f"{json.dumps(context.current_state)}\n\n"
+            "# Current Scene Background\n"
+            f"{self._format_background_state_section(context.previous_background)}\n\n"
+            "# Current BGM State\n"
+            f"{self._format_bgm_section(context.previous_bgm_mood)}\n\n"
+            f"# Player Input ({input_type})\n"
+            f"{input_text}\n"
         )
         for section in extra_sections or []:
             if section:
@@ -212,10 +319,18 @@ class ContextService:
             ctx_rec.confirmed_facts if ctx_rec else {},
         )
         turns = self._turn_gw.get_recent(db, session_id, limit=10)
-        turns_text = "\n".join(
-            f"T{t.turn_number}: [{t.input_type}] {t.input_text} -> {t.gm_decision_type}"
-            for t in reversed(turns)
-        )
+        parts: list[str] = []
+        for t in reversed(turns):
+            narr = t.output.get("narration_text", "")
+            nodes = extract_nodes_text(t.output)
+            detail = nodes if nodes else str(narr)
+            parts.append(
+                f"T{t.turn_number}: [{t.input_type}]"
+                f" {t.input_text}"
+                f" -> {t.gm_decision_type}:"
+                f" {detail}",
+            )
+        turns_text = "\n".join(parts)
 
         prompt = COMPRESSION_CONTEXT_TEMPLATE.format(
             previous_plot_essentials=prev_plot,
@@ -247,6 +362,65 @@ class ContextService:
         )
 
     # --- private helpers ---
+
+    def _extract_previous_background(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+    ) -> str | None:
+        """Extract effective background from the most recent turn."""
+        rows = self._turn_gw.get_recent(db, session_id, limit=1)
+        if not rows:
+            return None
+        output = rows[0].output
+        nodes = output.get("nodes") or []
+        if isinstance(nodes, list):
+            for node in reversed(nodes):
+                if isinstance(node, dict):
+                    bg = node.get("background")
+                    if bg:
+                        return str(bg)
+        bg_id = output.get("selected_background_id")
+        return str(bg_id) if bg_id else None
+
+    @staticmethod
+    def _format_background_state_section(
+        previous_background: str | None,
+    ) -> str:
+        """Format background state section for prompt."""
+        if previous_background:
+            return (
+                f"Currently displayed: {previous_background}."
+                " Reuse this on the first node"
+                " if the scene location has not changed."
+            )
+        return "No background set."
+
+    def _extract_previous_bgm_mood(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+    ) -> str | None:
+        """Extract bgm_mood from the most recent turn output."""
+        rows = self._turn_gw.get_recent(db, session_id, limit=1)
+        if not rows:
+            return None
+        output = rows[0].output
+        mood = (output.get("bgm_mood") or "").strip().lower()
+        return mood if mood else None
+
+    @staticmethod
+    def _format_bgm_section(
+        previous_bgm_mood: str | None,
+    ) -> str:
+        """Format BGM state section for prompt."""
+        if previous_bgm_mood:
+            return (
+                f"Currently playing: {previous_bgm_mood}."
+                " Keep this mood unless the scene tone"
+                " fundamentally changes."
+            )
+        return "No BGM playing."
 
     def _load_plot(
         self,
@@ -287,6 +461,7 @@ class ContextService:
                 narration_summary=str(
                     t.output.get("narration_text", ""),
                 ),
+                nodes_text=extract_nodes_text(t.output),
             )
             for t in reversed(rows)
         ]
@@ -391,11 +566,20 @@ class ContextService:
 
     @staticmethod
     def _format_turns(turns: list[TurnSummary]) -> str:
-        return "\n".join(
-            f"T{t.turn_number} [{t.input_type}] {t.input_text}"
-            f" -> {t.decision_type}: {t.narration_summary}"
-            for t in turns
-        )
+        lines: list[str] = []
+        for t in turns:
+            header = (
+                f"--- Turn {t.turn_number} ---\n"
+                f"Player [{t.input_type}]: {t.input_text}\n"
+                f"GM ({t.decision_type}):"
+            )
+            if t.nodes_text:
+                lines.append(f"{header}\n{t.nodes_text}")
+            else:
+                lines.append(
+                    f"{header}\n  {t.narration_summary}",
+                )
+        return "\n\n".join(lines)
 
     @staticmethod
     def _format_npcs(npcs: list[NpcSummary]) -> str:

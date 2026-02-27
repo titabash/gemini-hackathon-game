@@ -82,7 +82,7 @@ class SceneNode {
   /// Choice options (choice nodes only). Raw JSON maps.
   final List<Map<String, dynamic>>? choices;
 
-  // -- Future extension fields (processing not yet implemented) --
+  // -- Extension fields --
 
   /// CG image instruction.
   final String? cg;
@@ -90,10 +90,10 @@ class SceneNode {
   /// Whether to clear the CG overlay.
   final bool cgClear;
 
-  /// BGM instruction.
+  /// BGM mood to start/switch on this node.
   final String? bgm;
 
-  /// Whether to stop BGM.
+  /// Whether to stop BGM on this node.
   final bool bgmStop;
 
   /// Sound effect instruction.

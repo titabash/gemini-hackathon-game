@@ -5,7 +5,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 RUN ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
 
 # RUN apt -y update && apt -y upgrade && apt -y install gcc g++ make curl python3 tzdata python3-venv libedit2
-RUN apt -y update && apt -y upgrade && apt -y install gcc g++ make curl tzdata libedit2 nodejs npm libopus-dev libvpx-dev
+RUN apt -y update && apt -y upgrade && apt -y install gcc g++ make curl tzdata libedit2 nodejs npm libopus-dev libvpx-dev ffmpeg
 RUN npm install n -g
 RUN n stable
 RUN apt purge -y nodejs npm

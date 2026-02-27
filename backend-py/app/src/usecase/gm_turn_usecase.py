@@ -9,20 +9,25 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
-from domain.entity.gm_types import SessionEnd
+from sqlmodel import Session as SQLModelSession
+
+from domain.entity.gm_types import GmTurnRequest, SessionEnd
 from domain.entity.models import Npcs, SceneBackgrounds, Turns
 from domain.service.action_resolution_service import ActionResolutionService
+from domain.service.bgm_service import BgmService
 from domain.service.condition_evaluation_service import (
     ConditionEvaluationResult,
     ConditionEvaluationService,
 )
 from domain.service.context_service import ContextService
 from domain.service.genui_bridge_service import GenuiBridgeService, NpcImageMap
-from domain.service.gm_decision_service import GmDecisionService
+from domain.service.gm_decision_service import GmDecisionRuntime, GmDecisionService
 from domain.service.npc_clone_service import NpcCloneService
 from domain.service.state_mutation_service import StateMutationService
 from domain.service.storage_constants import SCENARIO_ASSETS_BUCKET
@@ -44,11 +49,37 @@ if TYPE_CHECKING:
     from domain.entity.gm_types import (
         GameContext,
         GmDecisionResponse,
-        GmTurnRequest,
         StateChanges,
     )
 
 logger = get_logger(__name__)
+GENERATED_IMAGES_BUCKET = "generated-images"
+
+try:
+    from infra.db_client import engine as _bgm_engine
+except ValueError:
+    _bgm_engine = None
+
+
+@dataclass(frozen=True)
+class _DoneMeta:
+    turn_number: int
+    requires_user_action: bool
+    is_ending: bool
+    will_continue: bool
+    stop_reason: str
+
+
+@dataclass(frozen=True)
+class _TurnStreamParams:
+    db: Session
+    session_id: uuid.UUID
+    scenario_id: object
+    decision: GmDecisionResponse
+    npc_images: NpcImageMap
+    done_meta: _DoneMeta
+    show_continue_button: bool
+    show_continue_input_cta: bool
 
 
 class GmTurnUseCase:
@@ -63,13 +94,32 @@ class GmTurnUseCase:
         self.decision_svc = GmDecisionService(self.gemini)
         self.mutation_svc = StateMutationService()
         self.bridge_svc = GenuiBridgeService()
-        self.storage_svc = StorageService()
+        self.bgm_svc = BgmService()
+        self.storage_svc: StorageService | None = None
         self.bg_gw = SceneBackgroundGateway()
         self.npc_gw = NpcGateway()
         self.clone_svc = NpcCloneService()
         self.turn_limit_svc = TurnLimitService()
         self.condition_svc = ConditionEvaluationService()
         self.resolution_svc = ActionResolutionService()
+        self.interactions_enabled = _env_bool(
+            "GEMINI_INTERACTIONS_ENABLED",
+            default=False,
+        )
+        self.prompt_cache_enabled = _env_bool(
+            "GEMINI_PROMPT_CACHE_ENABLED",
+            default=True,
+        )
+        self.prompt_cache_ttl_seconds = _env_int(
+            "GEMINI_PROMPT_CACHE_TTL_SECONDS",
+            default=3600,
+        )
+
+    @property
+    def _storage_svc(self) -> StorageService:
+        if self.storage_svc is None:
+            self.storage_svc = StorageService()
+        return self.storage_svc
 
     async def execute(
         self,
@@ -84,75 +134,193 @@ class GmTurnUseCase:
             yield _error_event("Session not active")
             return
 
-        self._maybe_clone_npcs(request, db, session_id, game_session)
-
-        # Build context and resolve decision (with turn-limit checks)
-        context = self.context_svc.build_context(db, session_id)
-        decision = await self._resolve_decision(context, request)
-
-        # Apply state mutations
-        if decision.state_changes:
-            self.mutation_svc.apply(db, session_id, decision.state_changes)
-
-        # Condition evaluation (after mutation, only if LLM didn't end)
-        llm_ended = _has_session_end(decision.state_changes)
-        if not llm_ended:
-            self._evaluate_and_apply(db, session_id, context, decision)
-
-        # Persist turn
-        self._persist_turn(request, decision, db, game_session)
-
-        # Context compression check
-        ctx_rec = self.context_gw.get_by_session(db, session_id)
-        last_updated = ctx_rec.last_updated_turn if ctx_rec else 0
-        if self.context_svc.should_compress(
-            context.current_turn_number,
-            last_updated,
-        ):
-            try:
-                await self.context_svc.compress(
-                    db,
-                    session_id,
-                    self.gemini,
-                    context.current_turn_number,
-                )
-            except Exception:
-                logger.warning(
-                    "Context compression failed, will retry next turn",
-                    session_id=str(session_id),
-                )
-
-        npc_images = self._resolve_npc_images(
-            db,
-            session_id,
-            game_session.scenario_id,
-            decision,
+        auto_advance_enabled = request.auto_advance_until_user_action
+        auto_turn_budget = request.max_auto_turns if auto_advance_enabled else 1
+        generated_turn_count = 0
+        current_input_type = request.input_type
+        current_input_text = request.input_text
+        is_first_turn = True
+        decision_runtime = self._build_decision_runtime(
+            auto_advance_enabled=auto_advance_enabled,
+            auto_turn_budget=auto_turn_budget,
         )
 
-        # Stream SSE events via bridge (text, state, surface, done)
-        async for event in self.bridge_svc.stream_decision(
-            decision,
-            npc_images=npc_images,
-        ):
-            yield event
+        try:
+            while True:
+                turn_request = GmTurnRequest(
+                    session_id=request.session_id,
+                    input_type=current_input_type,
+                    input_text=current_input_text,
+                    auto_advance_until_user_action=auto_advance_enabled,
+                    max_auto_turns=auto_turn_budget,
+                )
 
-        # Resolve background images
-        async for event in self._resolve_backgrounds(
-            db,
-            session_id,
-            decision,
-        ):
-            yield event
+                if is_first_turn:
+                    self._maybe_clone_npcs(turn_request, db, session_id, game_session)
+                    is_first_turn = False
 
-        # Resolve NPC emotion images (node mode only)
-        if decision.nodes:
-            async for event in self._resolve_npc_emotion_assets(
-                db,
-                session_id,
-                decision.nodes,
-                npc_images,
-            ):
-                yield event
+                # Build context and resolve decision (with turn-limit checks)
+                context = self.context_svc.build_context(db, session_id)
+                await self._maybe_create_prompt_cache(
+                    context=context,
+                    runtime=decision_runtime,
+                    session_id=session_id,
+                    generated_turn_count=generated_turn_count,
+                    auto_advance_enabled=auto_advance_enabled,
+                    auto_turn_budget=auto_turn_budget,
+                )
+                should_handoff_with_cta = auto_advance_enabled and (
+                    generated_turn_count + 1 >= auto_turn_budget
+                )
+                auto_section = self._build_auto_advance_addition(
+                    auto_advance_enabled=auto_advance_enabled,
+                    should_handoff_with_cta=should_handoff_with_cta,
+                    input_type=turn_request.input_type,
+                    current_turn=generated_turn_count + 1,
+                    total_turns=auto_turn_budget,
+                )
+                decision = await self._resolve_decision(
+                    context,
+                    turn_request,
+                    runtime=decision_runtime,
+                    auto_advance_section=auto_section,
+                )
+
+                # Apply state mutations
+                if decision.state_changes:
+                    self.mutation_svc.apply(db, session_id, decision.state_changes)
+
+                # Condition evaluation (after mutation, only if LLM didn't end)
+                llm_ended = _has_session_end(decision.state_changes)
+                condition_ended = False
+                if not llm_ended:
+                    condition_ended = self._evaluate_and_apply(
+                        db,
+                        session_id,
+                        context,
+                        decision,
+                    )
+                is_ending = llm_ended or condition_ended
+
+                # Persist turn
+                turn_number = self._persist_turn(
+                    turn_request, decision, db, game_session
+                )
+                generated_turn_count += 1
+
+                await self._maybe_compress_context(
+                    db,
+                    session_id,
+                    context.current_turn_number,
+                )
+
+                npc_images = self._resolve_npc_images(
+                    db,
+                    session_id,
+                    game_session.scenario_id,
+                    decision,
+                )
+
+                auto_limit_reached = (
+                    auto_advance_enabled and generated_turn_count >= auto_turn_budget
+                )
+                narrate_requires_continue = (not auto_advance_enabled) or (
+                    auto_advance_enabled and auto_limit_reached
+                )
+                show_continue_input_cta = (
+                    auto_limit_reached and decision.decision_type == "narrate"
+                )
+                requires_user_action = _requires_user_action(
+                    decision,
+                    narrate_requires_continue=narrate_requires_continue,
+                )
+                will_continue = (
+                    auto_advance_enabled
+                    and not auto_limit_reached
+                    and not requires_user_action
+                    and not is_ending
+                )
+                stop_reason = _build_stop_reason(
+                    is_ending=is_ending,
+                    requires_user_action=requires_user_action,
+                    auto_limit_reached=auto_limit_reached,
+                    will_continue=will_continue,
+                )
+
+                stream_params = _TurnStreamParams(
+                    db=db,
+                    session_id=session_id,
+                    scenario_id=game_session.scenario_id,  # type: ignore[attr-defined]
+                    decision=decision,
+                    npc_images=npc_images,
+                    done_meta=_DoneMeta(
+                        turn_number=turn_number,
+                        requires_user_action=requires_user_action,
+                        is_ending=is_ending,
+                        will_continue=will_continue,
+                        stop_reason=stop_reason,
+                    ),
+                    show_continue_button=narrate_requires_continue,
+                    show_continue_input_cta=show_continue_input_cta,
+                )
+                async for event in self._stream_turn_events(stream_params):
+                    yield event
+
+                if not will_continue:
+                    break
+
+                current_input_type = "do"
+                current_input_text = "continue"
+        finally:
+            logger.info(
+                "Turn generation finished",
+                session_id=str(session_id),
+                total_turns=generated_turn_count,
+            )
+            await self.decision_svc.cleanup_runtime(decision_runtime)
+
+    def _build_decision_runtime(
+        self,
+        *,
+        auto_advance_enabled: bool,
+        auto_turn_budget: int,
+    ) -> GmDecisionRuntime:
+        """Build per-request runtime knobs for decision acceleration."""
+        return GmDecisionRuntime(
+            use_interactions=(
+                self.interactions_enabled
+                and auto_advance_enabled
+                and auto_turn_budget > 1
+            ),
+        )
+
+    async def _maybe_create_prompt_cache(  # noqa: PLR0913
+        self,
+        *,
+        context: GameContext,
+        runtime: GmDecisionRuntime,
+        session_id: uuid.UUID,
+        generated_turn_count: int,
+        auto_advance_enabled: bool,
+        auto_turn_budget: int,
+    ) -> None:
+        """Create one explicit prompt cache for stable prompt prefix."""
+        if runtime.prompt_cache_attempted:
+            return
+        if not self.prompt_cache_enabled:
+            return
+        if not auto_advance_enabled or auto_turn_budget <= 1:
+            return
+        if generated_turn_count == 0:
+            return
+
+        runtime.prompt_cache_attempted = True
+        seed = self.context_svc.build_prompt_cache_seed(context)
+        runtime.cached_content_name = await self.decision_svc.create_prompt_cache(
+            contents=seed,
+            ttl_seconds=self.prompt_cache_ttl_seconds,
+            display_name=f"gm-turn-{session_id}",
+        )
 
     def _maybe_clone_npcs(
         self,
@@ -168,10 +336,106 @@ class GmTurnUseCase:
         state = game_session.current_state  # type: ignore[attr-defined]
         self.clone_svc.clone_npcs_for_session(db, sid, session_id, state)
 
+    async def _maybe_compress_context(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        current_turn_number: int,
+    ) -> None:
+        """Run context compression when threshold is met."""
+        ctx_rec = self.context_gw.get_by_session(db, session_id)
+        last_updated = ctx_rec.last_updated_turn if ctx_rec else 0
+        if not self.context_svc.should_compress(current_turn_number, last_updated):
+            return
+        try:
+            await self.context_svc.compress(
+                db,
+                session_id,
+                self.gemini,
+                current_turn_number,
+            )
+        except Exception:
+            logger.warning(
+                "Context compression failed, will retry next turn",
+                session_id=str(session_id),
+            )
+
+    async def _stream_turn_events(
+        self,
+        params: _TurnStreamParams,
+    ) -> AsyncIterator[str]:
+        """Yield all turn-related SSE events in canonical order."""
+        done_event_seen = False
+        done_emitted = False
+        async for event in self.bridge_svc.stream_decision(
+            params.decision,
+            npc_images=params.npc_images,
+            show_continue_button=params.show_continue_button,
+            show_continue_input_cta=params.show_continue_input_cta,
+        ):
+            if _is_done_event(event):
+                done_event_seen = True
+                continue
+            yield event
+
+        async for event in self._resolve_bgm(
+            params.db,
+            params.scenario_id,
+            params.decision,
+        ):
+            yield event
+
+        # Resolve background images before done, so the frontend has all
+        # scene assets ready when the user regains control.
+        async for event in self._resolve_backgrounds(
+            params.db,
+            params.session_id,
+            params.decision,
+        ):
+            yield event
+
+        # Unlock user interaction after BGM and backgrounds are resolved.
+        # Only NPC emotion variants may arrive after done -- they have
+        # fallback images on the frontend side.
+        if (
+            done_event_seen
+            and params.done_meta.requires_user_action
+            and not done_emitted
+        ):
+            done_emitted = True
+            yield _done_event(
+                turn_number=params.done_meta.turn_number,
+                requires_user_action=params.done_meta.requires_user_action,
+                is_ending=params.done_meta.is_ending,
+                will_continue=params.done_meta.will_continue,
+                stop_reason=params.done_meta.stop_reason,
+            )
+
+        if params.decision.nodes:
+            async for event in self._resolve_npc_emotion_assets(
+                params.db,
+                params.session_id,
+                params.decision.nodes,
+                params.npc_images,
+            ):
+                yield event
+
+        if done_event_seen and not done_emitted:
+            yield _done_event(
+                turn_number=params.done_meta.turn_number,
+                requires_user_action=params.done_meta.requires_user_action,
+                is_ending=params.done_meta.is_ending,
+                will_continue=params.done_meta.will_continue,
+                stop_reason=params.done_meta.stop_reason,
+            )
+
     async def _resolve_decision(
         self,
         context: GameContext,
         request: GmTurnRequest,
+        *,
+        runtime: GmDecisionRuntime | None = None,
+        auto_advance_section: str = "",
     ) -> GmDecisionResponse:
         """Check turn limits and return the appropriate decision."""
         cur = context.current_turn_number
@@ -184,17 +448,64 @@ class GmTurnUseCase:
             player_stats=dict(context.player.stats),
             luck_factor=luck,
         )
-        prompt = self.context_svc.build_prompt(
-            context,
-            request.input_type,
-            request.input_text,
-            extra_sections=[
-                self._build_soft_addition(context),
-                self._build_condition_progress(context),
-                resolution_ctx,
-            ],
+        extra_sections = [
+            self._build_soft_addition(context),
+            self._build_condition_progress(context),
+            resolution_ctx,
+            auto_advance_section,
+        ]
+        if runtime and runtime.cached_content_name:
+            prompt = self.context_svc.build_prompt_delta(
+                context,
+                request.input_type,
+                request.input_text,
+                extra_sections=extra_sections,
+            )
+        else:
+            prompt = self.context_svc.build_prompt(
+                context,
+                request.input_type,
+                request.input_text,
+                extra_sections=extra_sections,
+            )
+        return await self.decision_svc.decide(prompt, runtime=runtime)
+
+    @staticmethod
+    def _build_auto_advance_addition(
+        *,
+        auto_advance_enabled: bool,
+        should_handoff_with_cta: bool,
+        input_type: str,
+        current_turn: int = 1,
+        total_turns: int = 1,
+    ) -> str:
+        """Prompt addition informing GM of auto-advance streaming context."""
+        if not auto_advance_enabled:
+            return ""
+
+        is_last = should_handoff_with_cta or current_turn >= total_turns
+        turn_note = (
+            "\n- This is the opening turn. Use narrate to establish the scene."
+            if input_type == "start"
+            else ""
         )
-        return await self.decision_svc.decide(prompt)
+        last_turn_note = (
+            "\n- This is the LAST auto-advance turn. Present a choice to"
+            " give the player agency, unless the scene truly calls for"
+            " pure narration (in which case the player can type freely)."
+            if is_last
+            else ""
+        )
+        return (
+            f"AUTO-ADVANCE CONTINUATION MODE (turn {current_turn} of"
+            f" {total_turns}):\n"
+            "- narrate → next turn is generated immediately.\n"
+            "- choice  → auto-advance pauses, player decides.\n"
+            "Prioritize immersion: present choices when the story\n"
+            "naturally demands player agency, not on a fixed schedule.\n"
+            '- Avoid decision_type="clarify" and "repair" unless truly needed.'
+            f"{turn_note}{last_turn_note}"
+        )
 
     def _build_soft_addition(self, context: GameContext) -> str:
         """Return soft-limit prompt addition or empty string."""
@@ -227,7 +538,7 @@ class GmTurnUseCase:
         session_id: uuid.UUID,
         context: GameContext,
         decision: GmDecisionResponse,
-    ) -> None:
+    ) -> bool:
         """Evaluate conditions and apply session end if triggered."""
         flags = _compute_latest_flags(context, decision.state_changes)
         stats = _compute_latest_stats(context, decision.state_changes)
@@ -238,14 +549,14 @@ class GmTurnUseCase:
             player_stats=stats,
             current_turn=context.current_turn_number,
         )
-        self._apply_condition_end(db, session_id, result)
+        return self._apply_condition_end(db, session_id, result)
 
     def _apply_condition_end(
         self,
         db: Session,
         session_id: uuid.UUID,
         result: ConditionEvaluationResult,
-    ) -> None:
+    ) -> bool:
         """Apply session end based on condition evaluation result."""
         if result.triggered_fail:
             desc = str(result.triggered_fail.get("description", ""))
@@ -257,7 +568,8 @@ class GmTurnUseCase:
                     ending_summary=desc,
                 ),
             )
-        elif result.triggered_win:
+            return True
+        if result.triggered_win:
             desc = str(result.triggered_win.get("description", ""))
             self.mutation_svc.apply_session_end(
                 db,
@@ -267,6 +579,105 @@ class GmTurnUseCase:
                     ending_summary=desc,
                 ),
             )
+            return True
+        return False
+
+    async def _resolve_bgm(
+        self,
+        db: Session,
+        scenario_id: object,
+        decision: GmDecisionResponse,
+    ) -> AsyncIterator[str]:
+        """Resolve BGM cache hit/miss and emit BGM SSE events."""
+        if not isinstance(scenario_id, uuid.UUID):
+            return
+
+        mood = (decision.bgm_mood or "").strip().lower()
+        prompt = (decision.bgm_music_prompt or "").strip()
+        if not mood:
+            return
+
+        try:
+            cached_path = self.bgm_svc.get_cached_bgm_path(db, scenario_id, mood)
+        except Exception as exc:
+            logger.warning(
+                "BGM cache lookup failed; skipping BGM for this turn",
+                scenario_id=str(scenario_id),
+                mood=mood,
+                error=str(exc),
+            )
+            return
+        if cached_path:
+            logger.info(
+                "BGM cache hit",
+                scenario_id=str(scenario_id),
+                mood=mood,
+                path=cached_path,
+            )
+            yield _bgm_update_event(f"generated-bgm/{cached_path}", mood)
+            return
+
+        # Cache miss: notify frontend immediately to show loading state.
+        logger.info(
+            "BGM cache miss; start generating",
+            scenario_id=str(scenario_id),
+            mood=mood,
+        )
+        yield _bgm_generating_event(mood)
+
+        if not prompt:
+            prompt = self._fallback_bgm_prompt(decision, mood)
+            logger.warning(
+                "BGM prompt missing from LLM; using fallback prompt",
+                scenario_id=str(scenario_id),
+                mood=mood,
+                prompt=prompt,
+            )
+
+        try:
+            await self.bgm_svc.generate_and_cache(
+                db=db,
+                scenario_id=scenario_id,
+                mood=mood,
+                music_prompt=prompt,
+            )
+        except Exception as exc:
+            logger.warning(
+                "BGM generation failed; skipping BGM for this turn",
+                scenario_id=str(scenario_id),
+                mood=mood,
+                error=str(exc),
+            )
+            return
+        generated_path = self.bgm_svc.get_cached_bgm_path(db, scenario_id, mood)
+        if generated_path:
+            logger.info(
+                "BGM generated and cached",
+                scenario_id=str(scenario_id),
+                mood=mood,
+                path=generated_path,
+            )
+            yield _bgm_update_event(f"generated-bgm/{generated_path}", mood)
+
+    @staticmethod
+    def _fallback_bgm_prompt(
+        decision: GmDecisionResponse,
+        mood: str,
+    ) -> str:
+        """Create a safe fallback prompt when LLM omits bgm_music_prompt."""
+        scene = (decision.scene_description or "TRPG scene").strip()
+        return (
+            f"{scene}, background music mood={mood}, "
+            "instrumental only, no vocals, no lyrics, "
+            "no singing, seamless loop, loopable"
+        )
+
+    @staticmethod
+    def _new_bgm_session() -> Session:
+        if _bgm_engine is None:
+            msg = "DATABASE_URL environment variable is not set"
+            raise RuntimeError(msg)
+        return SQLModelSession(_bgm_engine)
 
     async def _resolve_backgrounds(
         self,
@@ -321,7 +732,7 @@ class GmTurnUseCase:
             )
             return None
 
-        bucket = SCENARIO_ASSETS_BUCKET if bg.scenario_id else "generated-images"
+        bucket = SCENARIO_ASSETS_BUCKET if bg.scenario_id else GENERATED_IMAGES_BUCKET
         logger.info(
             "Using LLM-selected background",
             bg_id=str(bg_id),
@@ -377,7 +788,7 @@ class GmTurnUseCase:
         decision: GmDecisionResponse,
         db: Session,
         game_session: object,
-    ) -> None:
+    ) -> int:
         """Increment turn counter and save the turn record."""
         sid = game_session.id  # type: ignore[attr-defined]
         new_turn_number = self.session_gw.increment_turn(db, sid)
@@ -392,6 +803,13 @@ class GmTurnUseCase:
             created_at=datetime.now(UTC),
         )
         self.turn_gw.create(db, turn)
+        logger.info(
+            "Turn generated",
+            session_id=str(sid),
+            turn_number=new_turn_number,
+            decision_type=decision.decision_type,
+        )
+        return new_turn_number
 
     async def _resolve_node_assets(
         self,
@@ -413,7 +831,9 @@ class GmTurnUseCase:
                 bg = self.bg_gw.find_by_id(db, bg_id)
                 if bg and bg.image_path:
                     bucket = (
-                        SCENARIO_ASSETS_BUCKET if bg.scenario_id else "generated-images"
+                        SCENARIO_ASSETS_BUCKET
+                        if bg.scenario_id
+                        else GENERATED_IMAGES_BUCKET
                     )
                     yield _asset_ready_event(
                         bg_key,
@@ -431,7 +851,7 @@ class GmTurnUseCase:
             if cached and cached.image_path:
                 yield _asset_ready_event(
                     bg_key,
-                    f"generated-images/{cached.image_path}",
+                    f"{GENERATED_IMAGES_BUCKET}/{cached.image_path}",
                 )
                 continue
             unresolved.append(bg_key)
@@ -453,7 +873,7 @@ class GmTurnUseCase:
                 continue
             try:
                 storage_path = await asyncio.to_thread(
-                    self.storage_svc.upload_image,
+                    self._storage_svc.upload_image,
                     str(session_id),
                     result,
                 )
@@ -470,7 +890,7 @@ class GmTurnUseCase:
                 )
                 yield _asset_ready_event(
                     desc,
-                    f"generated-images/{storage_path}",
+                    f"{GENERATED_IMAGES_BUCKET}/{storage_path}",
                 )
             except Exception:
                 logger.warning("Node asset upload failed", key=desc)
@@ -501,7 +921,7 @@ class GmTurnUseCase:
                 sent.add(default_key)
                 yield _asset_ready_event(
                     default_key,
-                    f"{SCENARIO_ASSETS_BUCKET}/{default_path}",
+                    _to_bucketed_npc_path(default_path),
                 )
 
             # Resolve emotion-specific image
@@ -513,7 +933,7 @@ class GmTurnUseCase:
             if expression and expression in emotion_map:
                 yield _asset_ready_event(
                     asset_key,
-                    f"{SCENARIO_ASSETS_BUCKET}/{emotion_map[expression]}",
+                    _to_bucketed_npc_path(emotion_map[expression]),
                 )
                 continue
 
@@ -555,17 +975,30 @@ class GmTurnUseCase:
         if npc_rec and npc_rec.profile:
             profile_desc = str(npc_rec.profile.get("description", ""))
 
+        default_path = npc_images.get(npc_name, (None, {}))[0]
+        source_image = await self._load_npc_base_image(default_path)
+
         prompt = (
-            f"Fantasy RPG character portrait: {npc_name}, "
-            f"{expression} expression. {profile_desc}"
+            "Full-body standing fantasy RPG character portrait, single character, "
+            "portrait orientation, 2:3 vertical composition, transparent background, "
+            "no text, no frame, no watermark. "
+            f"Character: {npc_name}. Expression: {expression}. "
+            "Preserve the same outfit, hairstyle, face, and colors as the "
+            "reference image when provided. "
+            f"{profile_desc}"
         )
         try:
-            image_bytes = await self.gemini.generate_image(prompt)
+            image_bytes = await self.gemini.generate_image(
+                prompt,
+                source_image=source_image,
+                transparent_background=True,
+                size="1024x1536",
+            )
             if not image_bytes:
                 return None
 
             storage_path = await asyncio.to_thread(
-                self.storage_svc.upload_image,
+                self._storage_svc.upload_image,
                 str(session_id),
                 image_bytes,
             )
@@ -586,7 +1019,7 @@ class GmTurnUseCase:
                     storage_path,
                 )
 
-            return f"generated-images/{storage_path}"
+            return f"{GENERATED_IMAGES_BUCKET}/{storage_path}"
         except Exception:
             logger.warning(
                 "NPC emotion image generation failed",
@@ -594,6 +1027,20 @@ class GmTurnUseCase:
                 expression=expression,
             )
             return None
+
+    async def _load_npc_base_image(
+        self,
+        default_path: str | None,
+    ) -> bytes | None:
+        """Load base NPC image bytes for expression-variant generation."""
+        if not default_path:
+            return None
+        bucket, path = _resolve_npc_bucket_and_path(default_path)
+        return await asyncio.to_thread(
+            self._storage_svc.download_image,
+            path,
+            bucket,
+        )
 
     async def _generate_and_upload_image(
         self,
@@ -610,7 +1057,7 @@ class GmTurnUseCase:
                 return None
 
             storage_path = await asyncio.to_thread(
-                self.storage_svc.upload_image,
+                self._storage_svc.upload_image,
                 str(session_id),
                 image_bytes,
             )
@@ -629,7 +1076,7 @@ class GmTurnUseCase:
                 ),
             )
 
-            return f"generated-images/{storage_path}"
+            return f"{GENERATED_IMAGES_BUCKET}/{storage_path}"
         except Exception:
             logger.warning(
                 "Scene image generation/upload failed",
@@ -726,6 +1173,27 @@ def _build_npc_image_entries(npcs: list[Npcs]) -> NpcImageMap:
     return result
 
 
+def _resolve_npc_bucket_and_path(path: str) -> tuple[str, str]:
+    """Resolve storage bucket for an NPC image path saved in DB."""
+    if path.startswith(f"{SCENARIO_ASSETS_BUCKET}/"):
+        return SCENARIO_ASSETS_BUCKET, path.removeprefix(
+            f"{SCENARIO_ASSETS_BUCKET}/",
+        )
+    if path.startswith(f"{GENERATED_IMAGES_BUCKET}/"):
+        return GENERATED_IMAGES_BUCKET, path.removeprefix(
+            f"{GENERATED_IMAGES_BUCKET}/",
+        )
+    if path.startswith("sessions/"):
+        return GENERATED_IMAGES_BUCKET, path
+    return SCENARIO_ASSETS_BUCKET, path
+
+
+def _to_bucketed_npc_path(path: str) -> str:
+    """Convert DB path to ``{bucket}/{object_path}`` for assetReady."""
+    bucket, resolved_path = _resolve_npc_bucket_and_path(path)
+    return f"{bucket}/{resolved_path}"
+
+
 def _error_event(message: str) -> str:
     """Build an SSE error event string."""
     payload = json.dumps(
@@ -755,3 +1223,118 @@ def _asset_ready_event(key: str, path: str) -> str:
         ensure_ascii=False,
     )
     return f"data: {payload}\n\n"
+
+
+def _bgm_update_event(path: str, mood: str) -> str:
+    """Build an SSE bgmUpdate event string."""
+    payload = json.dumps(
+        {"type": "bgmUpdate", "path": path, "mood": mood},
+        ensure_ascii=False,
+    )
+    return f"data: {payload}\n\n"
+
+
+def _bgm_generating_event(mood: str) -> str:
+    """Build an SSE bgmGenerating event string."""
+    payload = json.dumps(
+        {"type": "bgmGenerating", "mood": mood},
+        ensure_ascii=False,
+    )
+    return f"data: {payload}\n\n"
+
+
+def _done_event(
+    *,
+    turn_number: int,
+    requires_user_action: bool,
+    is_ending: bool,
+    will_continue: bool,
+    stop_reason: str,
+) -> str:
+    """Build an SSE done event with turn completion metadata."""
+    payload = json.dumps(
+        {
+            "type": "done",
+            "turn_number": turn_number,
+            "requires_user_action": requires_user_action,
+            "is_ending": is_ending,
+            "will_continue": will_continue,
+            "stop_reason": stop_reason,
+        },
+        ensure_ascii=False,
+    )
+    return f"data: {payload}\n\n"
+
+
+def _is_done_event(raw_event: str) -> bool:
+    """Return whether SSE raw string is a `{type: done}` payload."""
+    line = raw_event.strip()
+    if not line.startswith("data: "):
+        return False
+    payload = line[len("data: ") :].strip()
+    try:
+        decoded = json.loads(payload)
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(decoded, dict):
+        return False
+    return decoded.get("type") == "done"
+
+
+def _requires_user_action(
+    decision: GmDecisionResponse,
+    *,
+    narrate_requires_continue: bool,
+) -> bool:
+    """Return whether this decision needs explicit user input to continue."""
+    if decision.decision_type in {"choice", "clarify", "repair"}:
+        return True
+    if decision.decision_type == "narrate":
+        return narrate_requires_continue
+    return False
+
+
+def _build_stop_reason(
+    *,
+    is_ending: bool,
+    requires_user_action: bool,
+    auto_limit_reached: bool,
+    will_continue: bool,
+) -> str:
+    """Build a compact reason string for done-event stop/continue status."""
+    if will_continue:
+        return "auto_continue"
+    if is_ending:
+        return "ending"
+    if auto_limit_reached:
+        return "auto_turn_limit"
+    if requires_user_action:
+        return "requires_user_action"
+    return "completed"
+
+
+def _env_bool(name: str, *, default: bool) -> bool:
+    """Parse boolean env vars from common truthy/falsey tokens."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    val = raw.strip().lower()
+    if val in {"1", "true", "yes", "on"}:
+        return True
+    if val in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _env_int(name: str, *, default: int) -> int:
+    """Parse integer env var with fallback."""
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return default
+    if parsed <= 0:
+        return default
+    return parsed

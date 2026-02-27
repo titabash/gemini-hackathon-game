@@ -131,6 +131,12 @@ public = true
 file_size_limit = "5MiB"
 allowed_mime_types = ["image/png", "image/jpeg", "image/webp"]
 
+# AI生成BGM（MP3/WAV）
+[storage.buckets.generated-bgm]
+public = true
+file_size_limit = "20MiB"
+allowed_mime_types = ["audio/mpeg", "audio/wav", "audio/x-wav"]
+
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]
 enabled = true

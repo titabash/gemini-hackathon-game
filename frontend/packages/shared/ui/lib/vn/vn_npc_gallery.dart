@@ -19,6 +19,9 @@ class VnNpcData {
 class VnNpcGallery extends StatelessWidget {
   const VnNpcGallery({super.key, required this.npcs, this.speakers = const []});
 
+  static const _npcHeightRatio = 0.70;
+  static const _downwardOffsetRatio = 0.03;
+
   final List<VnNpcData> npcs;
 
   /// Names of the NPCs currently speaking.  Used to highlight the active
@@ -33,7 +36,7 @@ class VnNpcGallery extends StatelessWidget {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final height = constraints.maxHeight;
-        final npcHeight = height * 0.75;
+        final npcHeight = height * _npcHeightRatio;
         final ordered = _zOrderedNpcs();
         return Stack(
           clipBehavior: Clip.none,
@@ -44,6 +47,7 @@ class VnNpcGallery extends StatelessWidget {
                   npc,
                   npcs.indexOf(npc),
                   width,
+                  height,
                   npcHeight,
                 ),
               )
@@ -71,6 +75,7 @@ class VnNpcGallery extends StatelessWidget {
     VnNpcData npc,
     int origIndex,
     double totalWidth,
+    double totalHeight,
     double npcHeight,
   ) {
     final isSpeaking = speakers.contains(npc.name);
@@ -79,7 +84,9 @@ class VnNpcGallery extends StatelessWidget {
     // Evenly distribute centres with slight overlap allowed.
     final spacing = totalWidth / (count + 1);
     final centerX = spacing * (origIndex + 1);
-    final npcWidth = (totalWidth / count).clamp(120.0, 300.0);
+    final maxWidth = count == 1 ? totalWidth * 0.8 : totalWidth * 0.55;
+    final npcWidth = (totalWidth / count).clamp(140.0, maxWidth);
+    final downwardOffset = totalHeight * _downwardOffsetRatio;
 
     Widget child = _buildNpc(npc, npcHeight);
 
@@ -98,7 +105,7 @@ class VnNpcGallery extends StatelessWidget {
 
     return Positioned(
       left: centerX - npcWidth / 2,
-      bottom: isSpeaking ? 8 : 0,
+      bottom: (isSpeaking ? 8 : 0) - downwardOffset,
       width: npcWidth,
       child: child,
     );

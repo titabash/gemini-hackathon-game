@@ -54,9 +54,28 @@ class Scenarios(SQLModel, table=True):
     created_by: Optional[uuid.UUID] = Field(default=None, sa_column=Column('created_by', Uuid))
 
     users: Optional['Users'] = Relationship(back_populates='scenarios')
+    bgm: list['Bgm'] = Relationship(back_populates='scenario')
     sessions: list['Sessions'] = Relationship(back_populates='scenario')
     npcs: list['Npcs'] = Relationship(back_populates='scenario')
     scene_backgrounds: list['SceneBackgrounds'] = Relationship(back_populates='scenario')
+
+
+class Bgm(SQLModel, table=True):
+    __table_args__ = (
+        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='CASCADE', name='bgm_scenario_id_scenarios_id_fk'),
+        PrimaryKeyConstraint('id', name='bgm_pkey'),
+        UniqueConstraint('scenario_id', 'mood', name='bgm_scenario_id_mood_key')
+    )
+
+    id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
+    scenario_id: uuid.UUID = Field(sa_column=Column('scenario_id', Uuid, nullable=False))
+    mood: str = Field(sa_column=Column('mood', Text, nullable=False))
+    audio_path: str = Field(sa_column=Column('audio_path', Text, nullable=False))
+    prompt_used: str = Field(sa_column=Column('prompt_used', Text, nullable=False))
+    duration_seconds: int = Field(sa_column=Column('duration_seconds', Integer, nullable=False, server_default=text('60')))
+    created_at: datetime.datetime = Field(sa_column=Column('created_at', TIMESTAMP(True, 3), nullable=False, server_default=text('now()')))
+
+    scenario: Optional['Scenarios'] = Relationship(back_populates='bgm')
 
 
 class Sessions(SQLModel, table=True):

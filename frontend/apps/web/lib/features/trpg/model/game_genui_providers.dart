@@ -28,20 +28,13 @@ String _resolveStorageUrl(Ref ref, String path) {
 
 /// Provides an [A2uiMessageProcessor] that manages genui surfaces.
 ///
-/// Listens to A2UI messages from [GameContentGenerator] and forwards them
-/// to the processor for surface management.
+/// A2UI event forwarding is handled in `TrpgSessionNotifier` so turn-level
+/// buffering can defer UI updates for future turns.
 final gameProcessorProvider = Provider<A2uiMessageProcessor>((ref) {
   final catalog = GameCatalogItems.asCatalog(
     resolveImageUrl: (path) => _resolveStorageUrl(ref, path),
   );
   final processor = A2uiMessageProcessor(catalogs: [catalog]);
-  final generator = ref.watch(gameContentGeneratorProvider);
-
-  final sub = generator.a2uiMessageStream.listen(processor.handleMessage);
-
-  ref.onDispose(() {
-    sub.cancel();
-    processor.dispose();
-  });
+  ref.onDispose(processor.dispose);
   return processor;
 });

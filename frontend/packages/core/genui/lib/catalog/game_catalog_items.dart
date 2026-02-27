@@ -34,6 +34,7 @@ class GameCatalogItems {
       _choiceGroupItem(),
       _clarifyQuestionItem(),
       _repairConfirmItem(),
+      _continueOrInputItem(),
       _continueButtonItem(),
       _textInputItem(),
     ]);
@@ -332,6 +333,53 @@ class GameCatalogItems {
                     ),
                   ),
                 ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // -- continueButton --------------------------------------------------------
+
+  static CatalogItem _continueOrInputItem() {
+    return CatalogItem(
+      name: 'continueOrInput',
+      dataSchema: S.object(properties: {'hint': S.string()}),
+      widgetBuilder: (ctx) {
+        final data = ctx.data;
+        final hint = data is Map<String, dynamic>
+            ? data['hint'] as String? ?? t.trpg.inputHint
+            : t.trpg.inputHint;
+
+        return VnOverlayContainer(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: VnChoiceButton(
+                  text: t.trpg.continueButton,
+                  onPressed: () => ctx.dispatchEvent(
+                    UserActionEvent(
+                      name: 'continue',
+                      sourceComponentId: ctx.id,
+                      context: {'inputType': 'do', 'inputText': 'continue'},
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              _VnTextInput(
+                hint: hint,
+                onSubmit: (text) => ctx.dispatchEvent(
+                  UserActionEvent(
+                    name: 'textInput',
+                    sourceComponentId: ctx.id,
+                    context: {'inputType': 'do', 'inputText': text},
+                  ),
+                ),
               ),
             ],
           ),

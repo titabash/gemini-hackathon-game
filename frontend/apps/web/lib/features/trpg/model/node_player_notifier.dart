@@ -17,6 +17,7 @@ class NodePlayerNotifier {
   List<SceneNode> _nodes = [];
   int _currentIndex = 0;
   final Map<String, String> _resolvedAssets = {};
+  String? _inheritedBackground;
 
   /// The scene node currently displayed.
   ValueListenable<SceneNode?> get currentNode => _currentNodeNotifier;
@@ -34,18 +35,21 @@ class NodePlayerNotifier {
   int get nodeCount => _nodes.length;
 
   /// The effective background key for the current node, considering
-  /// inheritance from previous nodes.
+  /// inheritance from previous nodes and previous turns.
   String? get effectiveBackground {
     for (var i = _currentIndex; i >= 0; i--) {
       if (i < _nodes.length && _nodes[i].background != null) {
         return _nodes[i].background;
       }
     }
-    return null;
+    return _inheritedBackground;
   }
 
   /// Load a list of scene nodes for playback.
   void loadNodes(List<SceneNode> nodes) {
+    if (_nodes.isNotEmpty) {
+      _inheritedBackground = effectiveBackground;
+    }
     _nodes = List.unmodifiable(nodes);
     _currentIndex = 0;
 
@@ -96,6 +100,7 @@ class NodePlayerNotifier {
     _nodes = [];
     _currentIndex = 0;
     _resolvedAssets.clear();
+    _inheritedBackground = null;
     _currentNodeNotifier.value = null;
     _isCompleteNotifier.value = true;
     _isWaitingForAssetNotifier.value = false;

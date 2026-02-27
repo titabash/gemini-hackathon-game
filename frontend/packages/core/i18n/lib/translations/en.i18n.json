@@ -97,7 +97,8 @@
     "score": "Score: {n}",
     "restart": "Restart",
     "loading": "Loading game...",
-    "backToList": "Back to Games"
+    "backToList": "Back to Games",
+    "exitToTitleConfirm": "Quit the game and return to the title screen?"
   },
   "genui": {
     "title": "AI Chat",
@@ -125,6 +126,9 @@
     "tapToContinue": "Tap to continue",
     "narrator": "Narrator",
     "messageLog": "Message Log",
+    "bgmOn": "BGM: ON",
+    "bgmOff": "BGM: OFF",
+    "bgmGenerating": "Generating BGM...",
     "turnSeparator": "Turn $n",
     "you": "You",
     "gm": "GM"

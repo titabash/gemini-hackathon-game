@@ -247,6 +247,107 @@ void main() {
     });
   });
 
+  group('normalizeMood', () {
+    test('通常の文字列 → trim + lowercase', () {
+      expect(normalizeMood('  Tense '), 'tense');
+    });
+
+    test('null → null', () {
+      expect(normalizeMood(null), isNull);
+    });
+
+    test('空文字列 → null', () {
+      expect(normalizeMood(''), isNull);
+    });
+
+    test('空白のみ → null', () {
+      expect(normalizeMood('   '), isNull);
+    });
+
+    test('既に小文字 → そのまま', () {
+      expect(normalizeMood('calm'), 'calm');
+    });
+
+    test('大文字混在 → lowercase', () {
+      expect(normalizeMood('BATTLE'), 'battle');
+    });
+  });
+
+  group('resolveNodeBgmMoodAtIndex', () {
+    test('bgm が後のノードにのみある場合、index 0 では null', () {
+      final nodes = [
+        const SceneNode(type: 'narration', text: 'a'),
+        const SceneNode(type: 'dialogue', text: 'b', bgm: 'tense'),
+      ];
+
+      expect(resolveNodeBgmMoodAtIndex(nodes, 0), isNull);
+    });
+
+    test('bgm が後のノードにある場合、そのインデックスでは mood を返す', () {
+      final nodes = [
+        const SceneNode(type: 'narration', text: 'a'),
+        const SceneNode(type: 'dialogue', text: 'b', bgm: 'tense'),
+      ];
+
+      expect(resolveNodeBgmMoodAtIndex(nodes, 1), 'tense');
+    });
+
+    test('bgm が現在ノードにある場合、mood を返す', () {
+      final nodes = [
+        const SceneNode(type: 'narration', text: 'a', bgm: 'calm'),
+        const SceneNode(type: 'dialogue', text: 'b'),
+      ];
+
+      expect(resolveNodeBgmMoodAtIndex(nodes, 0), 'calm');
+      // index 1 でも先行ノードの bgm が有効
+      expect(resolveNodeBgmMoodAtIndex(nodes, 1), 'calm');
+    });
+
+    test('bgmStop 後は null を返す', () {
+      final nodes = [
+        const SceneNode(type: 'narration', text: 'a', bgm: 'calm'),
+        const SceneNode(type: 'dialogue', text: 'b', bgmStop: true),
+        const SceneNode(type: 'narration', text: 'c'),
+      ];
+
+      expect(resolveNodeBgmMoodAtIndex(nodes, 0), 'calm');
+      expect(resolveNodeBgmMoodAtIndex(nodes, 1), isNull);
+      expect(resolveNodeBgmMoodAtIndex(nodes, 2), isNull);
+    });
+
+    test('bgmStop 後に新しい bgm で再開する', () {
+      final nodes = [
+        const SceneNode(type: 'narration', text: 'a', bgm: 'calm'),
+        const SceneNode(type: 'dialogue', text: 'b', bgmStop: true),
+        const SceneNode(type: 'narration', text: 'c', bgm: 'battle'),
+      ];
+
+      expect(resolveNodeBgmMoodAtIndex(nodes, 0), 'calm');
+      expect(resolveNodeBgmMoodAtIndex(nodes, 1), isNull);
+      expect(resolveNodeBgmMoodAtIndex(nodes, 2), 'battle');
+    });
+
+    test('空リスト → null', () {
+      expect(resolveNodeBgmMoodAtIndex([], 0), isNull);
+    });
+
+    test('範囲外インデックス → リスト末尾にクランプ', () {
+      final nodes = [
+        const SceneNode(type: 'narration', text: 'a', bgm: 'calm'),
+      ];
+
+      expect(resolveNodeBgmMoodAtIndex(nodes, 10), 'calm');
+    });
+
+    test('bgm の大文字小文字・空白は正規化される', () {
+      final nodes = [
+        const SceneNode(type: 'narration', text: 'a', bgm: '  TENSE  '),
+      ];
+
+      expect(resolveNodeBgmMoodAtIndex(nodes, 0), 'tense');
+    });
+  });
+
   group('buildNodesSummary', () {
     test('ナレーション + ダイアログの要約テキスト構築', () {
       final nodes = [

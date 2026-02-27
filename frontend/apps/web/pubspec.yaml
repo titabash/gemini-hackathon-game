@@ -47,6 +47,11 @@ dependencies:
   # Navigation
   go_router: ^17.0.1
 
+  # Audio
+  just_audio: ^0.9.44
+  web_socket_channel: ^3.0.0
+  web: ^1.1.0
+
   # Backend integration
   supabase_flutter: ^2.10.3
 

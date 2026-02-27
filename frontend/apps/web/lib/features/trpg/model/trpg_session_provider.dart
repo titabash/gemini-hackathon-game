@@ -9,6 +9,7 @@ import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'game_genui_providers.dart';
+import 'bgm_player_notifier.dart';
 import 'node_player_notifier.dart';
 import 'scene_node.dart';
 import 'session_restore_helpers.dart';
@@ -51,6 +52,24 @@ enum NovelDisplayMode {
   processing,
 }
 
+enum _TurnStreamEventKind {
+  a2ui,
+  text,
+  image,
+  nodesReady,
+  assetReady,
+  bgmUpdate,
+  stateUpdate,
+  done,
+}
+
+class _TurnStreamEvent {
+  const _TurnStreamEvent({required this.kind, required this.payload});
+
+  final _TurnStreamEventKind kind;
+  final Object payload;
+}
+
 /// Manages the TRPG session state: messages, streaming, and GM turns.
 ///
 /// Uses [GameContentGenerator] for SSE communication and
@@ -62,6 +81,7 @@ class TrpgSessionNotifier {
 
   final _messagesNotifier = ValueNotifier<List<TrpgMessage>>([]);
   final _isProcessingNotifier = ValueNotifier<bool>(false);
+  final _isAwaitingUserActionNotifier = ValueNotifier<bool>(false);
   final _visualStateNotifier = ValueNotifier<TrpgVisualState>(
     const TrpgVisualState(),
   );
@@ -76,6 +96,7 @@ class TrpgSessionNotifier {
 
   /// Current session ID, stored for re-use in UI interaction callbacks.
   String? _sessionId;
+  String? _scenarioId;
 
   /// Text paging controller for sentence-by-sentence display (legacy).
   final textPager = TextPagingNotifier();
@@ -97,12 +118,25 @@ class TrpgSessionNotifier {
 
   /// Debounce timer for saving current node index.
   Timer? _saveTimer;
+  bool _currentTurnHasNodeBgmDirectives = false;
+  List<SceneNode> _currentTurnNodes = const [];
+
+  final Map<String, String> _bgmReadyUrlByMood = {};
+  final List<_TurnStreamEvent> _bufferedTurnEvents = [];
+  bool _hasStreamingGmMessage = false;
+  bool _willAutoContinue = false;
+  bool _bufferIncomingTurnEvents = false;
+  bool _replayingBufferedTurnEvents = false;
 
   /// Observable list of conversation messages.
   ValueListenable<List<TrpgMessage>> get messages => _messagesNotifier;
 
   /// Whether a GM turn is currently being processed/streamed.
   ValueListenable<bool> get isProcessing => _isProcessingNotifier;
+
+  /// Whether the current turn is waiting for player input.
+  ValueListenable<bool> get isAwaitingUserAction =>
+      _isAwaitingUserActionNotifier;
 
   /// Visual state for the Flame game canvas.
   ValueNotifier<TrpgVisualState> get visualState => _visualStateNotifier;
@@ -118,10 +152,20 @@ class TrpgSessionNotifier {
     if (_initialised) return;
     _initialised = true;
     _sessionId = sessionId;
+    _scenarioId = null;
+    _bgmReadyUrlByMood.clear();
+    _currentTurnHasNodeBgmDirectives = false;
+    _currentTurnNodes = const [];
+    _bufferedTurnEvents.clear();
+    _hasStreamingGmMessage = false;
+    _willAutoContinue = false;
+    _bufferIncomingTurnEvents = false;
+    _replayingBufferedTurnEvents = false;
 
     // Reset state for the new session
     _messagesNotifier.value = [];
     _isProcessingNotifier.value = false;
+    _isAwaitingUserActionNotifier.value = false;
     _displayModeNotifier.value = NovelDisplayMode.processing;
 
     _setupSubscriptions();
@@ -144,9 +188,10 @@ class TrpgSessionNotifier {
       }
 
       final turnNumber = row['current_turn_number'] as int? ?? 0;
+      _scenarioId = row['scenario_id'] as String?;
       if (turnNumber > 0) {
         final savedNodeIndex = row['current_node_index'] as int? ?? 0;
-        final scenarioId = row['scenario_id'] as String?;
+        final scenarioId = _scenarioId;
         await _restoreFromLastTurn(sessionId, scenarioId, savedNodeIndex);
       } else {
         // New session: auto-trigger GM opening narration
@@ -239,6 +284,8 @@ class TrpgSessionNotifier {
       // Parse nodes from output
       final rawNodes = output['nodes'] as List<dynamic>?;
       if (rawNodes == null || rawNodes.isEmpty) {
+        _currentTurnHasNodeBgmDirectives = false;
+        _currentTurnNodes = const [];
         // Legacy flat-text: add narration_text to message log
         final narrationText = output['narration_text'] as String?;
         if (narrationText != null && narrationText.isNotEmpty) {
@@ -251,6 +298,7 @@ class TrpgSessionNotifier {
           ]);
         }
         _restoreChoiceSurface(output);
+        await _restoreBgmFromLastTurn(scenarioId, output);
         _displayModeNotifier.value = _hasSurface
             ? NovelDisplayMode.surface
             : NovelDisplayMode.input;
@@ -261,6 +309,10 @@ class TrpgSessionNotifier {
           .cast<Map<String, dynamic>>()
           .map(SceneNode.fromJson)
           .toList();
+      _currentTurnNodes = nodes;
+      _currentTurnHasNodeBgmDirectives = nodes.any(
+        (n) => normalizeMood(n.bgm) != null || n.bgmStop,
+      );
 
       // Build asset maps using helpers
       final bgRows = (results[1] as List<dynamic>).cast<Map<String, dynamic>>();
@@ -313,6 +365,12 @@ class TrpgSessionNotifier {
           )
           .toList();
       _addGmNodeMessages(nodeMessages);
+      await _restoreBgmFromLastTurn(
+        scenarioId,
+        output,
+        nodes: nodes,
+        targetNodeIndex: targetIndex,
+      );
 
       // Determine display mode
       final allNodesRead = targetIndex >= nodes.length - 1;
@@ -359,6 +417,47 @@ class TrpgSessionNotifier {
     }
   }
 
+  Future<void> _restoreBgmFromLastTurn(
+    String? scenarioId,
+    Map<String, dynamic> output, {
+    List<SceneNode>? nodes,
+    int? targetNodeIndex,
+  }) async {
+    if (scenarioId == null || scenarioId.isEmpty) return;
+    final mood = nodes != null && targetNodeIndex != null
+        ? resolveNodeBgmMoodAtIndex(nodes, targetNodeIndex)
+        : normalizeMood(output['bgm_mood'] as String?);
+    if (mood == null) {
+      _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+        bgmMood: () => null,
+      );
+      await _ref.read(bgmPlayerProvider).stop();
+      return;
+    }
+
+    try {
+      final supabase = _ref.read(supabaseClientProvider);
+      final cached = await supabase
+          .from('bgm')
+          .select('audio_path')
+          .eq('scenario_id', scenarioId)
+          .eq('mood', mood)
+          .maybeSingle();
+
+      final audioPath = cached?['audio_path'] as String?;
+      if (audioPath == null || audioPath.isEmpty) return;
+      final resolvedUrl = _resolveStorageUrl('generated-bgm/$audioPath');
+      _bgmReadyUrlByMood[mood] = resolvedUrl;
+
+      _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+        bgmMood: () => mood,
+      );
+      await _ref.read(bgmPlayerProvider).play(resolvedUrl, mood);
+    } catch (e) {
+      Logger.warning('Failed to restore BGM from cache: $e');
+    }
+  }
+
   /// Set up listeners for GameContentGenerator and A2uiMessageProcessor.
   void _setupSubscriptions() {
     _cancelSubscriptions();
@@ -367,12 +466,55 @@ class TrpgSessionNotifier {
     final proc = _ref.read(gameProcessorProvider);
 
     _subscriptions.addAll([
-      generator.textResponseStream.listen(_onText),
-      generator.gameStateStream.listen(_applyStateUpdate),
-      generator.gameImageStream.listen(_onImage),
-      generator.nodesReadyStream.listen(_onNodesReady),
-      generator.assetReadyStream.listen(_onAssetReady),
-      generator.doneStream.listen((_) => _onDone()),
+      generator.a2uiMessageStream.listen(
+        (message) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(kind: _TurnStreamEventKind.a2ui, payload: message),
+        ),
+      ),
+      generator.textResponseStream.listen(
+        (content) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(kind: _TurnStreamEventKind.text, payload: content),
+        ),
+      ),
+      generator.gameStateStream.listen(
+        (data) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(
+            kind: _TurnStreamEventKind.stateUpdate,
+            payload: data,
+          ),
+        ),
+      ),
+      generator.gameImageStream.listen(
+        (path) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(kind: _TurnStreamEventKind.image, payload: path),
+        ),
+      ),
+      generator.nodesReadyStream.listen(
+        (nodes) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(
+            kind: _TurnStreamEventKind.nodesReady,
+            payload: nodes,
+          ),
+        ),
+      ),
+      generator.assetReadyStream.listen(
+        (data) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(
+            kind: _TurnStreamEventKind.assetReady,
+            payload: data,
+          ),
+        ),
+      ),
+      generator.bgmUpdateStream.listen(
+        (data) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(kind: _TurnStreamEventKind.bgmUpdate, payload: data),
+        ),
+      ),
+      generator.doneStream.listen(
+        (data) => _handleIncomingTurnEvent(
+          _TurnStreamEvent(kind: _TurnStreamEventKind.done, payload: data),
+        ),
+      ),
       generator.errorStream.listen(_onError),
       proc.surfaceUpdates.listen(_onSurfaceUpdate),
       proc.onSubmit.listen(_onUiInteraction),
@@ -387,11 +529,14 @@ class TrpgSessionNotifier {
   }
 
   /// Reset session state so a new session can be started.
-  void reset() {
+  Future<void> reset() async {
     _cancelSubscriptions();
+    _ref.read(gameContentGeneratorProvider).cancelActiveTurn();
+    _clearProcessorSurfaces();
     _saveTimer?.cancel();
     _messagesNotifier.value = [];
     _isProcessingNotifier.value = false;
+    _isAwaitingUserActionNotifier.value = false;
     _visualStateNotifier.value = const TrpgVisualState();
     _displayModeNotifier.value = NovelDisplayMode.input;
     _hasSurface = false;
@@ -399,12 +544,38 @@ class TrpgSessionNotifier {
     _textBuffer.clear();
     textPager.clear();
     nodePlayer.clear();
+    _currentTurnNodes = const [];
+    _bgmReadyUrlByMood.clear();
+    _currentTurnHasNodeBgmDirectives = false;
+    _bufferedTurnEvents.clear();
+    _hasStreamingGmMessage = false;
+    _willAutoContinue = false;
+    _bufferIncomingTurnEvents = false;
+    _replayingBufferedTurnEvents = false;
+    await _ref.read(bgmPlayerProvider).stop();
     _initialised = false;
     _sessionId = null;
+    _scenarioId = null;
+  }
+
+  /// Remove all active genui surfaces from the processor.
+  void _clearProcessorSurfaces() {
+    final proc = _ref.read(gameProcessorProvider);
+    for (final surfaceId in proc.surfaces.keys.toList()) {
+      proc.handleMessage(SurfaceDeletion(surfaceId: surfaceId));
+    }
   }
 
   /// Called when the user finishes reading all paged sentences / nodes.
   void onPagingComplete() {
+    if (!_replayingBufferedTurnEvents && _replayNextBufferedTurn()) {
+      return;
+    }
+    if (_willAutoContinue) {
+      _bufferIncomingTurnEvents = false;
+      _displayModeNotifier.value = NovelDisplayMode.processing;
+      return;
+    }
     if (_hasSurface) {
       _displayModeNotifier.value = NovelDisplayMode.surface;
     } else {
@@ -437,13 +608,23 @@ class TrpgSessionNotifier {
     required String inputType,
     required String inputText,
   }) {
-    if (_isProcessingNotifier.value) return;
+    if (_isProcessingNotifier.value && !_canAcceptUserTurnWhileStreaming()) {
+      return;
+    }
     _isProcessingNotifier.value = true;
+    _isAwaitingUserActionNotifier.value = false;
     _hasSurface = false;
     _useNodePlayer = false;
+    _currentTurnHasNodeBgmDirectives = false;
+    _currentTurnNodes = const [];
     _textBuffer.clear();
     textPager.clear();
     nodePlayer.clear();
+    _bufferedTurnEvents.clear();
+    _hasStreamingGmMessage = false;
+    _willAutoContinue = false;
+    _bufferIncomingTurnEvents = false;
+    _replayingBufferedTurnEvents = false;
     _displayModeNotifier.value = NovelDisplayMode.processing;
 
     // Reset node index for new turn
@@ -457,14 +638,14 @@ class TrpgSessionNotifier {
       ];
     }
 
-    final user = _ref.read(currentUserProvider);
+    final accessToken = _ref.read(accessTokenProvider);
     final generator = _ref.read(gameContentGeneratorProvider);
 
     generator.sendTurn(
       sessionId: sessionId,
       inputType: inputType,
       inputText: inputText,
-      authToken: user?.id,
+      authToken: accessToken,
     );
   }
 
@@ -489,12 +670,78 @@ class TrpgSessionNotifier {
 
   // -- Stream event handlers ------------------------------------------------
 
-  void _onText(String content) {
+  void _handleIncomingTurnEvent(_TurnStreamEvent event) {
+    // While replaying buffered events for one turn, any newly arriving SSE
+    // events belong to subsequent turns and must stay queued.
+    if (_replayingBufferedTurnEvents) {
+      _bufferedTurnEvents.add(event);
+      return;
+    }
+
+    if (!_bufferIncomingTurnEvents && _shouldStartBufferingOnNextTurn(event)) {
+      _bufferIncomingTurnEvents = true;
+    }
+    if (_bufferIncomingTurnEvents) {
+      _bufferedTurnEvents.add(event);
+      return;
+    }
+    _applyTurnStreamEvent(event);
+  }
+
+  bool _replayNextBufferedTurn() {
+    if (_bufferedTurnEvents.isEmpty) return false;
+    _bufferIncomingTurnEvents = false;
+    _replayingBufferedTurnEvents = true;
+    while (_bufferedTurnEvents.isNotEmpty) {
+      final event = _bufferedTurnEvents.removeAt(0);
+      _applyTurnStreamEvent(event);
+      if (event.kind == _TurnStreamEventKind.done) {
+        break;
+      }
+    }
+    _replayingBufferedTurnEvents = false;
+    return true;
+  }
+
+  void _applyTurnStreamEvent(_TurnStreamEvent event) {
+    switch (event.kind) {
+      case _TurnStreamEventKind.a2ui:
+        _applyA2ui(event.payload as A2uiMessage);
+        return;
+      case _TurnStreamEventKind.text:
+        _applyText(event.payload as String);
+        return;
+      case _TurnStreamEventKind.image:
+        _applyImage(event.payload as String);
+        return;
+      case _TurnStreamEventKind.nodesReady:
+        _applyNodesReady(event.payload as List<Map<String, dynamic>>);
+        return;
+      case _TurnStreamEventKind.assetReady:
+        _applyAssetReady(event.payload as Map<String, dynamic>);
+        return;
+      case _TurnStreamEventKind.bgmUpdate:
+        _applyBgmUpdate(event.payload as Map<String, dynamic>);
+        return;
+      case _TurnStreamEventKind.stateUpdate:
+        _applyStateUpdate(event.payload as Map<String, dynamic>);
+        return;
+      case _TurnStreamEventKind.done:
+        _applyDone(event.payload as Map<String, dynamic>);
+        return;
+    }
+  }
+
+  void _applyText(String content) {
     _textBuffer.write(content);
     _updateGmMessage(_textBuffer.toString());
   }
 
-  void _onImage(String path) {
+  void _applyA2ui(A2uiMessage message) {
+    _ref.read(gameProcessorProvider).handleMessage(message);
+  }
+
+  void _applyImage(String path) {
     // Node-based playback handles backgrounds via assetReady events
     if (_useNodePlayer) return;
 
@@ -503,17 +750,24 @@ class TrpgSessionNotifier {
     );
   }
 
-  void _onNodesReady(List<Map<String, dynamic>> rawNodes) {
+  void _applyNodesReady(List<Map<String, dynamic>> rawNodes) {
     _useNodePlayer = true;
     final nodes = rawNodes.map(SceneNode.fromJson).toList();
+    _currentTurnNodes = nodes;
+    _currentTurnHasNodeBgmDirectives = nodes.any(
+      (n) => normalizeMood(n.bgm) != null || n.bgmStop,
+    );
     nodePlayer.loadNodes(nodes);
 
     // Replace the streaming summary with individual node messages.
     // Remove the last GM message (streaming placeholder) if present.
     final messages = [..._messagesNotifier.value];
-    if (messages.isNotEmpty && messages.last.role == 'gm') {
+    if (_hasStreamingGmMessage &&
+        messages.isNotEmpty &&
+        messages.last.role == 'gm') {
       messages.removeLast();
     }
+    _hasStreamingGmMessage = false;
     // Add each node as a separate message
     for (final node in nodes) {
       messages.add(
@@ -528,7 +782,7 @@ class TrpgSessionNotifier {
     _displayModeNotifier.value = NovelDisplayMode.paging;
   }
 
-  void _onAssetReady(Map<String, dynamic> data) {
+  void _applyAssetReady(Map<String, dynamic> data) {
     final key = data['key'] as String? ?? '';
     final path = data['path'] as String? ?? '';
     if (key.isNotEmpty && path.isNotEmpty) {
@@ -545,15 +799,74 @@ class TrpgSessionNotifier {
     }
   }
 
-  void _onDone() {
-    // Guard against duplicate done (JSON event + SSE connection close)
-    if (!_isProcessingNotifier.value) return;
-    _isProcessingNotifier.value = false;
+  void _applyBgmUpdate(Map<String, dynamic> data) {
+    final mood = normalizeMood(data['mood'] as String?);
+    if (mood == null) return;
+    final player = _ref.read(bgmPlayerProvider);
+    final generating = data['generating'] == true;
+
+    if (generating) {
+      player.onGenerating(mood);
+      _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+        bgmMood: () => mood,
+      );
+      return;
+    }
+
+    final rawPath = data['path'] as String? ?? '';
+    final resolved = _resolveMaybeStorageUrl(rawPath);
+    if (resolved == null) return;
+    _bgmReadyUrlByMood[mood] = resolved;
+
+    if (_useNodePlayer && _currentTurnHasNodeBgmDirectives) {
+      final activeMood = _activeNodeBgmMood();
+      if (activeMood != null) {
+        if (activeMood != mood && !_bgmReadyUrlByMood.containsKey(activeMood)) {
+          // LLM output may drift between decision.bgm_mood and node.bgm.
+          // Reuse the same asset for the node's active mood to avoid deadlock.
+          Logger.warning(
+            'BGM mood mismatch: event=$mood active=$activeMood path=$rawPath',
+          );
+          _bgmReadyUrlByMood[activeMood] = resolved;
+        }
+        _syncNodeBgm(nodePlayer.currentNode.value);
+        return;
+      }
+      // activeMood is null: current node has no BGM directive yet.
+      // Fall through to direct playback with the server-provided mood.
+    }
+
+    // If the same mood is already playing, just update the cached URL
+    // without restarting playback to avoid an audible gap on turn transitions.
+    if (player.playingMood == mood) {
+      _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+        bgmMood: () => mood,
+      );
+      return;
+    }
+
+    _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+      bgmMood: () => mood,
+    );
+    unawaited(player.play(resolved, mood));
+  }
+
+  void _applyDone(Map<String, dynamic> data) {
+    final requiresUserAction = data['requires_user_action'] == true;
+    final isEnding = data['is_ending'] == true;
+    _willAutoContinue = data['will_continue'] == true;
+    _isAwaitingUserActionNotifier.value =
+        requiresUserAction && !_willAutoContinue && !isEnding;
+    _isProcessingNotifier.value = _willAutoContinue;
+    _hasStreamingGmMessage = false;
 
     if (_useNodePlayer) {
       // Node-based: already in paging mode from _onNodesReady
       if (nodePlayer.nodeCount == 0) {
+        _bufferIncomingTurnEvents = false;
         onPagingComplete();
+      } else {
+        _bufferIncomingTurnEvents = _willAutoContinue;
       }
       return;
     }
@@ -561,23 +874,34 @@ class TrpgSessionNotifier {
     // Legacy flat-text path
     final fullText = _textBuffer.toString();
     if (fullText.trim().isEmpty) {
+      _bufferIncomingTurnEvents = false;
       onPagingComplete();
       return;
     }
     textPager.feed(fullText);
     _displayModeNotifier.value = NovelDisplayMode.paging;
+    _bufferIncomingTurnEvents = _willAutoContinue;
   }
 
   void _onError(ContentGeneratorError error) {
     Logger.error('GM error: ${error.error}');
     _isProcessingNotifier.value = false;
+    _isAwaitingUserActionNotifier.value = false;
+    _willAutoContinue = false;
+    _bufferIncomingTurnEvents = false;
+    _bufferedTurnEvents.clear();
     _displayModeNotifier.value = NovelDisplayMode.input;
   }
 
   void _onSurfaceUpdate(GenUiUpdate update) {
     switch (update) {
       case SurfaceAdded(:final surfaceId):
-        if (surfaceId == 'game-surface') _hasSurface = true;
+        if (surfaceId == 'game-surface') {
+          _hasSurface = true;
+          if (_isProcessingNotifier.value) {
+            _isAwaitingUserActionNotifier.value = true;
+          }
+        }
       case SurfaceRemoved(:final surfaceId):
         if (surfaceId == 'game-surface') _hasSurface = false;
       case SurfaceUpdated():
@@ -727,6 +1051,53 @@ class TrpgSessionNotifier {
     }
 
     _visualStateNotifier.value = state;
+    _syncNodeBgm(node);
+  }
+
+  void _syncNodeBgm(SceneNode? node) {
+    if (!_useNodePlayer || node == null) return;
+
+    final nodeMood = normalizeMood(node.bgm);
+    final activeMood = _activeNodeBgmMood();
+    final stopOnly = node.bgmStop && nodeMood == null;
+    final player = _ref.read(bgmPlayerProvider);
+
+    if (stopOnly) {
+      _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+        bgmMood: () => null,
+      );
+      unawaited(player.stop());
+      return;
+    }
+
+    if (activeMood == null) return;
+
+    _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+      bgmMood: () => activeMood,
+    );
+
+    if (player.playingMood == activeMood) return;
+
+    // Skip if a pending-play retry is already in progress from
+    // onUserGesture(); let that user-gesture-context play complete
+    // to avoid a race condition where two concurrent play() calls
+    // interfere with each other.
+    if (player.isRetryingPlayback) return;
+
+    final readyUrl = _bgmReadyUrlByMood[activeMood];
+    if (readyUrl != null) {
+      unawaited(player.play(readyUrl, activeMood));
+    } else {
+      player.onGenerating(activeMood);
+    }
+  }
+
+  String? _activeNodeBgmMood() {
+    if (_currentTurnNodes.isEmpty) return null;
+    return resolveNodeBgmMoodAtIndex(
+      _currentTurnNodes,
+      nodePlayer.currentIndex,
+    );
   }
 
   String _resolveStorageUrl(String path) {
@@ -738,6 +1109,17 @@ class TrpgSessionNotifier {
     return supabase.storage.from(bucket).getPublicUrl(objectPath);
   }
 
+  String? _resolveMaybeStorageUrl(String pathOrUrl) {
+    if (pathOrUrl.isEmpty) return null;
+    if (pathOrUrl.startsWith('http://') || pathOrUrl.startsWith('https://')) {
+      return pathOrUrl;
+    }
+    if (!pathOrUrl.startsWith('generated-bgm/')) {
+      return _resolveStorageUrl('generated-bgm/$pathOrUrl');
+    }
+    return _resolveStorageUrl(pathOrUrl);
+  }
+
   void _updateGmMessage(String text) {
     final messages = [..._messagesNotifier.value];
     if (messages.isNotEmpty && messages.last.role == 'gm') {
@@ -745,6 +1127,7 @@ class TrpgSessionNotifier {
     } else {
       messages.add(TrpgMessage(role: 'gm', text: text));
     }
+    _hasStreamingGmMessage = true;
     _messagesNotifier.value = messages;
   }
 
@@ -753,15 +1136,40 @@ class TrpgSessionNotifier {
     _messagesNotifier.value = [..._messagesNotifier.value, ...nodeMessages];
   }
 
-  void dispose() {
+  bool _canAcceptUserTurnWhileStreaming() {
+    if (_isAwaitingUserActionNotifier.value) {
+      return true;
+    }
+    if (_hasSurface) {
+      return true;
+    }
+    final mode = _displayModeNotifier.value;
+    return mode == NovelDisplayMode.surface || mode == NovelDisplayMode.input;
+  }
+
+  bool _shouldStartBufferingOnNextTurn(_TurnStreamEvent event) {
+    // If a new nodesReady arrives while the player is still paging the current
+    // node turn, it is a future turn and must be queued.
+    if (event.kind != _TurnStreamEventKind.nodesReady ||
+        _displayModeNotifier.value != NovelDisplayMode.paging ||
+        !_useNodePlayer) {
+      return false;
+    }
+    return nodePlayer.nodeCount > 0;
+  }
+
+  Future<void> dispose() async {
     _saveTimer?.cancel();
     _cancelSubscriptions();
+    _clearProcessorSurfaces();
     _messagesNotifier.dispose();
     _isProcessingNotifier.dispose();
+    _isAwaitingUserActionNotifier.dispose();
     _visualStateNotifier.dispose();
     _displayModeNotifier.dispose();
     textPager.dispose();
     nodePlayer.dispose();
+    await _ref.read(bgmPlayerProvider).stop();
   }
 }
 

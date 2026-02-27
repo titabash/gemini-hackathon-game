@@ -261,5 +261,129 @@ void main() {
         expect(player.nodeCount, 0);
       });
     });
+
+    group('background inheritance across turns', () {
+      test('inherits background from previous turn', () {
+        // Turn 1: has background
+        final turn1 = [
+          const SceneNode(
+            type: 'narration',
+            text: 'Turn 1',
+            background: 'forest_bg',
+          ),
+        ];
+        player.loadNodes(turn1);
+        player.onAssetReady('forest_bg', 'bucket/forest.png');
+
+        // Turn 2: no background
+        final turn2 = [const SceneNode(type: 'narration', text: 'Turn 2')];
+        player.loadNodes(turn2);
+
+        expect(player.effectiveBackground, 'forest_bg');
+      });
+
+      test('overrides inherited background with new one', () {
+        // Turn 1: forest background
+        final turn1 = [
+          const SceneNode(
+            type: 'narration',
+            text: 'Turn 1',
+            background: 'forest_bg',
+          ),
+        ];
+        player.loadNodes(turn1);
+
+        // Turn 2: castle background
+        final turn2 = [
+          const SceneNode(
+            type: 'narration',
+            text: 'Turn 2',
+            background: 'castle_bg',
+          ),
+        ];
+        player.loadNodes(turn2);
+
+        expect(player.effectiveBackground, 'castle_bg');
+      });
+
+      test('returns null when both turns have no background', () {
+        final turn1 = [const SceneNode(type: 'narration', text: 'Turn 1')];
+        player.loadNodes(turn1);
+
+        final turn2 = [const SceneNode(type: 'narration', text: 'Turn 2')];
+        player.loadNodes(turn2);
+
+        expect(player.effectiveBackground, isNull);
+      });
+
+      test('clear resets inherited background', () {
+        // Turn 1: has background
+        final turn1 = [
+          const SceneNode(
+            type: 'narration',
+            text: 'Turn 1',
+            background: 'forest_bg',
+          ),
+        ];
+        player.loadNodes(turn1);
+        player.onAssetReady('forest_bg', 'bucket/forest.png');
+
+        // clear() simulates sendTurn() full reset
+        player.clear();
+
+        // Turn 2: no background
+        final turn2 = [const SceneNode(type: 'narration', text: 'Turn 2')];
+        player.loadNodes(turn2);
+
+        expect(player.effectiveBackground, isNull);
+      });
+
+      test('preserves inherited background across multiple loadNodes', () {
+        // Turn 1: has background
+        final turn1 = [
+          const SceneNode(
+            type: 'narration',
+            text: 'Turn 1',
+            background: 'forest_bg',
+          ),
+        ];
+        player.loadNodes(turn1);
+        player.onAssetReady('forest_bg', 'bucket/forest.png');
+
+        // Turn 2: no background
+        final turn2 = [const SceneNode(type: 'narration', text: 'Turn 2')];
+        player.loadNodes(turn2);
+
+        // Turn 3: no background — should still inherit from Turn 1
+        final turn3 = [const SceneNode(type: 'narration', text: 'Turn 3')];
+        player.loadNodes(turn3);
+
+        expect(player.effectiveBackground, 'forest_bg');
+      });
+
+      test('inherited background triggers asset waiting when unresolved', () {
+        // Turn 1: has background but NOT resolved
+        final turn1 = [
+          const SceneNode(
+            type: 'narration',
+            text: 'Turn 1',
+            background: 'forest_bg',
+          ),
+        ];
+        player.loadNodes(turn1);
+        // Do NOT call onAssetReady
+
+        // Turn 2: no background — inherits unresolved forest_bg
+        final turn2 = [const SceneNode(type: 'narration', text: 'Turn 2')];
+        player.loadNodes(turn2);
+
+        expect(player.effectiveBackground, 'forest_bg');
+        expect(player.isWaitingForAsset.value, isTrue);
+
+        // Resolve the asset
+        player.onAssetReady('forest_bg', 'bucket/forest.png');
+        expect(player.isWaitingForAsset.value, isFalse);
+      });
+    });
   });
 }

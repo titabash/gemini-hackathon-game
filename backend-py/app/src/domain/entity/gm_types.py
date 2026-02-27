@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 # --- Player Input ---
 
@@ -18,6 +18,8 @@ class GmTurnRequest(BaseModel):
     session_id: str
     input_type: Literal["start", "do", "say", "choice", "clarify_answer"]
     input_text: str
+    auto_advance_until_user_action: bool = False
+    max_auto_turns: int = Field(default=5, ge=1, le=20)
 
 
 # --- GM Decision Sub-models ---
@@ -187,6 +189,8 @@ class GmDecisionResponse(BaseModel):
 
     scene_description: str | None = None
     selected_background_id: str | None = None
+    bgm_mood: str | None = None
+    bgm_music_prompt: str | None = None
 
     choices: list[ChoiceOption] | None = None
     clarify_question: str | None = None
@@ -217,6 +221,7 @@ class TurnSummary(BaseModel):
     input_text: str
     decision_type: str
     narration_summary: str
+    nodes_text: str = ""
 
 
 class PlayerSummary(BaseModel):
@@ -277,3 +282,5 @@ class GameContext(BaseModel):
     max_turns: int = 30
     current_state: dict[str, Any]
     available_backgrounds: list[BackgroundResourceSummary] = []
+    previous_bgm_mood: str | None = None
+    previous_background: str | None = None

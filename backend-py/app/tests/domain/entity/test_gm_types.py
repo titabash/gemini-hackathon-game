@@ -282,6 +282,17 @@ class TestGmDecisionResponse:
         assert len(restored.nodes) == 2
         assert restored.nodes[0].speaker == "Guide"
 
+    def test_with_bgm_fields(self) -> None:
+        """BGM mood and prompt should be accepted."""
+        resp = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Scene summary",
+            bgm_mood="battle",
+            bgm_music_prompt="Epic orchestral, loopable",
+        )
+        assert resp.bgm_mood == "battle"
+        assert resp.bgm_music_prompt is not None
+
 
 class TestStateChanges:
     """Tests for state change sub-models."""
@@ -312,6 +323,50 @@ class TestStateChanges:
         sc = StateChanges()
         assert sc.stats_delta is None
         assert sc.new_items is None
+
+
+class TestTurnSummary:
+    """Tests for TurnSummary model including nodes_text field."""
+
+    def test_nodes_text_default_empty(self) -> None:
+        """nodes_text should default to empty string."""
+        ts = TurnSummary(
+            turn_number=1,
+            input_type="do",
+            input_text="explore",
+            decision_type="narrate",
+            narration_summary="You explored.",
+        )
+        assert ts.nodes_text == ""
+
+    def test_nodes_text_stores_value(self) -> None:
+        """nodes_text should store provided value."""
+        ts = TurnSummary(
+            turn_number=2,
+            input_type="say",
+            input_text="hello",
+            decision_type="narrate",
+            narration_summary="Summary.",
+            nodes_text=(
+                "[narration] Dark alley. | Rio: Welcome. | [narration] Rio smiles."
+            ),
+        )
+        assert "Rio: Welcome." in ts.nodes_text
+        assert "[narration] Dark alley." in ts.nodes_text
+
+    def test_nodes_text_json_roundtrip(self) -> None:
+        """nodes_text should survive JSON serialization."""
+        ts = TurnSummary(
+            turn_number=3,
+            input_type="do",
+            input_text="enter",
+            decision_type="narrate",
+            narration_summary="Summary.",
+            nodes_text="Guard: Halt! | [narration] The guard blocks the path.",
+        )
+        data = ts.model_dump_json()
+        restored = TurnSummary.model_validate_json(data)
+        assert restored.nodes_text == ts.nodes_text
 
 
 class TestGameContext:

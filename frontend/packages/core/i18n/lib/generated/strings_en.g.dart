@@ -380,6 +380,9 @@ class TranslationsGameEn {
 
 	/// en: 'Back to Games'
 	String get backToList => 'Back to Games';
+
+	/// en: 'Quit the game and return to the title screen?'
+	String get exitToTitleConfirm => 'Quit the game and return to the title screen?';
 }
 
 // Path: genui
@@ -467,6 +470,15 @@ class TranslationsTrpgEn {
 
 	/// en: 'Message Log'
 	String get messageLog => 'Message Log';
+
+	/// en: 'BGM: ON'
+	String get bgmOn => 'BGM: ON';
+
+	/// en: 'BGM: OFF'
+	String get bgmOff => 'BGM: OFF';
+
+	/// en: 'Generating BGM...'
+	String get bgmGenerating => 'Generating BGM...';
 
 	/// en: 'Turn $n'
 	String turnSeparator({required Object n}) => 'Turn ${n}';
@@ -631,6 +643,7 @@ extension on Translations {
 			'game.restart' => 'Restart',
 			'game.loading' => 'Loading game...',
 			'game.backToList' => 'Back to Games',
+			'game.exitToTitleConfirm' => 'Quit the game and return to the title screen?',
 			'genui.title' => 'AI Chat',
 			'genui.inputHint' => 'Type a message...',
 			'genui.send' => 'Send',
@@ -654,6 +667,9 @@ extension on Translations {
 			'trpg.tapToContinue' => 'Tap to continue',
 			'trpg.narrator' => 'Narrator',
 			'trpg.messageLog' => 'Message Log',
+			'trpg.bgmOn' => 'BGM: ON',
+			'trpg.bgmOff' => 'BGM: OFF',
+			'trpg.bgmGenerating' => 'Generating BGM...',
 			'trpg.turnSeparator' => ({required Object n}) => 'Turn ${n}',
 			'trpg.you' => 'You',
 			'trpg.gm' => 'GM',

@@ -15,11 +15,22 @@ if not DATABASE_URL:
     msg = "DATABASE_URL environment variable is not set"
     raise ValueError(msg)
 
+
+def _is_sql_echo_enabled() -> bool:
+    """SQLAlchemyのクエリログ出力有無を環境変数から判定する."""
+    return os.getenv("SQLALCHEMY_ECHO", "false").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 # SQLModelエンジンの作成（同期処理）
-# echo=Trueでクエリログを出力（本番環境ではFalseに設定）
+# SQLALCHEMY_ECHO=true のときのみクエリログを出力
 engine = create_engine(
     DATABASE_URL,
-    echo=True,
+    echo=_is_sql_echo_enabled(),
     pool_pre_ping=True,  # 接続の健全性チェック
 )
 

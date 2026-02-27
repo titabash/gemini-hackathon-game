@@ -75,12 +75,18 @@ class GenuiBridgeService:
         decision: GmDecisionResponse,
         *,
         npc_images: NpcImageMap | None = None,
+        show_continue_button: bool = True,
+        show_continue_input_cta: bool = False,
     ) -> AsyncIterator[str]:
         """Yield SSE events with drip-feed for typewriter UX.
 
         Args:
             decision: The structured GM decision.
             npc_images: Mapping of NPC name -> (default_path, emotion_map).
+            show_continue_button: Whether narrate decisions should emit
+                a continue button surface.
+            show_continue_input_cta: Whether narrate decisions should emit
+                a combined continue + free-input CTA surface.
         """
         has_nodes = bool(decision.nodes)
 
@@ -147,7 +153,11 @@ class GenuiBridgeService:
         )
 
         # 5. Action surface (A2UI)
-        surface_props = self._build_surface_properties(decision)
+        surface_props = self._build_surface_properties(
+            decision,
+            show_continue_button=show_continue_button,
+            show_continue_input_cta=show_continue_input_cta,
+        )
         if surface_props:
             yield _a2ui_surface(
                 "game-surface",
@@ -224,6 +234,9 @@ class GenuiBridgeService:
     @staticmethod
     def _build_surface_properties(
         decision: GmDecisionResponse,
+        *,
+        show_continue_button: bool = True,
+        show_continue_input_cta: bool = False,
     ) -> dict[str, Any] | None:
         """Build surface component type and properties for A2UI."""
         dt = decision.decision_type
@@ -245,7 +258,12 @@ class GenuiBridgeService:
                 "type": "repairConfirm",
                 "properties": decision.repair.model_dump(),
             }
-        if dt == "narrate":
+        if dt == "narrate" and show_continue_button:
+            if show_continue_input_cta:
+                return {
+                    "type": "continueOrInput",
+                    "properties": {},
+                }
             return {
                 "type": "continueButton",
                 "properties": {},

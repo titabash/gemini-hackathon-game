@@ -156,6 +156,7 @@ dependencies = [
     # "snowflake-connector-python",
     # 音声
     "cartesia",
+    "pydub",
     # Google Gemini (直接SDK使用: Gemini構造化出力がLangChainラッパー未対応のため)
     "google-genai>=1.64.0",
     # Logging

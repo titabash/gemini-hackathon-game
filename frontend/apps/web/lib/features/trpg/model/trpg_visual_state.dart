@@ -11,6 +11,7 @@ class TrpgVisualState {
     this.maxHp = 100,
     this.playerName = 'Player',
     this.backgroundImageUrl,
+    this.bgmMood,
   });
 
   final String? locationName;
@@ -23,6 +24,7 @@ class TrpgVisualState {
   final int maxHp;
   final String playerName;
   final String? backgroundImageUrl;
+  final String? bgmMood;
 
   TrpgVisualState copyWith({
     String? locationName,
@@ -33,6 +35,7 @@ class TrpgVisualState {
     int? maxHp,
     String? playerName,
     String? Function()? backgroundImageUrl,
+    String? Function()? bgmMood,
   }) {
     return TrpgVisualState(
       locationName: locationName ?? this.locationName,
@@ -47,6 +50,7 @@ class TrpgVisualState {
       backgroundImageUrl: backgroundImageUrl != null
           ? backgroundImageUrl()
           : this.backgroundImageUrl,
+      bgmMood: bgmMood != null ? bgmMood() : this.bgmMood,
     );
   }
 }
