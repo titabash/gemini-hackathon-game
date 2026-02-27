@@ -73,3 +73,42 @@ class TestBuildResolutionContext:
             luck_factor=12,
         )
         assert "difficulty" in ctx.lower() or "success" in ctx.lower()
+
+    def test_contains_mandatory_keyword(self) -> None:
+        """Output should contain MANDATORY or MUST for strong enforcement."""
+        svc = ActionResolutionService()
+        ctx = svc.build_resolution_context(
+            player_stats={"STR": 14, "DEX": 12},
+            luck_factor=15,
+        )
+        assert "MUST" in ctx or "MANDATORY" in ctx
+
+    def test_contains_failure_guidance(self) -> None:
+        """Output should contain guidance for failure narration."""
+        svc = ActionResolutionService()
+        ctx = svc.build_resolution_context(
+            player_stats={"STR": 14},
+            luck_factor=5,
+        )
+        assert "FAILURE" in ctx
+
+    def test_no_hardcoded_dnd_stats(self) -> None:
+        """Resolution context should NOT hardcode D&D stat names."""
+        svc = ActionResolutionService()
+        ctx = svc.build_resolution_context(
+            player_stats={"confidence": 75, "fear": 20},
+            luck_factor=10,
+        )
+        # Should NOT contain hardcoded D&D references as required stat names
+        assert "Physical actions: STR" not in ctx
+
+    def test_custom_stats_mentioned(self) -> None:
+        """Custom stat names should appear in the context."""
+        svc = ActionResolutionService()
+        ctx = svc.build_resolution_context(
+            player_stats={"confidence": 75, "fear": 20, "hope": 60},
+            luck_factor=10,
+        )
+        assert "confidence" in ctx
+        assert "fear" in ctx
+        assert "hope" in ctx
