@@ -20,7 +20,7 @@ workspace:
   - widgetbook
 
 dev_dependencies:
-  melos: ^7.0.0
+  melos: ^7.4.0
   mock_supabase_http_client: ^0.0.3+2
 
 # Melos 設定
