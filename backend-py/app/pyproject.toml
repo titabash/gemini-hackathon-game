@@ -102,7 +102,7 @@ version = "0.1.0"
 description = "Add your description here"
 requires-python = ">=3.13"
 dependencies = [
-    "orjson ==3.10.14",
+    "orjson ==3.11.7",
     "fastapi",
     "starlette",
     "uvicorn[standard]",
