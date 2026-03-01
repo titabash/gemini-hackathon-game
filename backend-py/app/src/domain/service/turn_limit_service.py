@@ -6,12 +6,6 @@ logic to ensure game sessions reach a conclusion within a defined turn count.
 
 from __future__ import annotations
 
-from domain.entity.gm_types import (
-    GmDecisionResponse,
-    SessionEnd,
-    StateChanges,
-)
-
 SOFT_LIMIT_WINDOW = 5
 
 
@@ -43,27 +37,28 @@ class TurnLimitService:
         """Return remaining turns, floored at 0."""
         return max(0, max_turns - current_turn)
 
-    def build_hard_limit_response(
+    def build_hard_limit_prompt_addition(
         self,
         max_turns: int,
-    ) -> GmDecisionResponse:
-        """Build a bad-end narration response for hard limit."""
-        return GmDecisionResponse(
-            decision_type="narrate",
-            narration_text=(
-                f"――{max_turns}ターンが経過した。"
-                "時間切れだ。事態は取り返しのつかない方向へ動き出し、"
-                "あなたの冒険はここで幕を閉じる……。"
-            ),
-            state_changes=StateChanges(
-                session_end=SessionEnd(
-                    ending_type="bad_end",
-                    ending_summary=(
-                        f"ターン制限（{max_turns}ターン）に達し、"
-                        "目的を達成できないままゲームオーバーとなった。"
-                    ),
-                ),
-            ),
+    ) -> str:
+        """Build a prompt addition for the final turn at hard limit.
+
+        Instead of generating a canned response, this instructs the GM
+        to write a narrative conclusion as the last turn.
+        """
+        return (
+            "\n\n## FINAL TURN — HARD LIMIT REACHED (CRITICAL)\n"
+            f"The session has reached its maximum of {max_turns} turns.\n"
+            "This is the LAST turn. You MUST:\n"
+            "1. Write a narrative ending that concludes the story in context.\n"
+            "2. Include session_end in state_changes with an appropriate "
+            "ending_type (victory, bad_end, or normal_end).\n"
+            "3. The ending must feel like a natural story conclusion, "
+            "not an abrupt cutoff.\n"
+            "4. Reflect the current situation: if the player was winning, "
+            "give a bittersweet or victorious ending; if losing, "
+            "a dramatic defeat.\n"
+            "5. Do NOT present choices — this is the final narration.\n"
         )
 
     def build_soft_limit_prompt_addition(

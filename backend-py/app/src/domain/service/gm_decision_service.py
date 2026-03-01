@@ -30,7 +30,7 @@ class GmDecisionService:
     """Call Gemini structured output for GM decisions."""
 
     MAX_RETRIES = 3
-    MODEL = "gemini-2.5-flash"
+    MODEL = "gemini-3-flash-preview"
 
     def __init__(self, gemini: GeminiClient) -> None:
         self.gemini = gemini
@@ -87,12 +87,13 @@ class GmDecisionService:
     ) -> str | None:
         """Create cache for stable prompt prefix; return cache name or None."""
         try:
-            return await self.gemini.create_prompt_cache(
+            result: str = await self.gemini.create_prompt_cache(
                 model=self.MODEL,
                 contents=contents,
                 ttl=f"{ttl_seconds}s",
                 display_name=display_name,
             )
+            return result
         except Exception as exc:
             logger.warning("Prompt cache creation failed", error=str(exc))
             return None

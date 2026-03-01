@@ -488,6 +488,56 @@ class TranslationsTrpgEn {
 
 	/// en: 'GM'
 	String get gm => 'GM';
+
+	/// en: 'Parameters'
+	String get parameterPanel => 'Parameters';
+
+	/// en: 'Stats'
+	String get stats => 'Stats';
+
+	/// en: 'Status Effects'
+	String get statusEffects => 'Status Effects';
+
+	/// en: 'Inventory'
+	String get inventory => 'Inventory';
+
+	/// en: 'Objectives'
+	String get objectives => 'Objectives';
+
+	/// en: 'Relationships'
+	String get relationships => 'Relationships';
+
+	/// en: 'No items'
+	String get noItems => 'No items';
+
+	/// en: 'No objectives'
+	String get noObjectives => 'No objectives';
+
+	/// en: 'Equipped'
+	String get equipped => 'Equipped';
+
+	/// en: 'Active'
+	String get objectiveActive => 'Active';
+
+	/// en: 'Completed'
+	String get objectiveCompleted => 'Completed';
+
+	/// en: 'Failed'
+	String get objectiveFailed => 'Failed';
+
+	/// en: 'Affinity'
+	String get affinity => 'Affinity';
+
+	/// en: 'Trust'
+	String get trust => 'Trust';
+
+	/// en: 'Fear'
+	String get fear => 'Fear';
+
+	/// en: 'Debt'
+	String get debt => 'Debt';
+
+	late final TranslationsTrpgChangesEn changes = TranslationsTrpgChangesEn.internal(_root);
 }
 
 // Path: gameMenu
@@ -551,6 +601,51 @@ class TranslationsErrorEn {
 
 	/// en: 'Request timeout'
 	String get timeout => 'Request timeout';
+}
+
+// Path: trpg.changes
+class TranslationsTrpgChangesEn {
+	TranslationsTrpgChangesEn.internal(this._root);
+
+	final Translations _root; // ignore: unused_field
+
+	// Translations
+
+	/// en: '$key $delta'
+	String statDecrease({required Object key, required Object delta}) => '${key} ${delta}';
+
+	/// en: '$key +$delta'
+	String statIncrease({required Object key, required Object delta}) => '${key} +${delta}';
+
+	/// en: 'Obtained $name!'
+	String itemAcquired({required Object name}) => 'Obtained ${name}!';
+
+	/// en: 'Lost $name'
+	String itemRemoved({required Object name}) => 'Lost ${name}';
+
+	/// en: '$name activated!'
+	String effectAdded({required Object name}) => '${name} activated!';
+
+	/// en: '$name removed'
+	String effectRemoved({required Object name}) => '${name} removed';
+
+	/// en: '$name'
+	String locationChanged({required Object name}) => '${name}';
+
+	/// en: 'Objective: $title'
+	String objectiveNew({required Object title}) => 'Objective: ${title}';
+
+	/// en: 'Completed: $title'
+	String objectiveCompleted({required Object title}) => 'Completed: ${title}';
+
+	/// en: 'Failed: $title'
+	String objectiveFailed({required Object title}) => 'Failed: ${title}';
+
+	/// en: '$npc: $dimension +$delta'
+	String relationUp({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} +${delta}';
+
+	/// en: '$npc: $dimension $delta'
+	String relationDown({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} ${delta}';
 }
 
 /// The flat map containing all translations for locale <en>.
@@ -673,6 +768,34 @@ extension on Translations {
 			'trpg.turnSeparator' => ({required Object n}) => 'Turn ${n}',
 			'trpg.you' => 'You',
 			'trpg.gm' => 'GM',
+			'trpg.parameterPanel' => 'Parameters',
+			'trpg.stats' => 'Stats',
+			'trpg.statusEffects' => 'Status Effects',
+			'trpg.inventory' => 'Inventory',
+			'trpg.objectives' => 'Objectives',
+			'trpg.relationships' => 'Relationships',
+			'trpg.noItems' => 'No items',
+			'trpg.noObjectives' => 'No objectives',
+			'trpg.equipped' => 'Equipped',
+			'trpg.objectiveActive' => 'Active',
+			'trpg.objectiveCompleted' => 'Completed',
+			'trpg.objectiveFailed' => 'Failed',
+			'trpg.affinity' => 'Affinity',
+			'trpg.trust' => 'Trust',
+			'trpg.fear' => 'Fear',
+			'trpg.debt' => 'Debt',
+			'trpg.changes.statDecrease' => ({required Object key, required Object delta}) => '${key} ${delta}',
+			'trpg.changes.statIncrease' => ({required Object key, required Object delta}) => '${key} +${delta}',
+			'trpg.changes.itemAcquired' => ({required Object name}) => 'Obtained ${name}!',
+			'trpg.changes.itemRemoved' => ({required Object name}) => 'Lost ${name}',
+			'trpg.changes.effectAdded' => ({required Object name}) => '${name} activated!',
+			'trpg.changes.effectRemoved' => ({required Object name}) => '${name} removed',
+			'trpg.changes.locationChanged' => ({required Object name}) => '${name}',
+			'trpg.changes.objectiveNew' => ({required Object title}) => 'Objective: ${title}',
+			'trpg.changes.objectiveCompleted' => ({required Object title}) => 'Completed: ${title}',
+			'trpg.changes.objectiveFailed' => ({required Object title}) => 'Failed: ${title}',
+			'trpg.changes.relationUp' => ({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} +${delta}',
+			'trpg.changes.relationDown' => ({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} ${delta}',
 			'gameMenu.newGame' => 'Start',
 			'gameMenu.loadGame' => 'Load',
 			'gameMenu.backToTitle' => 'Back',

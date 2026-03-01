@@ -6,12 +6,14 @@ import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_ui/vn/vn.dart';
 
-import '../../model/scene_node.dart';
 import '../../model/bgm_player_notifier.dart';
+import '../../model/scene_node.dart';
 import '../../model/trpg_session_provider.dart';
 import '../../model/trpg_visual_state.dart';
+import 'action_result_overlay_widget.dart';
 import 'hud_overlay_widget.dart';
 import 'message_log_drawer.dart';
+import 'parameter_side_panel.dart';
 
 /// Full-screen novel-game surface combining Flame background, genui surfaces,
 /// HUD overlay, and bottom text box / input area.
@@ -31,6 +33,7 @@ class NovelGameSurface extends ConsumerStatefulWidget {
 
 class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
   final _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _isPanelOpen = false;
 
   void _sendMessage({String inputType = 'do', String? overrideText}) {
     final text = overrideText ?? '';
@@ -49,6 +52,10 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
     ref.read(bgmPlayerProvider).onUserGesture();
     final session = ref.read(trpgSessionProvider);
     session.advancePaging();
+  }
+
+  void _togglePanel() {
+    setState(() => _isPanelOpen = !_isPanelOpen);
   }
 
   @override
@@ -127,6 +134,15 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
                 },
               ),
 
+              // Layer 3.5: Action result overlay (effects, banners)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: ActionResultOverlayWidget(
+                    pendingChanges: session.pendingChanges,
+                  ),
+                ),
+              ),
+
               // Layer 4: HUD overlay (top, always visible)
               Positioned(
                 top: 0,
@@ -153,6 +169,8 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
                                   onMessageLogTap: () {
                                     _scaffoldKey.currentState?.openEndDrawer();
                                   },
+                                  isParameterPanelOpen: _isPanelOpen,
+                                  onParameterPanelToggle: _togglePanel,
                                 );
                               },
                             );
@@ -162,6 +180,31 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
                     );
                   },
                 ),
+              ),
+
+              // Layer 5: Parameter side panel (slides in from left)
+              ValueListenableBuilder<TrpgVisualState>(
+                valueListenable: session.visualState,
+                builder: (context, vs, _) {
+                  return AnimatedPositioned(
+                    duration: const Duration(milliseconds: 300),
+                    curve: Curves.easeInOut,
+                    top: 0,
+                    bottom: 0,
+                    left: _isPanelOpen ? 0 : -240,
+                    child: SafeArea(
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 8, bottom: 8),
+                        child: ParameterSidePanel(
+                          visualState: vs,
+                          onClose: () {
+                            setState(() => _isPanelOpen = false);
+                          },
+                        ),
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),

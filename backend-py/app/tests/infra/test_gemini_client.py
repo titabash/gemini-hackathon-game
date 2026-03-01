@@ -58,7 +58,7 @@ class TestGeminiClientGenerateStructured:
             contents="What is the answer?",
             system_instruction="Answer questions.",
             response_type=SampleResponse,
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
         )
 
         assert isinstance(result, SampleResponse)
@@ -66,7 +66,7 @@ class TestGeminiClientGenerateStructured:
         assert result.confidence == 0.95
 
         call_kwargs = mock_gen.call_args.kwargs
-        assert call_kwargs["model"] == "gemini-2.5-flash"
+        assert call_kwargs["model"] == "gemini-3-flash-preview"
         assert call_kwargs["contents"] == "What is the answer?"
 
     @pytest.mark.asyncio
@@ -86,7 +86,7 @@ class TestGeminiClientGenerateStructured:
             contents="test",
             system_instruction="test",
             response_type=SampleResponse,
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             temperature=0.0,
         )
 
@@ -117,7 +117,7 @@ class TestGeminiClientGenerateStructured:
                 contents="test",
                 system_instruction="test",
                 response_type=SampleResponse,
-                model="gemini-2.5-flash",
+                model="gemini-3-flash-preview",
             )
 
     @pytest.mark.asyncio
@@ -292,7 +292,7 @@ class TestGeminiClientRuntimeResources:
         )
 
         name = await client.create_prompt_cache(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             contents="seed",
             ttl="1200s",
             display_name="gm-seed",

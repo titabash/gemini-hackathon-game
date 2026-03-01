@@ -263,6 +263,23 @@ class _TranslationsTrpgJa extends TranslationsTrpgEn {
 	@override String turnSeparator({required Object n}) => 'ターン ${n}';
 	@override String get you => 'あなた';
 	@override String get gm => 'GM';
+	@override String get parameterPanel => 'パラメータ';
+	@override String get stats => 'ステータス';
+	@override String get statusEffects => '状態異常';
+	@override String get inventory => 'アイテム';
+	@override String get objectives => '目標';
+	@override String get relationships => '関係性';
+	@override String get noItems => 'アイテムなし';
+	@override String get noObjectives => '目標なし';
+	@override String get equipped => '装備中';
+	@override String get objectiveActive => '進行中';
+	@override String get objectiveCompleted => '達成';
+	@override String get objectiveFailed => '失敗';
+	@override String get affinity => '好感度';
+	@override String get trust => '信頼';
+	@override String get fear => '恐怖';
+	@override String get debt => '借り';
+	@override late final _TranslationsTrpgChangesJa changes = _TranslationsTrpgChangesJa._(_root);
 }
 
 // Path: gameMenu
@@ -296,6 +313,27 @@ class _TranslationsErrorJa extends TranslationsErrorEn {
 	@override String get forbidden => 'アクセス拒否';
 	@override String get serverError => 'サーバーエラー';
 	@override String get timeout => 'タイムアウト';
+}
+
+// Path: trpg.changes
+class _TranslationsTrpgChangesJa extends TranslationsTrpgChangesEn {
+	_TranslationsTrpgChangesJa._(TranslationsJa root) : this._root = root, super.internal(root);
+
+	final TranslationsJa _root; // ignore: unused_field
+
+	// Translations
+	@override String statDecrease({required Object key, required Object delta}) => '${key} ${delta}';
+	@override String statIncrease({required Object key, required Object delta}) => '${key} +${delta}';
+	@override String itemAcquired({required Object name}) => '${name} を入手!';
+	@override String itemRemoved({required Object name}) => '${name} を失った';
+	@override String effectAdded({required Object name}) => '${name} 発動!';
+	@override String effectRemoved({required Object name}) => '${name} 解除';
+	@override String locationChanged({required Object name}) => '${name}';
+	@override String objectiveNew({required Object title}) => '目標: ${title}';
+	@override String objectiveCompleted({required Object title}) => '達成: ${title}';
+	@override String objectiveFailed({required Object title}) => '失敗: ${title}';
+	@override String relationUp({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} +${delta}';
+	@override String relationDown({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} ${delta}';
 }
 
 /// The flat map containing all translations for locale <ja>.
@@ -418,6 +456,34 @@ extension on TranslationsJa {
 			'trpg.turnSeparator' => ({required Object n}) => 'ターン ${n}',
 			'trpg.you' => 'あなた',
 			'trpg.gm' => 'GM',
+			'trpg.parameterPanel' => 'パラメータ',
+			'trpg.stats' => 'ステータス',
+			'trpg.statusEffects' => '状態異常',
+			'trpg.inventory' => 'アイテム',
+			'trpg.objectives' => '目標',
+			'trpg.relationships' => '関係性',
+			'trpg.noItems' => 'アイテムなし',
+			'trpg.noObjectives' => '目標なし',
+			'trpg.equipped' => '装備中',
+			'trpg.objectiveActive' => '進行中',
+			'trpg.objectiveCompleted' => '達成',
+			'trpg.objectiveFailed' => '失敗',
+			'trpg.affinity' => '好感度',
+			'trpg.trust' => '信頼',
+			'trpg.fear' => '恐怖',
+			'trpg.debt' => '借り',
+			'trpg.changes.statDecrease' => ({required Object key, required Object delta}) => '${key} ${delta}',
+			'trpg.changes.statIncrease' => ({required Object key, required Object delta}) => '${key} +${delta}',
+			'trpg.changes.itemAcquired' => ({required Object name}) => '${name} を入手!',
+			'trpg.changes.itemRemoved' => ({required Object name}) => '${name} を失った',
+			'trpg.changes.effectAdded' => ({required Object name}) => '${name} 発動!',
+			'trpg.changes.effectRemoved' => ({required Object name}) => '${name} 解除',
+			'trpg.changes.locationChanged' => ({required Object name}) => '${name}',
+			'trpg.changes.objectiveNew' => ({required Object title}) => '目標: ${title}',
+			'trpg.changes.objectiveCompleted' => ({required Object title}) => '達成: ${title}',
+			'trpg.changes.objectiveFailed' => ({required Object title}) => '失敗: ${title}',
+			'trpg.changes.relationUp' => ({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} +${delta}',
+			'trpg.changes.relationDown' => ({required Object npc, required Object dimension, required Object delta}) => '${npc}: ${dimension} ${delta}',
 			'gameMenu.newGame' => 'スタート',
 			'gameMenu.loadGame' => 'ロード',
 			'gameMenu.backToTitle' => 'もどる',

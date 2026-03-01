@@ -321,5 +321,44 @@ void main() {
       // Let play() complete so tearDown doesn't race with a dangling future.
       await playFuture;
     });
+
+    test('concurrent play calls: later call wins', () async {
+      // Fire two play() calls without awaiting the first.
+      // The second should supersede the first via the token guard.
+      final f1 = n.play('https://example.com/a.mp3', 'calm');
+      final f2 = n.play('https://example.com/b.mp3', 'battle');
+
+      await Future.wait([f1, f2]);
+
+      // The second call should win: currentMood = battle.
+      expect(n.currentMood.value, 'battle');
+      expect(n.playingMood, 'battle');
+      expect(n.isPlaying.value, isTrue);
+    });
+
+    test('stop invalidates in-progress play', () async {
+      // Start play() but call stop() before it completes.
+      final playFuture = n.play('https://example.com/c.mp3', 'mystery');
+      await n.stop();
+      await playFuture;
+
+      // stop() should have won: no mood, not playing.
+      expect(n.currentMood.value, isNull);
+      expect(n.isPlaying.value, isFalse);
+    });
+
+    test('play after stop works correctly', () async {
+      await n.play('https://example.com/a.mp3', 'calm');
+      expect(n.isPlaying.value, isTrue);
+
+      await n.stop();
+      expect(n.isPlaying.value, isFalse);
+      expect(n.currentMood.value, isNull);
+
+      await n.play('https://example.com/b.mp3', 'battle');
+      expect(n.isPlaying.value, isTrue);
+      expect(n.currentMood.value, 'battle');
+      expect(n.playingMood, 'battle');
+    });
   });
 }

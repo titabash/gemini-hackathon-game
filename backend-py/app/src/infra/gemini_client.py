@@ -65,7 +65,7 @@ class GeminiClient:
         contents: str,
         system_instruction: str,
         response_type: type[T],
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3-flash-preview",
         temperature: float = 0.8,
     ) -> T:
         """構造化出力でPydanticモデルを返す."""
@@ -83,7 +83,7 @@ class GeminiClient:
         contents: str,
         system_instruction: str,
         response_type: type[T],
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3-flash-preview",
         temperature: float = 0.8,
         *,
         previous_interaction_id: str | None = None,
@@ -131,6 +131,9 @@ class GeminiClient:
                 response_json_schema=response_type.model_json_schema(),
                 temperature=temperature,
                 cached_content=cached_content_name,
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=-1,
+                ),
             ),
         )
         if not response.text:
@@ -166,7 +169,7 @@ class GeminiClient:
         if previous_interaction_id:
             create_kwargs["previous_interaction_id"] = previous_interaction_id
 
-        interaction = await self._client.aio.interactions.create(**create_kwargs)
+        interaction = await self._client.aio.interactions.create(**create_kwargs)  # type: ignore[call-overload]
         raw_text = self._extract_interaction_text(interaction)
         if not raw_text:
             msg = "Gemini interaction returned empty response"
@@ -222,7 +225,7 @@ class GeminiClient:
         client = self._get_openai_client()
 
         if source_image:
-            response = await client.images.edit(
+            response = await client.images.edit(  # type: ignore[call-overload]
                 image=("npc-base.png", source_image, "image/png"),
                 prompt=prompt,
                 model=model,
@@ -233,7 +236,7 @@ class GeminiClient:
                 background=background,
             )
         else:
-            response = await client.images.generate(
+            response = await client.images.generate(  # type: ignore[call-overload]
                 prompt=prompt,
                 model=model,
                 response_format="b64_json",

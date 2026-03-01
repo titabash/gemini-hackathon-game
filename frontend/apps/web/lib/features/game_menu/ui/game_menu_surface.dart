@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../../entities/scenario/model/scenario.dart';
 import '../../../features/start_game/api/create_session.dart';
+import '../../../features/trpg/model/bgm_player_notifier.dart';
 import '../api/fetch_active_sessions.dart';
 import 'menu_game.dart';
 
@@ -44,6 +45,9 @@ class _GameMenuSurfaceState extends ConsumerState<GameMenuSurface> {
   Future<void> _onNewGame() async {
     if (_isStarting) return;
     setState(() => _isStarting = true);
+
+    // Pre-create AudioContext during user gesture to unlock autoplay.
+    ref.read(bgmPlayerProvider).warmUp();
 
     try {
       final session = await ref

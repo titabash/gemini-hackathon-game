@@ -241,13 +241,6 @@ class GameContentGenerator implements ContentGenerator {
         _doneController.add(doneData);
         return;
       }
-      if (type == 'error') {
-        _errorController.add(
-          ContentGeneratorError(decoded['content'] as String? ?? 'Unknown'),
-        );
-        return;
-      }
-
       // A2UI protocol messages (surfaceUpdate, beginRendering, deleteSurface)
       final a2uiMessage = A2uiMessage.fromJson(decoded);
       _a2uiController.add(a2uiMessage);

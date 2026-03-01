@@ -1,6 +1,7 @@
 // ignore_for_file: avoid_dynamic_calls
 
 import 'package:core_i18n/generated/strings.g.dart';
+import 'package:core_utils/core_utils.dart';
 import 'package:flutter/material.dart';
 import 'package:genui/genui.dart';
 import 'package:json_schema_builder/json_schema_builder.dart';
@@ -177,13 +178,19 @@ class GameCatalogItems {
                 return VnChoiceButton(
                   text: text,
                   hint: hint,
-                  onPressed: () => ctx.dispatchEvent(
-                    UserActionEvent(
-                      name: 'choice',
-                      sourceComponentId: ctx.id,
-                      context: {'inputType': 'choice', 'inputText': text},
-                    ),
-                  ),
+                  onPressed: () {
+                    Logger.info(
+                      'choiceGroup: onPressed fired, '
+                      'text=$text, componentId=${ctx.id}',
+                    );
+                    ctx.dispatchEvent(
+                      UserActionEvent(
+                        name: 'choice',
+                        sourceComponentId: ctx.id,
+                        context: {'inputType': 'choice', 'inputText': text},
+                      ),
+                    );
+                  },
                 );
               }),
             ],

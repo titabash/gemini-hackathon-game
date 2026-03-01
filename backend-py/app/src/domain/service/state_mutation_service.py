@@ -11,6 +11,7 @@ from gateway.npc_gateway import NpcGateway, RelationshipDelta
 from gateway.objective_gateway import ObjectiveGateway
 from gateway.player_character_gateway import PlayerCharacterGateway
 from gateway.session_gateway import SessionGateway
+from util.logging import get_logger
 
 if TYPE_CHECKING:
     import uuid
@@ -18,6 +19,8 @@ if TYPE_CHECKING:
     from sqlmodel import Session
 
     from domain.entity.gm_types import SessionEnd, StateChanges
+
+logger = get_logger(__name__)
 
 
 class StateMutationService:
@@ -56,6 +59,12 @@ class StateMutationService:
         session_end: SessionEnd,
     ) -> None:
         """Apply session end independently (for condition-triggered ends)."""
+        logger.info(
+            "Applying session end (condition-triggered)",
+            session_id=str(session_id),
+            ending_type=session_end.ending_type,
+            ending_summary=session_end.ending_summary,
+        )
         self.session_gw.update_status(
             db,
             session_id,
@@ -275,6 +284,12 @@ class StateMutationService:
     ) -> None:
         if changes.session_end is None:
             return
+        logger.info(
+            "Applying session end (LLM state_changes)",
+            session_id=str(session_id),
+            ending_type=changes.session_end.ending_type,
+            ending_summary=changes.session_end.ending_summary,
+        )
         self.session_gw.update_status(
             db,
             session_id,

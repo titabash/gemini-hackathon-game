@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../model/trpg_visual_state.dart';
 
-/// HUD overlay showing HP bar and location name on top of the game canvas.
+/// HUD overlay showing compact stats, location name, and parameter panel
+/// toggle on top of the game canvas.
 class HudOverlayWidget extends StatelessWidget {
   const HudOverlayWidget({
     super.key,
@@ -13,6 +14,8 @@ class HudOverlayWidget extends StatelessWidget {
     required this.bgmGenerating,
     this.onBgmToggle,
     this.onMessageLogTap,
+    this.onParameterPanelToggle,
+    this.isParameterPanelOpen = false,
   });
 
   final TrpgVisualState visualState;
@@ -21,6 +24,8 @@ class HudOverlayWidget extends StatelessWidget {
   final bool bgmGenerating;
   final VoidCallback? onBgmToggle;
   final VoidCallback? onMessageLogTap;
+  final VoidCallback? onParameterPanelToggle;
+  final bool isParameterPanelOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -30,8 +35,12 @@ class HudOverlayWidget extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // HP bar (left)
-            _HpBarWidget(hp: visualState.hp, maxHp: visualState.maxHp),
+            // Compact stats + expand button (left)
+            _CompactStatsWidget(
+              visualState: visualState,
+              isExpanded: isParameterPanelOpen,
+              onToggle: onParameterPanelToggle,
+            ),
             const Spacer(),
             // Location badge + message log button (right)
             Column(
@@ -105,50 +114,192 @@ class HudOverlayWidget extends StatelessWidget {
   }
 }
 
-class _HpBarWidget extends StatelessWidget {
-  const _HpBarWidget({required this.hp, required this.maxHp});
+/// Compact stats display with expand/collapse toggle for the parameter panel.
+class _CompactStatsWidget extends StatelessWidget {
+  const _CompactStatsWidget({
+    required this.visualState,
+    required this.isExpanded,
+    this.onToggle,
+  });
 
-  final int hp;
-  final int maxHp;
+  final TrpgVisualState visualState;
+  final bool isExpanded;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
-    final ratio = maxHp > 0 ? (hp / maxHp).clamp(0.0, 1.0) : 0.0;
-    final color = ratio > 0.5
-        ? const Color(0xFF44CC44)
-        : ratio > 0.25
-        ? const Color(0xFFCCAA22)
-        : const Color(0xFFCC4444);
-
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Colors.black54,
         borderRadius: BorderRadius.circular(8),
       ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: _buildStatBars(),
+          ),
+          if (onToggle != null) ...[
+            const SizedBox(width: 4),
+            InkWell(
+              onTap: onToggle,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(4),
+                child: Icon(
+                  isExpanded ? Icons.chevron_left : Icons.menu,
+                  color: Colors.white70,
+                  size: 18,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildStatBars() {
+    final bars = <Widget>[];
+
+    if (visualState.stats.isNotEmpty) {
+      // Show stats that have max values (up to 3)
+      var count = 0;
+      for (final entry in visualState.stats.entries) {
+        if (count >= 3) break;
+        final maxKey = 'max_${entry.key}';
+        final maxVal = visualState.maxStats[maxKey];
+        if (maxVal != null && maxVal > 0) {
+          bars.add(
+            _MiniStatBar(
+              label: entry.key.toUpperCase(),
+              value: entry.value,
+              maxValue: maxVal,
+            ),
+          );
+          count++;
+        }
+      }
+    }
+
+    // Fallback to legacy HP
+    if (bars.isEmpty && visualState.maxHp > 0) {
+      bars.add(
+        _MiniStatBar(
+          label: 'HP',
+          value: visualState.hp,
+          maxValue: visualState.maxHp,
+        ),
+      );
+    }
+
+    return bars;
+  }
+}
+
+/// Minimal stat bar for the compact HUD display.
+///
+/// Flashes green on value increase and red on value decrease.
+class _MiniStatBar extends StatefulWidget {
+  const _MiniStatBar({
+    required this.label,
+    required this.value,
+    required this.maxValue,
+  });
+
+  final String label;
+  final int value;
+  final int? maxValue;
+
+  @override
+  State<_MiniStatBar> createState() => _MiniStatBarState();
+}
+
+class _MiniStatBarState extends State<_MiniStatBar>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _flashController;
+  Color _flashColor = Colors.transparent;
+
+  @override
+  void didUpdateWidget(_MiniStatBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.value != widget.value) {
+      _triggerFlash(widget.value > oldWidget.value);
+    }
+  }
+
+  @override
+  void dispose() {
+    _flashController?.dispose();
+    super.dispose();
+  }
+
+  void _triggerFlash(bool increase) {
+    _flashController?.dispose();
+    _flashColor = increase ? const Color(0xFF43A047) : const Color(0xFFE53935);
+    _flashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    )..forward();
+    setState(() {});
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final max = widget.maxValue ?? widget.value;
+    final ratio = max > 0 ? (widget.value / max).clamp(0.0, 1.0) : 0.0;
+    final color = ratio > 0.5
+        ? const Color(0xFF44CC44)
+        : ratio > 0.25
+        ? const Color(0xFFCCAA22)
+        : const Color(0xFFCC4444);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'HP $hp / $maxHp',
+            '${widget.label} ${widget.value} / $max',
             style: const TextStyle(
               color: Colors.white70,
-              fontSize: 11,
+              fontSize: 10,
               fontWeight: FontWeight.bold,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           SizedBox(
-            width: 100,
-            height: 8,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: ratio,
-                backgroundColor: Colors.white12,
-                valueColor: AlwaysStoppedAnimation(color),
-              ),
+            width: 80,
+            height: 6,
+            child: Stack(
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(3),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    backgroundColor: Colors.white12,
+                    valueColor: AlwaysStoppedAnimation(color),
+                  ),
+                ),
+                if (_flashController != null)
+                  AnimatedBuilder(
+                    animation: _flashController!,
+                    builder: (context, _) {
+                      final opacity = (1.0 - _flashController!.value) * 0.5;
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: ColoredBox(
+                          color: _flashColor.withValues(alpha: opacity),
+                          child: const SizedBox.expand(),
+                        ),
+                      );
+                    },
+                  ),
+              ],
             ),
           ),
         ],

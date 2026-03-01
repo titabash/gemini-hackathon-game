@@ -198,11 +198,11 @@ class _CtxBuilder:
 
 
 class TestHardLimit:
-    """When turn >= max_turns, Gemini must NOT be called."""
+    """When turn >= max_turns, GM generates final turn with session_end."""
 
     @pytest.mark.asyncio
-    async def test_hard_limit_skips_gemini(self) -> None:
-        """At hard limit, decision_svc.decide must not be called."""
+    async def test_hard_limit_calls_gemini_with_prompt(self) -> None:
+        """At hard limit, decision_svc.decide IS called with hard limit prompt."""
         with (
             patch(
                 "src.usecase.gm_turn_usecase.GeminiClient",
@@ -220,10 +220,11 @@ class TestHardLimit:
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=30),
             )
-            uc.context_svc.build_context = MagicMock()
-            ctx = uc.context_svc.build_context.return_value
+            ctx = _CtxBuilder().build()
             ctx.current_turn_number = 30
             ctx.max_turns = 30
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
 
             uc.decision_svc.decide = AsyncMock(
                 return_value=_fake_decision(),
@@ -233,11 +234,11 @@ class TestHardLimit:
             uc.bridge_svc.stream_decision = _empty_stream
 
             await _collect(uc.execute(_make_request(), MagicMock()))
-            uc.decision_svc.decide.assert_not_called()
+            uc.decision_svc.decide.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_hard_limit_yields_bad_end(self) -> None:
-        """At hard limit, SSE stream must contain bad_end content."""
+    async def test_hard_limit_forces_bad_end_fallback(self) -> None:
+        """At hard limit, if GM omits session_end, system forces bad_end."""
         with (
             patch(
                 "src.usecase.gm_turn_usecase.GeminiClient",
@@ -255,11 +256,13 @@ class TestHardLimit:
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=30),
             )
-            uc.context_svc.build_context = MagicMock()
-            ctx = uc.context_svc.build_context.return_value
+            ctx = _CtxBuilder().build()
             ctx.current_turn_number = 30
             ctx.max_turns = 30
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
 
+            # GM returns decision WITHOUT session_end
             uc.decision_svc.decide = AsyncMock(
                 return_value=_fake_decision(),
             )

@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from domain.entity.gm_types import GmDecisionResponse
+    from domain.entity.gm_types import GmDecisionResponse, StateChanges
 
 from domain.service.storage_constants import SCENARIO_ASSETS_BUCKET
 from util.logging import get_logger
@@ -214,11 +214,7 @@ class GenuiBridgeService:
         if decision.scene_description:
             data["scene_description"] = decision.scene_description
         if decision.state_changes:
-            sc = decision.state_changes
-            if sc.location_change:
-                data["location"] = sc.location_change.model_dump()
-            if sc.stats_delta:
-                data["stats_delta"] = sc.stats_delta
+            _merge_state_changes(data, decision.state_changes)
 
         # NPC visual data for Flame canvas (TrpgVisualState.activeNpcs)
         npc_list = _collect_npcs(
@@ -269,6 +265,28 @@ class GenuiBridgeService:
                 "properties": {},
             }
         return None
+
+
+def _merge_state_changes(data: dict[str, Any], sc: StateChanges) -> None:
+    """Flatten StateChanges fields into the state-update data dict."""
+    if sc.location_change:
+        data["location"] = sc.location_change.model_dump()
+    if sc.stats_delta:
+        data["stats_delta"] = sc.stats_delta
+    if sc.status_effect_adds:
+        data["status_effect_adds"] = sc.status_effect_adds
+    if sc.status_effect_removes:
+        data["status_effect_removes"] = sc.status_effect_removes
+    if sc.new_items:
+        data["new_items"] = [i.model_dump() for i in sc.new_items]
+    if sc.removed_items:
+        data["removed_items"] = sc.removed_items
+    if sc.item_updates:
+        data["item_updates"] = [i.model_dump() for i in sc.item_updates]
+    if sc.relationship_changes:
+        data["relationship_changes"] = [r.model_dump() for r in sc.relationship_changes]
+    if sc.objective_updates:
+        data["objective_updates"] = [o.model_dump() for o in sc.objective_updates]
 
 
 MAX_DISPLAY_NPCS = 3

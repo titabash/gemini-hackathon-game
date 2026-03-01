@@ -78,6 +78,7 @@ split-on-trailing-comma = true
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
+"src/app.py" = ["E402"]  # warnings.filterwarnings must precede controller import (pydub SyntaxWarning)
 "tests/**/*.py" = [
     "S101",    # use of assert
     "PLR2004", # magic value in comparison

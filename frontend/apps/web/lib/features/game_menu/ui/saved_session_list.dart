@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../entities/session/model/game_session.dart';
+import '../../../features/trpg/model/bgm_player_notifier.dart';
 import '../api/fetch_active_sessions.dart';
 
 /// セーブデータ一覧ページ（GridTile 表示）
@@ -121,7 +122,12 @@ class _SaveSlotTile extends ConsumerWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: hasData ? () => context.go('/game/${session!.id}') : null,
+        onTap: hasData
+            ? () {
+                ref.read(bgmPlayerProvider).warmUp();
+                context.go('/game/${session!.id}');
+              }
+            : null,
         borderRadius: BorderRadius.circular(8),
         child: Container(
           decoration: BoxDecoration(

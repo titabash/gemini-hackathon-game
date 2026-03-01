@@ -94,40 +94,38 @@ class TestRemainingTurns:
         assert svc.remaining_turns(1, 30) == 29
 
 
-class TestBuildHardLimitResponse:
-    """Tests for bad-end response generation."""
+class TestBuildHardLimitPromptAddition:
+    """Tests for hard limit prompt addition generation."""
 
-    def test_response_type(self) -> None:
-        """Should return a valid GmDecisionResponse."""
+    def test_returns_string(self) -> None:
+        """Should return a string prompt addition."""
         svc = TurnLimitService()
-        resp = svc.build_hard_limit_response(30)
-        assert type(resp).__name__ == "GmDecisionResponse"
+        addition = svc.build_hard_limit_prompt_addition(30)
+        assert isinstance(addition, str)
 
-    def test_decision_type_is_narrate(self) -> None:
-        """Should use narrate decision type."""
+    def test_not_empty(self) -> None:
+        """Should return non-empty string."""
         svc = TurnLimitService()
-        resp = svc.build_hard_limit_response(30)
-        assert resp.decision_type == "narrate"
+        addition = svc.build_hard_limit_prompt_addition(30)
+        assert len(addition) > 0
 
-    def test_has_bad_end(self) -> None:
-        """Should set session_end with bad_end ending type."""
+    def test_includes_max_turns(self) -> None:
+        """Should mention the max turn count."""
         svc = TurnLimitService()
-        resp = svc.build_hard_limit_response(30)
-        assert resp.state_changes is not None
-        assert resp.state_changes.session_end is not None
-        assert resp.state_changes.session_end.ending_type == "bad_end"
+        addition = svc.build_hard_limit_prompt_addition(30)
+        assert "30" in addition
 
-    def test_narration_mentions_turns(self) -> None:
-        """Should include turn count in narration text."""
+    def test_instructs_session_end(self) -> None:
+        """Should instruct GM to include session_end."""
         svc = TurnLimitService()
-        resp = svc.build_hard_limit_response(30)
-        assert "30" in resp.narration_text
+        addition = svc.build_hard_limit_prompt_addition(30)
+        assert "session_end" in addition
 
-    def test_ending_summary_present(self) -> None:
-        """Should have non-empty ending summary."""
+    def test_instructs_narrative_conclusion(self) -> None:
+        """Should instruct GM to write a narrative conclusion."""
         svc = TurnLimitService()
-        resp = svc.build_hard_limit_response(30)
-        assert resp.state_changes.session_end.ending_summary != ""
+        addition = svc.build_hard_limit_prompt_addition(30)
+        assert "conclusion" in addition.lower() or "ending" in addition.lower()
 
 
 class TestBuildSoftLimitPromptAddition:

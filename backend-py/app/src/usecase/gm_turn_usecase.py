@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from sqlmodel import Session as SQLModelSession
 
-from domain.entity.gm_types import GmTurnRequest, SessionEnd
+from domain.entity.gm_types import GmTurnRequest, SessionEnd, StateChanges
 from domain.entity.models import Npcs, SceneBackgrounds, Turns
 from domain.service.action_resolution_service import ActionResolutionService
 from domain.service.bgm_service import BgmService
@@ -49,7 +49,6 @@ if TYPE_CHECKING:
     from domain.entity.gm_types import (
         GameContext,
         GmDecisionResponse,
-        StateChanges,
     )
 
 logger = get_logger(__name__)
@@ -186,21 +185,13 @@ class GmTurnUseCase:
                     auto_advance_section=auto_section,
                 )
 
-                # Apply state mutations
-                if decision.state_changes:
-                    self.mutation_svc.apply(db, session_id, decision.state_changes)
-
-                # Condition evaluation (after mutation, only if LLM didn't end)
-                llm_ended = _has_session_end(decision.state_changes)
-                condition_ended = False
-                if not llm_ended:
-                    condition_ended = self._evaluate_and_apply(
-                        db,
-                        session_id,
-                        context,
-                        decision,
-                    )
-                is_ending = llm_ended or condition_ended
+                # Apply state mutations and evaluate conditions
+                is_ending = self._apply_and_evaluate(
+                    db,
+                    session_id,
+                    context,
+                    decision,
+                )
 
                 # Persist turn
                 turn_number = self._persist_turn(
@@ -250,7 +241,7 @@ class GmTurnUseCase:
                 stream_params = _TurnStreamParams(
                     db=db,
                     session_id=session_id,
-                    scenario_id=game_session.scenario_id,  # type: ignore[attr-defined]
+                    scenario_id=game_session.scenario_id,
                     decision=decision,
                     npc_images=npc_images,
                     done_meta=_DoneMeta(
@@ -440,19 +431,24 @@ class GmTurnUseCase:
         """Check turn limits and return the appropriate decision."""
         cur = context.current_turn_number
         mx = context.max_turns
-        if self.turn_limit_svc.is_hard_limit_reached(cur, mx):
-            return self.turn_limit_svc.build_hard_limit_response(mx)
+        is_hard_limit = self.turn_limit_svc.is_hard_limit_reached(cur, mx)
 
         luck = self.resolution_svc.generate_luck_factor()
         resolution_ctx = self.resolution_svc.build_resolution_context(
             player_stats=dict(context.player.stats),
-            luck_factor=luck,
+            luck_roll=luck,
+        )
+        hard_limit_section = (
+            self.turn_limit_svc.build_hard_limit_prompt_addition(mx)
+            if is_hard_limit
+            else ""
         )
         extra_sections = [
             self._build_soft_addition(context),
             self._build_condition_progress(context),
             resolution_ctx,
             auto_advance_section,
+            hard_limit_section,
         ]
         if runtime and runtime.cached_content_name:
             prompt = self.context_svc.build_prompt_delta(
@@ -468,7 +464,28 @@ class GmTurnUseCase:
                 request.input_text,
                 extra_sections=extra_sections,
             )
-        return await self.decision_svc.decide(prompt, runtime=runtime)
+        decision = await self.decision_svc.decide(prompt, runtime=runtime)
+
+        # Fallback: force session_end if GM omitted it at hard limit
+        if is_hard_limit and not _has_session_end(decision.state_changes):
+            logger.warning(
+                "GM omitted session_end at hard limit; forcing bad_end",
+                current_turn=cur,
+                max_turns=mx,
+            )
+            if decision.state_changes is None:
+                decision.state_changes = StateChanges(
+                    session_end=SessionEnd(
+                        ending_type="bad_end",
+                        ending_summary=(f"Turn limit ({mx}) reached."),
+                    ),
+                )
+            else:
+                decision.state_changes.session_end = SessionEnd(
+                    ending_type="bad_end",
+                    ending_summary=(f"Turn limit ({mx}) reached."),
+                )
+        return decision
 
     @staticmethod
     def _build_auto_advance_addition(
@@ -532,6 +549,27 @@ class GmTurnUseCase:
         )
         return str(self.condition_svc.build_progress_prompt(result))
 
+    def _apply_and_evaluate(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        context: GameContext,
+        decision: GmDecisionResponse,
+    ) -> bool:
+        """Apply mutations, log session end, and evaluate conditions."""
+        if decision.state_changes:
+            self.mutation_svc.apply(db, session_id, decision.state_changes)
+        llm_ended = _has_session_end(decision.state_changes)
+        if llm_ended:
+            _log_session_end(session_id, decision.state_changes)
+            return True
+        return self._evaluate_and_apply(
+            db,
+            session_id,
+            context,
+            decision,
+        )
+
     def _evaluate_and_apply(
         self,
         db: Session,
@@ -560,6 +598,12 @@ class GmTurnUseCase:
         """Apply session end based on condition evaluation result."""
         if result.triggered_fail:
             desc = str(result.triggered_fail.get("description", ""))
+            logger.info(
+                "Condition triggered session end",
+                session_id=str(session_id),
+                trigger="fail",
+                description=desc,
+            )
             self.mutation_svc.apply_session_end(
                 db,
                 session_id,
@@ -571,6 +615,12 @@ class GmTurnUseCase:
             return True
         if result.triggered_win:
             desc = str(result.triggered_win.get("description", ""))
+            logger.info(
+                "Condition triggered session end",
+                session_id=str(session_id),
+                trigger="win",
+                description=desc,
+            )
             self.mutation_svc.apply_session_end(
                 db,
                 session_id,
@@ -791,7 +841,7 @@ class GmTurnUseCase:
     ) -> int:
         """Increment turn counter and save the turn record."""
         sid = game_session.id  # type: ignore[attr-defined]
-        new_turn_number = self.session_gw.increment_turn(db, sid)
+        new_turn_number: int = self.session_gw.increment_turn(db, sid)
         turn = Turns(
             id=uuid.uuid4(),
             session_id=sid,
@@ -1132,6 +1182,20 @@ def _has_session_end(changes: StateChanges | None) -> bool:
     return changes is not None and changes.session_end is not None
 
 
+def _log_session_end(
+    session_id: uuid.UUID,
+    changes: StateChanges | None,
+) -> None:
+    """Log when LLM decides to end the session."""
+    se = changes.session_end if changes else None
+    logger.info(
+        "LLM decided to end session",
+        session_id=str(session_id),
+        ending_type=se.ending_type if se else "unknown",
+        ending_summary=se.ending_summary if se else "",
+    )
+
+
 def _compute_latest_flags(
     context: GameContext,
     changes: StateChanges | None,
@@ -1197,7 +1261,7 @@ def _to_bucketed_npc_path(path: str) -> str:
 def _error_event(message: str) -> str:
     """Build an SSE error event string."""
     payload = json.dumps(
-        {"type": "error", "content": message},
+        {"type": "error", "error": message},
         ensure_ascii=False,
     )
     return f"data: {payload}\n\n"

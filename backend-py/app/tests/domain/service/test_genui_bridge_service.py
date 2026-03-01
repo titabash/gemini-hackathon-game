@@ -15,9 +15,13 @@ from src.domain.entity.gm_types import (
     CharacterDisplay,
     ChoiceOption,
     GmDecisionResponse,
+    ItemUpdate,
     LocationChange,
+    NewItem,
     NpcDialogue,
     NpcIntent,
+    ObjectiveUpdate,
+    RelationshipChange,
     RepairData,
     SceneNode,
     StateChanges,
@@ -1192,3 +1196,188 @@ class TestStreamDecisionWithNodes:
 
         text_events = [p for p in parsed if p.get("type") == "text"]
         assert len(text_events) == 0
+
+
+# ---------------------------------------------------------------------------
+# _build_state_data extended fields tests
+# ---------------------------------------------------------------------------
+
+
+class TestBuildStateDataExtended:
+    """Tests for extended fields in _build_state_data()."""
+
+    def test_status_effect_adds(self) -> None:
+        """Status effect additions should be included."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Cursed!",
+            state_changes=StateChanges(
+                status_effect_adds=["poisoned", "blinded"],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        assert result["status_effect_adds"] == ["poisoned", "blinded"]
+
+    def test_status_effect_removes(self) -> None:
+        """Status effect removals should be included."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Healed!",
+            state_changes=StateChanges(
+                status_effect_removes=["poisoned"],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        assert result["status_effect_removes"] == ["poisoned"]
+
+    def test_new_items(self) -> None:
+        """New items should be serialized via model_dump."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Found a sword!",
+            state_changes=StateChanges(
+                new_items=[
+                    NewItem(
+                        name="Iron Sword",
+                        description="A sturdy blade",
+                        item_type="weapon",
+                        quantity=1,
+                    ),
+                ],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        items = result["new_items"]
+        assert len(items) == 1
+        assert items[0]["name"] == "Iron Sword"
+        assert items[0]["item_type"] == "weapon"
+
+    def test_removed_items(self) -> None:
+        """Removed item names should be included."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Lost a key.",
+            state_changes=StateChanges(
+                removed_items=["Old Key"],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        assert result["removed_items"] == ["Old Key"]
+
+    def test_item_updates(self) -> None:
+        """Item updates should be serialized via model_dump."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Used a potion.",
+            state_changes=StateChanges(
+                item_updates=[
+                    ItemUpdate(
+                        name="Health Potion",
+                        quantity_delta=-1,
+                    ),
+                ],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        updates = result["item_updates"]
+        assert len(updates) == 1
+        assert updates[0]["name"] == "Health Potion"
+        assert updates[0]["quantity_delta"] == -1
+
+    def test_relationship_changes(self) -> None:
+        """Relationship changes should be serialized via model_dump."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The guard likes you.",
+            state_changes=StateChanges(
+                relationship_changes=[
+                    RelationshipChange(
+                        npc_name="Guard",
+                        affinity_delta=10,
+                        trust_delta=5,
+                    ),
+                ],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        rels = result["relationship_changes"]
+        assert len(rels) == 1
+        assert rels[0]["npc_name"] == "Guard"
+        assert rels[0]["affinity_delta"] == 10
+        assert rels[0]["trust_delta"] == 5
+
+    def test_objective_updates(self) -> None:
+        """Objective updates should be serialized via model_dump."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Quest complete!",
+            state_changes=StateChanges(
+                objective_updates=[
+                    ObjectiveUpdate(
+                        title="Find the amulet",
+                        status="completed",
+                        description="Retrieved from dungeon",
+                    ),
+                ],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        objs = result["objective_updates"]
+        assert len(objs) == 1
+        assert objs[0]["title"] == "Find the amulet"
+        assert objs[0]["status"] == "completed"
+
+    def test_all_extended_fields_together(self) -> None:
+        """All extended fields should coexist in state data."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Complex turn.",
+            state_changes=StateChanges(
+                stats_delta={"hp": -10, "san": -5},
+                status_effect_adds=["cursed"],
+                status_effect_removes=["blessed"],
+                new_items=[NewItem(name="Ring", description="Magic ring")],
+                removed_items=["Old Ring"],
+                item_updates=[ItemUpdate(name="Potion", quantity_delta=-1)],
+                relationship_changes=[
+                    RelationshipChange(npc_name="Elf", affinity_delta=5),
+                ],
+                objective_updates=[
+                    ObjectiveUpdate(title="Escape", status="active"),
+                ],
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        assert "stats_delta" in result
+        assert "status_effect_adds" in result
+        assert "status_effect_removes" in result
+        assert "new_items" in result
+        assert "removed_items" in result
+        assert "item_updates" in result
+        assert "relationship_changes" in result
+        assert "objective_updates" in result
+
+    def test_empty_lists_not_included(self) -> None:
+        """Empty lists in state_changes should not appear in data."""
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Nothing extra.",
+            state_changes=StateChanges(
+                stats_delta={"hp": -1},
+                status_effect_adds=None,
+                new_items=None,
+            ),
+        )
+        result = GenuiBridgeService._build_state_data(decision)
+        assert result is not None
+        assert "stats_delta" in result
+        assert "status_effect_adds" not in result
+        assert "new_items" not in result

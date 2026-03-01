@@ -8,8 +8,9 @@ import 'package:flutter/foundation.dart';
 import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import 'game_genui_providers.dart';
 import 'bgm_player_notifier.dart';
+import 'change_event.dart';
+import 'game_genui_providers.dart';
 import 'node_player_notifier.dart';
 import 'scene_node.dart';
 import 'session_restore_helpers.dart';
@@ -88,6 +89,7 @@ class TrpgSessionNotifier {
   final _displayModeNotifier = ValueNotifier<NovelDisplayMode>(
     NovelDisplayMode.input,
   );
+  final _pendingChangesNotifier = ValueNotifier<List<ChangeEvent>>([]);
 
   final _subscriptions = <StreamSubscription<dynamic>>[];
 
@@ -127,6 +129,10 @@ class TrpgSessionNotifier {
   bool _willAutoContinue = false;
   bool _bufferIncomingTurnEvents = false;
   bool _replayingBufferedTurnEvents = false;
+  bool _isSessionEnded = false;
+
+  /// Whether the session has ended (game over / victory / etc.).
+  bool get isSessionEnded => _isSessionEnded;
 
   /// Observable list of conversation messages.
   ValueListenable<List<TrpgMessage>> get messages => _messagesNotifier;
@@ -143,6 +149,14 @@ class TrpgSessionNotifier {
 
   /// Current display mode for the novel game UI.
   ValueListenable<NovelDisplayMode> get displayMode => _displayModeNotifier;
+
+  /// Pending change events from the latest stateUpdate.
+  ///
+  /// Consumed by [ActionResultOverlayWidget] to display visual feedback.
+  /// The list is replaced (not cleared) on each stateUpdate so listeners
+  /// can detect every batch.
+  ValueListenable<List<ChangeEvent>> get pendingChanges =>
+      _pendingChangesNotifier;
 
   /// The [A2uiMessageProcessor] that manages genui surfaces.
   A2uiMessageProcessor get processor => _ref.read(gameProcessorProvider);
@@ -161,6 +175,7 @@ class TrpgSessionNotifier {
     _willAutoContinue = false;
     _bufferIncomingTurnEvents = false;
     _replayingBufferedTurnEvents = false;
+    _isSessionEnded = false;
 
     // Reset state for the new session
     _messagesNotifier.value = [];
@@ -177,10 +192,16 @@ class TrpgSessionNotifier {
           .from('sessions')
           .select(
             'current_state, current_turn_number, title, '
-            'scenario_id, current_node_index',
+            'scenario_id, current_node_index, status',
           )
           .eq('id', sessionId)
           .single();
+
+      final sessionStatus = row['status'] as String? ?? 'active';
+      if (sessionStatus != 'active') {
+        _isSessionEnded = true;
+        Logger.info('Session $sessionId is $sessionStatus, read-only mode');
+      }
 
       final currentState = row['current_state'] as Map<String, dynamic>?;
       if (currentState != null) {
@@ -529,7 +550,18 @@ class TrpgSessionNotifier {
   }
 
   /// Reset session state so a new session can be started.
+  ///
+  /// IMPORTANT: [_initialised], [_sessionId], and [_scenarioId] are cleared
+  /// synchronously (before any `await`) so that a subsequent [initSession]
+  /// call in a cascade (`..reset()..initSession(id)`) can proceed without
+  /// being blocked by the `if (_initialised) return` guard.
   Future<void> reset() async {
+    // Clear the initialisation guard and session identity FIRST so that
+    // a follow-up initSession() call is not rejected.
+    _initialised = false;
+    _sessionId = null;
+    _scenarioId = null;
+
     _cancelSubscriptions();
     _ref.read(gameContentGeneratorProvider).cancelActiveTurn();
     _clearProcessorSurfaces();
@@ -539,6 +571,7 @@ class TrpgSessionNotifier {
     _isAwaitingUserActionNotifier.value = false;
     _visualStateNotifier.value = const TrpgVisualState();
     _displayModeNotifier.value = NovelDisplayMode.input;
+    _pendingChangesNotifier.value = [];
     _hasSurface = false;
     _useNodePlayer = false;
     _textBuffer.clear();
@@ -552,10 +585,8 @@ class TrpgSessionNotifier {
     _willAutoContinue = false;
     _bufferIncomingTurnEvents = false;
     _replayingBufferedTurnEvents = false;
+    _isSessionEnded = false;
     await _ref.read(bgmPlayerProvider).stop();
-    _initialised = false;
-    _sessionId = null;
-    _scenarioId = null;
   }
 
   /// Remove all active genui surfaces from the processor.
@@ -566,21 +597,48 @@ class TrpgSessionNotifier {
     }
   }
 
+  /// Determines the display mode after paging completes.
+  ///
+  /// Pure function extracted for testability.
+  /// Called after `_isSessionEnded` / `_willAutoContinue` checks have passed.
+  static NovelDisplayMode resolvePostPagingMode({
+    required bool isProcessing,
+    required bool hasSurface,
+  }) {
+    if (isProcessing) return NovelDisplayMode.processing;
+    if (hasSurface) return NovelDisplayMode.surface;
+    return NovelDisplayMode.input;
+  }
+
   /// Called when the user finishes reading all paged sentences / nodes.
   void onPagingComplete() {
     if (!_replayingBufferedTurnEvents && _replayNextBufferedTurn()) {
+      Logger.debug('onPagingComplete: replaying next buffered turn');
       return;
     }
     if (_willAutoContinue) {
+      Logger.debug('onPagingComplete: willAutoContinue, showing processing');
       _bufferIncomingTurnEvents = false;
       _displayModeNotifier.value = NovelDisplayMode.processing;
       return;
     }
-    if (_hasSurface) {
-      _displayModeNotifier.value = NovelDisplayMode.surface;
-    } else {
+    if (_isSessionEnded) {
+      Logger.debug('onPagingComplete: session ended → input mode (read-only)');
+      _clearProcessorSurfaces();
+      _hasSurface = false;
       _displayModeNotifier.value = NovelDisplayMode.input;
+      return;
     }
+    final mode = resolvePostPagingMode(
+      isProcessing: _isProcessingNotifier.value,
+      hasSurface: _hasSurface,
+    );
+    Logger.debug(
+      'onPagingComplete: resolved → $mode, '
+      'isProcessing=${_isProcessingNotifier.value}, '
+      'hasSurface=$_hasSurface',
+    );
+    _displayModeNotifier.value = mode;
   }
 
   /// Advance paging by one step (node or sentence).
@@ -608,9 +666,22 @@ class TrpgSessionNotifier {
     required String inputType,
     required String inputText,
   }) {
-    if (_isProcessingNotifier.value && !_canAcceptUserTurnWhileStreaming()) {
+    if (_isSessionEnded) {
+      Logger.info('sendTurn BLOCKED: session has ended');
       return;
     }
+    if (_isProcessingNotifier.value && !_canAcceptUserTurnWhileStreaming()) {
+      Logger.info(
+        'sendTurn BLOCKED: isProcessing=${_isProcessingNotifier.value}, '
+        'mode=${_displayModeNotifier.value}, hasSurface=$_hasSurface, '
+        'awaiting=${_isAwaitingUserActionNotifier.value}',
+      );
+      return;
+    }
+    Logger.info(
+      'sendTurn ACCEPTED: type=$inputType, text=$inputText, '
+      'session=$sessionId',
+    );
     _isProcessingNotifier.value = true;
     _isAwaitingUserActionNotifier.value = false;
     _hasSurface = false;
@@ -739,6 +810,20 @@ class TrpgSessionNotifier {
 
   void _applyA2ui(A2uiMessage message) {
     _ref.read(gameProcessorProvider).handleMessage(message);
+
+    // Synchronously track game-surface presence.
+    // The async _onSurfaceUpdate handler also updates _hasSurface, but during
+    // synchronous replay of buffered events the microtask hasn't fired yet.
+    // Without this, onPagingComplete() may read a stale _hasSurface and choose
+    // the wrong displayMode (input instead of surface).
+    switch (message) {
+      case BeginRendering(:final surfaceId) when surfaceId == 'game-surface':
+        _hasSurface = true;
+      case SurfaceDeletion(:final surfaceId) when surfaceId == 'game-surface':
+        _hasSurface = false;
+      default:
+        break;
+    }
   }
 
   void _applyImage(String path) {
@@ -786,7 +871,9 @@ class TrpgSessionNotifier {
     final key = data['key'] as String? ?? '';
     final path = data['path'] as String? ?? '';
     if (key.isNotEmpty && path.isNotEmpty) {
-      nodePlayer.onAssetReady(key, _resolveStorageUrl(path));
+      final resolvedUrl = _resolveStorageUrl(path);
+      nodePlayer.onAssetReady(key, resolvedUrl);
+      Logger.debug('_applyAssetReady: key=$key resolvedUrl=$resolvedUrl');
 
       // Re-apply visual state if the current node needs this asset
       final currentBg =
@@ -804,6 +891,11 @@ class TrpgSessionNotifier {
     if (mood == null) return;
     final player = _ref.read(bgmPlayerProvider);
     final generating = data['generating'] == true;
+
+    Logger.debug(
+      '_applyBgmUpdate: mood=$mood generating=$generating '
+      'path=${data['path']} playingMood=${player.playingMood}',
+    );
 
     if (generating) {
       player.onGenerating(mood);
@@ -855,10 +947,20 @@ class TrpgSessionNotifier {
     final requiresUserAction = data['requires_user_action'] == true;
     final isEnding = data['is_ending'] == true;
     _willAutoContinue = data['will_continue'] == true;
+    if (isEnding) {
+      _isSessionEnded = true;
+      _willAutoContinue = false;
+    }
     _isAwaitingUserActionNotifier.value =
         requiresUserAction && !_willAutoContinue && !isEnding;
     _isProcessingNotifier.value = _willAutoContinue;
     _hasStreamingGmMessage = false;
+    Logger.debug(
+      '_applyDone: willContinue=$_willAutoContinue, '
+      'requiresAction=$requiresUserAction, isEnding=$isEnding, '
+      'sessionEnded=$_isSessionEnded, '
+      'hasSurface=$_hasSurface, replaying=$_replayingBufferedTurnEvents',
+    );
 
     if (_useNodePlayer) {
       // Node-based: already in paging mode from _onNodesReady
@@ -867,6 +969,11 @@ class TrpgSessionNotifier {
         onPagingComplete();
       } else {
         _bufferIncomingTurnEvents = _willAutoContinue;
+        // User already finished reading all nodes while waiting for done.
+        // Re-evaluate the display mode now that isProcessing has been updated.
+        if (_displayModeNotifier.value == NovelDisplayMode.processing) {
+          onPagingComplete();
+        }
       }
       return;
     }
@@ -896,6 +1003,7 @@ class TrpgSessionNotifier {
   void _onSurfaceUpdate(GenUiUpdate update) {
     switch (update) {
       case SurfaceAdded(:final surfaceId):
+        Logger.debug('_onSurfaceUpdate: SurfaceAdded($surfaceId)');
         if (surfaceId == 'game-surface') {
           _hasSurface = true;
           if (_isProcessingNotifier.value) {
@@ -903,6 +1011,7 @@ class TrpgSessionNotifier {
           }
         }
       case SurfaceRemoved(:final surfaceId):
+        Logger.debug('_onSurfaceUpdate: SurfaceRemoved($surfaceId)');
         if (surfaceId == 'game-surface') _hasSurface = false;
       case SurfaceUpdated():
         break;
@@ -911,18 +1020,33 @@ class TrpgSessionNotifier {
 
   /// Handle user interactions from genui surfaces (choices, roll, etc.).
   void _onUiInteraction(UserUiInteractionMessage message) {
+    if (_isSessionEnded) {
+      Logger.info('_onUiInteraction: session ended, ignoring');
+      return;
+    }
     final sessionId = _sessionId;
-    if (sessionId == null) return;
+    if (sessionId == null) {
+      Logger.info('_onUiInteraction: sessionId is null, ignoring');
+      return;
+    }
 
     try {
       final decoded = jsonDecode(message.text) as Map<String, dynamic>;
       final userAction = decoded['userAction'] as Map<String, dynamic>?;
-      if (userAction == null) return;
+      if (userAction == null) {
+        Logger.info('_onUiInteraction: userAction is null');
+        return;
+      }
 
       final name = userAction['name'] as String? ?? '';
       final ctx = userAction['context'] as Map<String, dynamic>? ?? {};
       final inputType = ctx['inputType'] as String? ?? 'do';
       final inputText = ctx['inputText'] as String? ?? '';
+
+      Logger.info(
+        '_onUiInteraction: name=$name, inputType=$inputType, '
+        'inputText=$inputText, isProcessing=${_isProcessingNotifier.value}',
+      );
 
       // Handle advance action (text paging / node playback)
       if (name == 'advance') {
@@ -937,7 +1061,7 @@ class TrpgSessionNotifier {
         inputText: inputText,
       );
     } catch (e, st) {
-      Logger.debug('Failed to parse UI interaction', e, st);
+      Logger.error('Failed to parse UI interaction', e, st);
     }
   }
 
@@ -965,6 +1089,15 @@ class TrpgSessionNotifier {
   }
 
   void _applyStateUpdate(Map<String, dynamic> data) {
+    try {
+      _applyStateUpdateBody(data);
+    } catch (e, st) {
+      Logger.warning('Error in _applyStateUpdate', e, st);
+    }
+  }
+
+  void _applyStateUpdateBody(Map<String, dynamic> data) {
+    final changeEvents = <ChangeEvent>[];
     var state = _visualStateNotifier.value;
 
     final sceneDesc = data['scene_description'] as String?;
@@ -975,63 +1108,292 @@ class TrpgSessionNotifier {
     final location = data['location'] as Map<String, dynamic>?;
     if (location != null) {
       final name = location['location_name'] as String?;
-      if (name != null) state = state.copyWith(locationName: name);
+      if (name != null) {
+        // Only emit LocationChangedEvent when the location actually changes.
+        // This prevents a cinematic blackout overlay on every stateUpdate that
+        // merely echoes the current location (e.g. the very first turn).
+        if (name != state.locationName) {
+          changeEvents.add(LocationChangedEvent(locationName: name));
+        }
+        state = state.copyWith(locationName: name);
+      }
     }
 
+    // Apply stats delta to all stat keys
     final statsDelta = data['stats_delta'] as Map<String, dynamic>?;
     if (statsDelta != null) {
-      final hpDelta = statsDelta['hp'] as int?;
+      final newStats = Map<String, int>.from(state.stats);
+      for (final entry in statsDelta.entries) {
+        final rawDelta = entry.value;
+        final delta = rawDelta is int
+            ? rawDelta
+            : (rawDelta as num?)?.toInt() ?? 0;
+        if (delta == 0) continue;
+        final current = newStats[entry.key] ?? 0;
+        final maxVal = state.maxStats['max_${entry.key}'];
+        final updated = maxVal != null
+            ? (current + delta).clamp(0, maxVal)
+            : current + delta;
+        newStats[entry.key] = updated;
+        changeEvents.add(
+          StatChangeEvent(
+            statKey: entry.key,
+            delta: delta,
+            newValue: updated,
+            maxValue: maxVal,
+          ),
+        );
+      }
+      state = state.copyWith(stats: newStats);
+
+      // Sync legacy hp/maxHp fields
+      final rawHpDelta = statsDelta['hp'];
+      final hpDelta = rawHpDelta is int
+          ? rawHpDelta
+          : (rawHpDelta as num?)?.toInt();
       if (hpDelta != null) {
         final newHp = (state.hp + hpDelta).clamp(0, state.maxHp);
         state = state.copyWith(hp: newHp);
       }
     }
 
-    final npcs = data['active_npcs'] as List<dynamic>?;
-    if (npcs != null) {
+    // Status effects: add/remove
+    final effectAdds = data['status_effect_adds'] as List<dynamic>?;
+    final effectRemoves = data['status_effect_removes'] as List<dynamic>?;
+    if (effectAdds != null || effectRemoves != null) {
+      var effects = [...state.statusEffects];
+      if (effectRemoves != null) {
+        final toRemove = effectRemoves.cast<String>().toSet();
+        effects = effects.where((e) => !toRemove.contains(e)).toList();
+        for (final name in toRemove) {
+          changeEvents.add(StatusEffectRemovedEvent(effectName: name));
+        }
+      }
+      if (effectAdds != null) {
+        for (final e in effectAdds.cast<String>()) {
+          if (!effects.contains(e)) {
+            effects.add(e);
+            changeEvents.add(StatusEffectAddedEvent(effectName: e));
+          }
+        }
+      }
+      state = state.copyWith(statusEffects: effects);
+    }
+
+    // New items
+    final newItems = data['new_items'] as List<dynamic>?;
+    if (newItems != null) {
+      final parsed = newItems.cast<Map<String, dynamic>>().map((m) {
+        final itemName = m['name'] as String? ?? '';
+        final desc = m['description'] as String? ?? '';
+        final rawQty = m['quantity'];
+        final qty = rawQty is int ? rawQty : (rawQty as num?)?.toInt() ?? 1;
+        changeEvents.add(
+          ItemAcquiredEvent(
+            itemName: itemName,
+            description: desc,
+            quantity: qty,
+          ),
+        );
+        return InventoryItem(
+          name: itemName,
+          description: desc,
+          itemType: m['item_type'] as String? ?? '',
+          quantity: qty,
+        );
+      }).toList();
+      state = state.copyWith(items: [...state.items, ...parsed]);
+    }
+
+    // Removed items
+    final removedItems = data['removed_items'] as List<dynamic>?;
+    if (removedItems != null) {
+      final toRemove = removedItems.cast<String>().toSet();
       state = state.copyWith(
-        activeNpcs: npcs.cast<Map<String, dynamic>>().map((n) {
-          final path = n['image_path'] as String?;
-          return NpcVisual(
-            name: n['name'] as String? ?? '',
-            emotion: n['emotion'] as String?,
-            imageUrl: path != null ? _resolveStorageUrl(path) : null,
-          );
-        }).toList(),
+        items: state.items.where((i) => !toRemove.contains(i.name)).toList(),
       );
+      for (final name in toRemove) {
+        changeEvents.add(ItemRemovedEvent(itemName: name));
+      }
+    }
+
+    // Item updates (quantity delta, equip state)
+    final itemUpdates = data['item_updates'] as List<dynamic>?;
+    if (itemUpdates != null) {
+      final items = [...state.items];
+      for (final raw in itemUpdates.cast<Map<String, dynamic>>()) {
+        final name = raw['name'] as String? ?? '';
+        final idx = items.indexWhere((i) => i.name == name);
+        if (idx < 0) continue;
+        var item = items[idx];
+        final rawQtyDelta = raw['quantity_delta'];
+        final qtyDelta = rawQtyDelta is int
+            ? rawQtyDelta
+            : (rawQtyDelta as num?)?.toInt();
+        if (qtyDelta != null) {
+          item = item.copyWith(quantity: item.quantity + qtyDelta);
+        }
+        final equipped = raw['is_equipped'] as bool?;
+        if (equipped != null) {
+          item = item.copyWith(isEquipped: equipped);
+        }
+        items[idx] = item;
+      }
+      state = state.copyWith(items: items);
+    }
+
+    // Relationship changes (delta-based)
+    final relChanges = data['relationship_changes'] as List<dynamic>?;
+    if (relChanges != null) {
+      final rels = [...state.relationships];
+      for (final raw in relChanges.cast<Map<String, dynamic>>()) {
+        final npcName = raw['npc_name'] as String? ?? '';
+        final affinityDelta = _asInt(raw['affinity_delta']);
+        final trustDelta = _asInt(raw['trust_delta']);
+        final fearDelta = _asInt(raw['fear_delta']);
+        final debtDelta = _asInt(raw['debt_delta']);
+        final hasChange =
+            affinityDelta != 0 ||
+            trustDelta != 0 ||
+            fearDelta != 0 ||
+            debtDelta != 0;
+        if (hasChange) {
+          changeEvents.add(
+            RelationshipChangedEvent(
+              npcName: npcName,
+              affinityDelta: affinityDelta,
+              trustDelta: trustDelta,
+              fearDelta: fearDelta,
+              debtDelta: debtDelta,
+            ),
+          );
+        }
+        final idx = rels.indexWhere((r) => r.npcName == npcName);
+        if (idx >= 0) {
+          rels[idx] = rels[idx].copyWith(
+            affinity: rels[idx].affinity + affinityDelta,
+            trust: rels[idx].trust + trustDelta,
+            fear: rels[idx].fear + fearDelta,
+            debt: rels[idx].debt + debtDelta,
+          );
+        } else {
+          rels.add(
+            NpcRelationship(
+              npcName: npcName,
+              affinity: affinityDelta,
+              trust: trustDelta,
+              fear: fearDelta,
+              debt: debtDelta,
+            ),
+          );
+        }
+      }
+      state = state.copyWith(relationships: rels);
+    }
+
+    // Objective updates
+    final objUpdates = data['objective_updates'] as List<dynamic>?;
+    if (objUpdates != null) {
+      final objs = [...state.objectives];
+      for (final raw in objUpdates.cast<Map<String, dynamic>>()) {
+        final title = raw['title'] as String? ?? '';
+        final status = raw['status'] as String? ?? 'active';
+        final desc = raw['description'] as String?;
+        changeEvents.add(ObjectiveUpdatedEvent(title: title, status: status));
+        final idx = objs.indexWhere((o) => o.title == title);
+        if (idx >= 0) {
+          objs[idx] = objs[idx].copyWith(status: status, description: desc);
+        } else {
+          objs.add(
+            ObjectiveInfo(title: title, status: status, description: desc),
+          );
+        }
+      }
+      state = state.copyWith(objectives: objs);
+    }
+
+    // ノードモードでは nodes[].characters が NPC 表示の唯一の真実源。
+    // stateUpdate の active_npcs（intents/dialogues 由来）はノードモードでは無視する。
+    final npcs = data['active_npcs'] as List<dynamic>?;
+    if (npcs != null && !_useNodePlayer) {
+      final npcList = npcs.cast<Map<String, dynamic>>().map((n) {
+        final path = n['image_path'] as String?;
+        return NpcVisual(
+          name: n['name'] as String? ?? '',
+          emotion: n['emotion'] as String?,
+          imageUrl: path != null ? _resolveStorageUrl(path) : null,
+        );
+      }).toList();
+      Logger.debug(
+        '_applyStateUpdate: activeNpcs=${npcList.map((n) => '${n.name}(${n.imageUrl != null ? "has_img" : "no_img"})').join(', ')}',
+      );
+      state = state.copyWith(activeNpcs: npcList);
     }
 
     _visualStateNotifier.value = state;
+
+    // Emit change events for visual feedback
+    if (changeEvents.isNotEmpty) {
+      _pendingChangesNotifier.value = changeEvents;
+    }
+  }
+
+  /// Safely convert a JSON value (int or double) to int.
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return 0;
   }
 
   /// Update visual state from the current scene node.
+  ///
+  /// This method is called from:
+  ///   - `_applyNodesReady` (when nodes first arrive)
+  ///   - `_applyAssetReady` (when background/NPC assets are resolved)
+  ///   - `nodePlayer.currentNode` listener (on page advance)
+  ///
+  /// NPC表示について:
+  ///   ノードモード（_useNodePlayer=true）では nodes[].characters が唯一の真実源。
+  ///   stateUpdate.active_npcs はノードモードでは activeNpcs に反映しない。
+  ///   characters == null または [] の場合は NPC をクリア（非表示）。
   void _applyNodeVisualState(SceneNode? node) {
     if (node == null) return;
     var state = _visualStateNotifier.value;
 
     // Background: resolve from nodePlayer asset cache.
-    // Always set backgroundImageUrl so any wrongly-set value from _onImage
-    // (which fires before nodesReady) gets overridden.
+    // Only update backgroundImageUrl when we have an actual resolved URL.
+    // Do NOT clear it when:
+    //   - bg is null (node doesn't specify background): stateUpdate or
+    //     legacy imageUpdate may have set it
+    //   - resolvedUrl is null (assetReady hasn't arrived yet): keep
+    //     whatever is currently displayed
     final bg = node.background ?? nodePlayer.effectiveBackground;
     if (bg != null) {
       final resolvedUrl = nodePlayer.resolvedAssetUrl(bg);
-      state = state.copyWith(backgroundImageUrl: () => resolvedUrl);
-    } else {
-      state = state.copyWith(backgroundImageUrl: () => null);
+      if (resolvedUrl != null) {
+        Logger.debug('_applyNodeVisualState: bg=$bg resolved=$resolvedUrl');
+        state = state.copyWith(backgroundImageUrl: () => resolvedUrl);
+      }
     }
 
     // Speaker: set from the current node
     state = state.copyWith(currentSpeaker: () => node.speaker);
 
-    // Characters → activeNpcs (resolve from assetReady, fallback to stateUpdate)
-    if (node.characters != null && node.characters!.isNotEmpty) {
+    // Characters → activeNpcs
+    // nodes[].characters がノードごとの NPC 表示の唯一の真実源。
+    // null または [] の場合は NPC をクリア（非表示）。
+    // stateUpdate.active_npcs はノードモードでは使用しない（_applyStateUpdateBody 参照）。
+    final characters = node.characters ?? [];
+    if (characters.isEmpty) {
+      state = state.copyWith(activeNpcs: []);
+    } else {
       final existingImages = {
         for (final npc in state.activeNpcs)
           if (npc.imageUrl != null) npc.name: npc.imageUrl,
       };
       state = state.copyWith(
-        activeNpcs: node.characters!.map((c) {
-          // Priority: emotion-specific > default > stateUpdate
+        activeNpcs: characters.map((c) {
+          // Priority: emotion-specific > default > existing
           final emotionUrl = c.expression != null
               ? nodePlayer.resolvedAssetUrl('npc:${c.npcName}:${c.expression}')
               : null;
@@ -1045,9 +1407,6 @@ class TrpgSessionNotifier {
           );
         }).toList(),
       );
-    } else {
-      // characters が null または空 → NPC非表示
-      state = state.copyWith(activeNpcs: [], currentSpeaker: () => null);
     }
 
     _visualStateNotifier.value = state;
@@ -1084,12 +1443,21 @@ class TrpgSessionNotifier {
     // interfere with each other.
     if (player.isRetryingPlayback) return;
 
+    // Skip if playback is already pending a user gesture retry.
+    // Calling play() again would just fail with autoplay and could
+    // corrupt the player's internal state (e.g., re-loading the URL
+    // while _gestureRetry expects it to be loaded).
+    if (player.hasPendingPlayback) return;
+
     final readyUrl = _bgmReadyUrlByMood[activeMood];
     if (readyUrl != null) {
       unawaited(player.play(readyUrl, activeMood));
-    } else {
-      player.onGenerating(activeMood);
     }
+    // else: BGM URL will arrive via bgmUpdate event; do NOT call
+    // onGenerating() here -- only the backend's explicit bgmGenerating
+    // event should set the "generating" indicator.  Calling it
+    // prematurely causes a false "BGM生成中..." on cache-hit because
+    // nodesReady always arrives before bgmUpdate.
   }
 
   String? _activeNodeBgmMood() {
@@ -1167,6 +1535,7 @@ class TrpgSessionNotifier {
     _isAwaitingUserActionNotifier.dispose();
     _visualStateNotifier.dispose();
     _displayModeNotifier.dispose();
+    _pendingChangesNotifier.dispose();
     textPager.dispose();
     nodePlayer.dispose();
     await _ref.read(bgmPlayerProvider).stop();
