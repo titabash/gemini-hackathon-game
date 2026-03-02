@@ -25,6 +25,8 @@ from src.domain.entity.gm_types import (
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
+    from src.usecase.gm_turn_usecase import GmTurnUseCase
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -850,7 +852,7 @@ class TestResolveNodeAssets:
             uc.bg_gw.find_by_id = MagicMock(return_value=None)
             uc.bg_gw.find_by_description = MagicMock(return_value=None)
             uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.upload_image = MagicMock(
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
                 return_value="sessions/img.png",
             )
             uc.bg_gw.create = MagicMock()
@@ -902,7 +904,7 @@ class TestResolveNodeAssets:
             )
             uc.bg_gw.find_by_description = MagicMock(return_value=None)
             uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.upload_image = MagicMock(
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
                 return_value="sessions/dungeon.png",
             )
             uc.bg_gw.create = MagicMock()
@@ -1278,8 +1280,8 @@ class TestResolveNpcEmotionAssets:
             )
             _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[guard])
             uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.download_image = MagicMock(return_value=b"base-image")
-            uc.storage_svc.upload_image = MagicMock(
+            uc.storage_svc.download_image = MagicMock(return_value=b"base-image")  # type: ignore[union-attr]
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
                 return_value="sessions/guard_surprise.png",
             )
             uc.npc_gw.update_emotion_image = MagicMock()
@@ -1296,7 +1298,7 @@ class TestResolveNpcEmotionAssets:
             assert kwargs["source_image"] == b"base-image"
             assert kwargs["transparent_background"] is True
             assert kwargs["size"] == "1024x1536"
-            uc.storage_svc.download_image.assert_called_once_with(
+            uc.storage_svc.download_image.assert_called_once_with(  # type: ignore[union-attr]
                 "npcs/guard_default.png",
                 "scenario-assets",
             )
@@ -1343,7 +1345,7 @@ class TestResolveNpcEmotionAssets:
                 return_value=bandit,
             )
             uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.upload_image = MagicMock(
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
                 return_value="sessions/bandit_anger.png",
             )
             uc.npc_gw.update_image_path = MagicMock()
@@ -1465,7 +1467,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1557,7 +1558,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1624,7 +1624,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1696,7 +1695,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1780,8 +1778,8 @@ class TestAutoAdvanceUntilUserAction:
             assert "last" in full.lower()
 
     @pytest.mark.asyncio
-    async def test_auto_advance_uses_prompt_cache_after_first_turn(self) -> None:
-        """When enabled, prompt cache should switch later turns to prompt delta."""
+    async def test_auto_advance_always_uses_full_prompt(self) -> None:
+        """ADK manages caching internally; all turns use the full prompt."""
         with (
             patch(
                 "src.usecase.gm_turn_usecase.GeminiClient",
@@ -1795,7 +1793,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = True
             uc.interactions_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
@@ -1815,11 +1812,7 @@ class TestAutoAdvanceUntilUserAction:
             ctx2.system_prompt = ""
             uc.context_svc.build_context = MagicMock(side_effect=[ctx1, ctx2])
             uc.context_svc.build_prompt = MagicMock(return_value="prompt-full")
-            uc.context_svc.build_prompt_delta = MagicMock(return_value="prompt-delta")
 
-            uc.decision_svc.create_prompt_cache = AsyncMock(
-                return_value="cachedContents/game-1",
-            )
             uc.decision_svc.cleanup_runtime = AsyncMock()
             uc.decision_svc.decide = AsyncMock(
                 side_effect=[
@@ -1861,12 +1854,8 @@ class TestAutoAdvanceUntilUserAction:
                 ),
             )
 
-            uc.decision_svc.create_prompt_cache.assert_awaited_once()
-            assert uc.context_svc.build_prompt.call_count == 1
-            assert uc.context_svc.build_prompt_delta.call_count == 1
-
-            second_runtime = uc.decision_svc.decide.call_args_list[1].kwargs["runtime"]
-            assert second_runtime.cached_content_name == "cachedContents/game-1"
+            # ADK が内部でコンテキストを管理するため、全ターンでフルプロンプトを使用する
+            assert uc.context_svc.build_prompt.call_count == 2
             uc.decision_svc.cleanup_runtime.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -1885,7 +1874,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1932,8 +1920,8 @@ class TestAutoAdvanceUntilUserAction:
                 yield  # pragma: no cover
 
             uc.bridge_svc.stream_decision = _stream_decision
-            uc._resolve_bgm = _bgm_event  # type: ignore[method-assign]
-            uc._resolve_backgrounds = _no_backgrounds  # type: ignore[method-assign]
+            uc._resolve_bgm = _bgm_event  # type: ignore[assignment]
+            uc._resolve_backgrounds = _no_backgrounds  # type: ignore[assignment]
 
             events = await _collect(uc.execute(_make_request(), MagicMock()))
             parsed = _parse_sse_events(events)
@@ -1961,7 +1949,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -2011,8 +1998,8 @@ class TestAutoAdvanceUntilUserAction:
                 )
 
             uc.bridge_svc.stream_decision = _stream_decision
-            uc._resolve_bgm = _no_bgm  # type: ignore[method-assign]
-            uc._resolve_backgrounds = _bg_asset  # type: ignore[method-assign]
+            uc._resolve_bgm = _no_bgm  # type: ignore[assignment]
+            uc._resolve_backgrounds = _bg_asset  # type: ignore[assignment]
 
             events = await _collect(uc.execute(_make_request(), MagicMock()))
             parsed = _parse_sse_events(events)
@@ -2026,7 +2013,7 @@ class TestAutoAdvanceUntilUserAction:
 class TestAutoAdvanceAddition:
     """Unit tests for _build_auto_advance_addition prompt generation."""
 
-    def _import_uc(self) -> type:
+    def _import_uc(self) -> type[GmTurnUseCase]:
         from src.usecase.gm_turn_usecase import GmTurnUseCase
 
         return GmTurnUseCase

@@ -37,6 +37,7 @@ from gateway.npc_gateway import NpcGateway
 from gateway.scene_background_gateway import SceneBackgroundGateway
 from gateway.session_gateway import SessionGateway
 from gateway.turn_gateway import TurnGateway
+from infra.adk_gm_client import AdkGmClient
 from infra.gemini_client import GeminiClient
 from infra.storage_service import StorageService
 from util.logging import get_logger
@@ -58,6 +59,18 @@ try:
     from infra.db_client import engine as _bgm_engine
 except ValueError:
     _bgm_engine = None
+
+# Module-level lazy singleton — InMemoryRunner initialisation is heavyweight
+# (model wiring, session service setup) and must not be repeated per request.
+_adk_client: AdkGmClient | None = None
+
+
+def _get_adk_client() -> AdkGmClient:
+    """Return the shared AdkGmClient, creating it on first call."""
+    global _adk_client  # noqa: PLW0603
+    if _adk_client is None:
+        _adk_client = AdkGmClient()
+    return _adk_client
 
 
 @dataclass(frozen=True)
@@ -90,7 +103,7 @@ class GmTurnUseCase:
         self.turn_gw = TurnGateway()
         self.context_gw = ContextSummaryGateway()
         self.context_svc = ContextService()
-        self.decision_svc = GmDecisionService(self.gemini)
+        self.decision_svc = GmDecisionService(_get_adk_client())
         self.mutation_svc = StateMutationService()
         self.bridge_svc = GenuiBridgeService()
         self.bgm_svc = BgmService()
@@ -104,14 +117,6 @@ class GmTurnUseCase:
         self.interactions_enabled = _env_bool(
             "GEMINI_INTERACTIONS_ENABLED",
             default=False,
-        )
-        self.prompt_cache_enabled = _env_bool(
-            "GEMINI_PROMPT_CACHE_ENABLED",
-            default=True,
-        )
-        self.prompt_cache_ttl_seconds = _env_int(
-            "GEMINI_PROMPT_CACHE_TTL_SECONDS",
-            default=3600,
         )
 
     @property
@@ -160,14 +165,6 @@ class GmTurnUseCase:
 
                 # Build context and resolve decision (with turn-limit checks)
                 context = self.context_svc.build_context(db, session_id)
-                await self._maybe_create_prompt_cache(
-                    context=context,
-                    runtime=decision_runtime,
-                    session_id=session_id,
-                    generated_turn_count=generated_turn_count,
-                    auto_advance_enabled=auto_advance_enabled,
-                    auto_turn_budget=auto_turn_budget,
-                )
                 should_handoff_with_cta = auto_advance_enabled and (
                     generated_turn_count + 1 >= auto_turn_budget
                 )
@@ -283,34 +280,6 @@ class GmTurnUseCase:
                 and auto_advance_enabled
                 and auto_turn_budget > 1
             ),
-        )
-
-    async def _maybe_create_prompt_cache(  # noqa: PLR0913
-        self,
-        *,
-        context: GameContext,
-        runtime: GmDecisionRuntime,
-        session_id: uuid.UUID,
-        generated_turn_count: int,
-        auto_advance_enabled: bool,
-        auto_turn_budget: int,
-    ) -> None:
-        """Create one explicit prompt cache for stable prompt prefix."""
-        if runtime.prompt_cache_attempted:
-            return
-        if not self.prompt_cache_enabled:
-            return
-        if not auto_advance_enabled or auto_turn_budget <= 1:
-            return
-        if generated_turn_count == 0:
-            return
-
-        runtime.prompt_cache_attempted = True
-        seed = self.context_svc.build_prompt_cache_seed(context)
-        runtime.cached_content_name = await self.decision_svc.create_prompt_cache(
-            contents=seed,
-            ttl_seconds=self.prompt_cache_ttl_seconds,
-            display_name=f"gm-turn-{session_id}",
         )
 
     def _maybe_clone_npcs(
@@ -450,20 +419,14 @@ class GmTurnUseCase:
             auto_advance_section,
             hard_limit_section,
         ]
-        if runtime and runtime.cached_content_name:
-            prompt = self.context_svc.build_prompt_delta(
-                context,
-                request.input_type,
-                request.input_text,
-                extra_sections=extra_sections,
-            )
-        else:
-            prompt = self.context_svc.build_prompt(
-                context,
-                request.input_type,
-                request.input_text,
-                extra_sections=extra_sections,
-            )
+        # ADK が use_interactions_api でコンテキストを内部管理するため、
+        # 常にフルプロンプトを送信する。
+        prompt = self.context_svc.build_prompt(
+            context,
+            request.input_type,
+            request.input_text,
+            extra_sections=extra_sections,
+        )
         decision = await self.decision_svc.decide(prompt, runtime=runtime)
 
         # Fallback: force session_end if GM omitted it at hard limit
