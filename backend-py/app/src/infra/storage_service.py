@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import uuid
+from typing import cast
 
 from supabase import Client, create_client
 
@@ -94,7 +95,7 @@ class StorageService:
     ) -> bytes | None:
         """Download image bytes from Supabase Storage."""
         try:
-            return self._client.storage.from_(bucket).download(path)
+            return cast("bytes", self._client.storage.from_(bucket).download(path))
         except Exception:
             logger.warning(
                 "Image download failed",

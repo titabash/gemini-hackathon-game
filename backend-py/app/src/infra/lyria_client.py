@@ -62,7 +62,7 @@ class LyriaClient:
         max_bytes = max(1, duration_seconds) * bytes_per_second
         received = 0
 
-        async with self._client.aio.live.music.connect(  # type: ignore[attr-defined]
+        async with self._client.aio.live.music.connect(
             model=self._model,
         ) as session:
             await self._set_weighted_prompt(session, prompt)
@@ -145,7 +145,7 @@ class LyriaClient:
             if weighted_prompt_cls
             else [{"text": prompt, "weight": 1.0}]
         )
-        await session.set_weighted_prompts(prompts=prompts)
+        await session.set_weighted_prompts(prompts=prompts)  # type: ignore[attr-defined]
 
     async def _set_generation_config(
         self,
@@ -156,7 +156,7 @@ class LyriaClient:
             return
         config_cls = getattr(types, "LiveMusicGenerationConfig", None)
         payload = config_cls(**config) if config_cls else config
-        await session.set_music_generation_config(config=payload)
+        await session.set_music_generation_config(config=payload)  # type: ignore[attr-defined]
 
     @staticmethod
     def _extract_audio_chunks(message: object) -> list[bytes]:
