@@ -1306,7 +1306,13 @@ class TestResolveNpcEmotionAssets:
 
     @pytest.mark.asyncio
     async def test_no_image_npc_generates_default(self) -> None:
-        """NPC without any images → generate portrait → assetReady."""
+        """NPC without any images → generate default portrait first, then emotion.
+
+        Expected behaviour:
+        - generate_image called twice: default portrait, then anger variant.
+        - update_image_path called once to persist the default portrait in DB.
+        - assetReady emitted for BOTH 'npc:Bandit:default' and 'npc:Bandit:anger'.
+        """
         with (
             patch(
                 "src.usecase.gm_turn_usecase.GeminiClient",
@@ -1334,7 +1340,7 @@ class TestResolveNpcEmotionAssets:
                     ],
                 ),
             ]
-            # NPC exists in DB but has no images
+            # NPC exists in DB but has no images at all
             bandit = _fake_npc_record(
                 name="Bandit",
                 image_path=None,
@@ -1344,9 +1350,15 @@ class TestResolveNpcEmotionAssets:
             uc.npc_gw.find_by_name_and_session = MagicMock(
                 return_value=bandit,
             )
-            uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
+            # First call → default portrait bytes; second call → anger variant bytes
+            uc.gemini.generate_image = AsyncMock(
+                side_effect=[b"default-png", b"anger-png"],
+            )
             uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
-                return_value="sessions/bandit_anger.png",
+                side_effect=[
+                    "sessions/bandit_default.png",
+                    "sessions/bandit_anger.png",
+                ],
             )
             uc.npc_gw.update_image_path = MagicMock()
             uc.npc_gw.update_emotion_image = MagicMock()
@@ -1355,10 +1367,65 @@ class TestResolveNpcEmotionAssets:
             parsed = _parse_sse_events(events)
             npc_events = _npc_asset_events(parsed)
 
-            assert len(npc_events) >= 1
             keys = {e["key"] for e in npc_events}
+            # Default portrait must be emitted before the emotion variant
+            assert "npc:Bandit:default" in keys
             assert "npc:Bandit:anger" in keys
-            uc.gemini.generate_image.assert_called()
+            # Two generate_image calls: default portrait + anger variant
+            assert uc.gemini.generate_image.call_count == 2
+            # Default portrait persisted to DB
+            uc.npc_gw.update_image_path.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_image_npc_expression_none_generates_only_default(self) -> None:
+        """NPC without images and expression=None → generate only default portrait."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="narration",
+                    text="A figure stands silently.",
+                    characters=[
+                        CharacterDisplay(npc_name="Stranger", expression=None),
+                    ],
+                ),
+            ]
+            stranger = _fake_npc_record(
+                name="Stranger",
+                image_path=None,
+                emotion_images=None,
+            )
+            _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[stranger])
+            uc.npc_gw.find_by_name_and_session = MagicMock(return_value=stranger)
+            uc.gemini.generate_image = AsyncMock(return_value=b"default-png")
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
+                return_value="sessions/stranger_default.png",
+            )
+            uc.npc_gw.update_image_path = MagicMock()
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            keys = {e["key"] for e in npc_events}
+            assert "npc:Stranger:default" in keys
+            # Only one generate_image call (default only, no emotion)
+            uc.gemini.generate_image.assert_called_once()
+            uc.npc_gw.update_image_path.assert_called_once()
+            uc.npc_gw.update_emotion_image.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_dedup_same_npc_expression(self) -> None:
@@ -1446,6 +1513,231 @@ class TestResolveNpcEmotionAssets:
             npc_events = _npc_asset_events(parsed)
 
             assert npc_events == []
+
+    @pytest.mark.asyncio
+    async def test_npc_default_generated_before_done_for_choice_turn(
+        self,
+    ) -> None:
+        """NPC default portrait must arrive before done in choice turns.
+
+        Choice turns (decision_type='choice') set requires_user_action=True,
+        which causes the done event to be emitted before _resolve_npc_emotion_assets().
+        The NPC default portrait (when missing) must therefore be generated in
+        a pre-done phase so the frontend has it when the user regains control.
+        """
+        import json
+
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Choose your fate!",
+                    speaker="Bandit",
+                    characters=[
+                        CharacterDisplay(npc_name="Bandit", expression=None),
+                    ],
+                ),
+            ]
+            decision = GmDecisionResponse(
+                decision_type="choice",
+                narration_text="The bandit blocks your path.",
+                nodes=nodes,
+            )
+            bandit = _fake_npc_record(
+                name="Bandit",
+                image_path=None,
+                emotion_images=None,
+            )
+            uc.session_gw.get_by_id = MagicMock(
+                return_value=_fake_session(turn=5),
+            )
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=6)
+            uc.storage_svc = MagicMock()
+            uc.bg_gw.find_by_id = MagicMock(return_value=None)
+            uc.bg_gw.find_by_description = MagicMock(return_value=None)
+            uc.npc_gw.get_by_session = MagicMock(return_value=[bandit])
+            uc.npc_gw.get_by_scenario = MagicMock(return_value=[bandit])
+            uc.npc_gw.find_by_name_and_session = MagicMock(return_value=bandit)
+
+            # Bridge yields a done event so done_event_seen=True.
+            async def _bridge_with_done(
+                *_args: object,
+                **_kw: object,
+            ) -> AsyncIterator[str]:
+                yield f"data: {json.dumps({'type': 'done'})}"
+
+            uc.bridge_svc.stream_decision = _bridge_with_done
+            uc.gemini.generate_image = AsyncMock(return_value=b"default-png")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/bandit_default.png",
+            )
+            uc.npc_gw.update_image_path = MagicMock()
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+
+            npc_default_indices = [
+                i
+                for i, e in enumerate(parsed)
+                if e.get("type") == "assetReady"
+                and e.get("key") == "npc:Bandit:default"
+            ]
+            done_indices = [i for i, e in enumerate(parsed) if e.get("type") == "done"]
+
+            assert npc_default_indices, (
+                "npc:Bandit:default assetReady event must be present"
+            )
+            assert done_indices, "done event must be present"
+            # NPC default portrait must arrive BEFORE done so the frontend
+            # has the image when the user regains control.
+            assert npc_default_indices[0] < done_indices[0], (
+                "npc:Bandit:default must be emitted before the done event"
+            )
+
+    @pytest.mark.asyncio
+    async def test_all_pre_done_assets_before_done_combined(self) -> None:
+        """BGM + background + NPC default must all appear before done.
+
+        Combined regression test: when all three pre-done asset types need
+        generation in the same turn (choice → requires_user_action=True),
+        all of them must be resolved before the done event is emitted,
+        regardless of whether they run sequentially or in parallel.
+        """
+        import json as _json
+        import uuid as _uuid
+
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Choose your fate!",
+                    speaker="Bandit",
+                    background="A dark cave",  # text key → generated
+                    characters=[
+                        CharacterDisplay(npc_name="Bandit", expression=None),
+                    ],
+                ),
+            ]
+            decision = GmDecisionResponse(
+                decision_type="choice",
+                narration_text="The bandit blocks your path.",
+                bgm_mood="battle",
+                bgm_music_prompt="epic drums, loopable",
+                nodes=nodes,
+            )
+            bandit = _fake_npc_record(
+                name="Bandit",
+                image_path=None,  # no portrait → will be generated
+                emotion_images=None,
+            )
+
+            # scenario_id must be a uuid.UUID so _resolve_bgm does not skip
+            scenario_uuid = _uuid.UUID("11111111-1111-1111-1111-111111111111")
+            fake_session = _fake_session(turn=5)
+            fake_session.scenario_id = scenario_uuid
+
+            uc.session_gw.get_by_id = MagicMock(return_value=fake_session)
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=6)
+            uc.storage_svc = MagicMock()
+
+            # Background: no cache hit → generate
+            uc.bg_gw.find_by_id = MagicMock(return_value=None)
+            uc.bg_gw.find_by_description = MagicMock(return_value=None)
+            uc.bg_gw.create = MagicMock()
+
+            # NPC records
+            uc.npc_gw.get_by_session = MagicMock(return_value=[bandit])
+            uc.npc_gw.get_by_scenario = MagicMock(return_value=[bandit])
+            uc.npc_gw.find_by_name_and_session = MagicMock(return_value=bandit)
+
+            # BGM: cache miss on first call, hit on second (post-generation)
+            uc.bgm_svc.get_cached_bgm_path = MagicMock(
+                side_effect=[None, "scenarios/s1/battle.mp3"],
+            )
+            uc.bgm_svc.generate_and_cache = AsyncMock()
+
+            # Bridge yields done so done_event_seen=True → choice turn fires done early
+            async def _bridge_with_done(
+                *_args: object,
+                **_kw: object,
+            ) -> AsyncIterator[str]:
+                yield f"data: {_json.dumps({'type': 'done'})}"
+
+            uc.bridge_svc.stream_decision = _bridge_with_done
+
+            # Both background and NPC default call generate_image; same stub is fine
+            uc.gemini.generate_image = AsyncMock(return_value=b"fake-image")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/image.png",
+            )
+            uc.npc_gw.update_image_path = MagicMock()
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+
+            bgm_indices = [
+                i for i, e in enumerate(parsed) if e.get("type") == "bgmUpdate"
+            ]
+            bg_indices = [
+                i
+                for i, e in enumerate(parsed)
+                if e.get("type") == "assetReady" and e.get("key") == "A dark cave"
+            ]
+            npc_indices = [
+                i
+                for i, e in enumerate(parsed)
+                if e.get("type") == "assetReady"
+                and e.get("key") == "npc:Bandit:default"
+            ]
+            done_indices = [i for i, e in enumerate(parsed) if e.get("type") == "done"]
+
+            assert bgm_indices, "bgmUpdate event must be present"
+            assert bg_indices, "background assetReady event must be present"
+            assert npc_indices, "npc:Bandit:default assetReady must be present"
+            assert done_indices, "done event must be present"
+
+            done_i = done_indices[0]
+            assert bgm_indices[0] < done_i, "bgmUpdate must appear before done"
+            assert bg_indices[0] < done_i, (
+                "background assetReady must appear before done"
+            )
+            assert npc_indices[0] < done_i, "npc:Bandit:default must appear before done"
 
 
 class TestAutoAdvanceUntilUserAction:

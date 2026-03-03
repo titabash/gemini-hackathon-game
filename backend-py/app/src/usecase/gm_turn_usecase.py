@@ -73,6 +73,11 @@ def _get_adk_client() -> AdkGmClient:
     return _adk_client
 
 
+async def _collect_async_gen(gen: AsyncIterator[str]) -> list[str]:
+    """Drain an async generator into a list (for asyncio.gather compatibility)."""
+    return [item async for item in gen]
+
+
 @dataclass(frozen=True)
 class _DoneMeta:
     turn_number: int
@@ -338,25 +343,41 @@ class GmTurnUseCase:
                 continue
             yield event
 
-        async for event in self._resolve_bgm(
-            params.db,
-            params.scenario_id,
-            params.decision,
-        ):
+        # Resolve BGM, backgrounds, and NPC default portraits in parallel so
+        # the frontend receives all pre-done assets as quickly as possible.
+        # _resolve_npc_default_images mutates npc_images in-place; the
+        # mutation is visible to _resolve_npc_emotion_assets below because
+        # asyncio.gather completes all three before we proceed.
+        bgm_events, bg_events, npc_default_events = await asyncio.gather(
+            _collect_async_gen(
+                self._resolve_bgm(
+                    params.db,
+                    params.scenario_id,
+                    params.decision,
+                )
+            ),
+            _collect_async_gen(
+                self._resolve_backgrounds(
+                    params.db,
+                    params.session_id,
+                    params.decision,
+                )
+            ),
+            _collect_async_gen(
+                self._resolve_npc_default_images(
+                    params.db,
+                    params.session_id,
+                    params.decision.nodes or [],
+                    params.npc_images,
+                )
+            ),
+        )
+        for event in (*bgm_events, *bg_events, *npc_default_events):
             yield event
 
-        # Resolve background images before done, so the frontend has all
-        # scene assets ready when the user regains control.
-        async for event in self._resolve_backgrounds(
-            params.db,
-            params.session_id,
-            params.decision,
-        ):
-            yield event
-
-        # Unlock user interaction after BGM and backgrounds are resolved.
-        # Only NPC emotion variants may arrive after done -- they have
-        # fallback images on the frontend side.
+        # Unlock user interaction after BGM, backgrounds, and NPC default
+        # portraits are resolved. Only NPC emotion variants may arrive after
+        # done -- they have fallback images on the frontend side.
         if (
             done_event_seen
             and params.done_meta.requires_user_action
@@ -908,6 +929,44 @@ class GmTurnUseCase:
             except Exception:
                 logger.warning("Node asset upload failed", key=desc)
 
+    async def _resolve_npc_default_images(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        nodes: list[Any],
+        npc_images: NpcImageMap,
+    ) -> AsyncIterator[str]:
+        """Emit (and if missing, generate) NPC default portraits before done.
+
+        Called synchronously before the done event so the frontend has all
+        default portraits when the user regains control.  Mutates npc_images
+        in-place so that _resolve_npc_emotion_assets() sees any newly
+        generated paths.
+        """
+        seen_names: set[str] = set()
+        npc_names: list[str] = []
+        for node in nodes:
+            for ch in getattr(node, "characters", None) or []:
+                name: str | None = getattr(ch, "npc_name", None)
+                if name and name not in seen_names:
+                    seen_names.add(name)
+                    npc_names.append(name)
+
+        for npc_name in npc_names:
+            default_path, emotion_map = npc_images.get(npc_name, (None, {}))
+            default_key = f"npc:{npc_name}:default"
+            if not default_path:
+                generated = await self._generate_npc_default_image(
+                    db, session_id, npc_name
+                )
+                if generated:
+                    npc_images[npc_name] = (generated, emotion_map)
+                    yield _asset_ready_event(default_key, generated)
+            else:
+                yield _asset_ready_event(
+                    default_key, _to_bucketed_npc_path(default_path)
+                )
+
     async def _resolve_npc_emotion_assets(
         self,
         db: Session,
@@ -915,27 +974,24 @@ class GmTurnUseCase:
         nodes: list[Any],
         npc_images: NpcImageMap,
     ) -> AsyncIterator[str]:
-        """Resolve NPC emotion images for scene nodes."""
+        """Resolve NPC emotion images for scene nodes (post-done).
+
+        Default portraits are emitted by _resolve_npc_default_images() before
+        the done event.  This method handles only emotion variants.
+        """
         chars = _collect_npc_character_assets(nodes)
         if not chars:
             return
 
         sent: set[str] = set()
+        # Mutable copy so generated emotion paths are visible within the loop.
+        npc_images = dict(npc_images)
 
         for npc_name, expression in chars:
-            default_path, emotion_map = npc_images.get(
+            _, emotion_map = npc_images.get(
                 npc_name,
                 (None, {}),
             )
-
-            # Send default image once per NPC
-            default_key = f"npc:{npc_name}:default"
-            if default_path and default_key not in sent:
-                sent.add(default_key)
-                yield _asset_ready_event(
-                    default_key,
-                    _to_bucketed_npc_path(default_path),
-                )
 
             # Resolve emotion-specific image
             asset_key = f"npc:{npc_name}:{expression or 'default'}"
@@ -966,6 +1022,57 @@ class GmTurnUseCase:
                     asset_key,
                     event,
                 )
+
+    async def _generate_npc_default_image(
+        self,
+        db: Session,
+        session_id: uuid.UUID,
+        npc_name: str,
+    ) -> str | None:
+        """Generate, upload, and cache a default NPC portrait.
+
+        Called when an NPC appears on screen but has no image_path in DB.
+        The generated path is stored via update_image_path so subsequent
+        turns can reuse it without re-generating.
+        Returns ``{bucket}/{path}`` on success, None on failure.
+        """
+        npc_rec = self.npc_gw.find_by_name_and_session(db, session_id, npc_name)
+        profile_desc = ""
+        if npc_rec and npc_rec.profile:
+            profile_desc = str(npc_rec.profile.get("description", ""))
+
+        prompt = (
+            "Full-body standing fantasy RPG character portrait, single character, "
+            "portrait orientation, 2:3 vertical composition, transparent background, "
+            "no text, no frame, no watermark. "
+            f"Character: {npc_name}. "
+            f"{profile_desc}"
+        )
+        try:
+            image_bytes = await self.gemini.generate_image(
+                prompt,
+                transparent_background=True,
+                size="1024x1536",
+            )
+            if not image_bytes:
+                return None
+
+            storage_path = await asyncio.to_thread(
+                self._storage_svc.upload_image,
+                str(session_id),
+                image_bytes,
+            )
+
+            if npc_rec:
+                self.npc_gw.update_image_path(db, npc_rec.id, storage_path)
+
+            return f"{GENERATED_IMAGES_BUCKET}/{storage_path}"
+        except Exception:
+            logger.warning(
+                "NPC default image generation failed",
+                npc_name=npc_name,
+            )
+            return None
 
     async def _generate_npc_emotion(
         self,

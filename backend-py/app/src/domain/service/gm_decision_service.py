@@ -14,10 +14,10 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from domain.entity.gm_types import GmDecisionResponse
 from util.logging import get_logger
 
 if TYPE_CHECKING:
+    from domain.entity.gm_types import GmDecisionResponse
     from infra.adk_gm_client import AdkGmClient
 
 logger = get_logger(__name__)
@@ -50,23 +50,25 @@ class GmDecisionService:
         *,
         runtime: GmDecisionRuntime | None = None,
     ) -> GmDecisionResponse:
-        """Get GM decision with retry and fallback."""
+        """Get GM decision with retry.  Raises the last exception on exhaustion."""
+        last_exc: BaseException = RuntimeError("GM decision retries exhausted")
         for attempt in range(self.MAX_RETRIES):
             try:
                 session_id = self._get_or_create_session_id(runtime)
                 result = await self._adk.decide(prompt=prompt, session_id=session_id)
                 logger.info("GM decision succeeded", attempt=attempt + 1)
                 return result
-            except Exception:
+            except Exception as exc:
+                last_exc = exc
                 logger.exception(
                     "GM decision attempt failed",
                     attempt=attempt + 1,
                 )
-        logger.warning(
-            "All GM decision retries exhausted; returning fallback",
+        logger.error(
+            "All GM decision retries exhausted",
             max_retries=self.MAX_RETRIES,
         )
-        return self._fallback()
+        raise last_exc
 
     async def cleanup_runtime(self, runtime: GmDecisionRuntime) -> None:
         """Delete ephemeral ADK session resources (best effort)."""
@@ -91,12 +93,3 @@ class GmDecisionService:
         if runtime.adk_session_id is None:
             runtime.adk_session_id = str(uuid.uuid4())
         return runtime.adk_session_id
-
-    @staticmethod
-    def _fallback() -> GmDecisionResponse:
-        return GmDecisionResponse(
-            decision_type="narrate",
-            narration_text=(
-                "The world seems to pause for a moment. What would you like to do?"
-            ),
-        )

@@ -70,15 +70,14 @@ class TestGmDecisionRuntime:
         assert calls[1].kwargs["session_id"] == first_session_id
 
     @pytest.mark.asyncio
-    async def test_decide_returns_fallback_after_all_retries_fail(self) -> None:
-        """MAX_RETRIES 回すべて失敗した場合、fallback GmDecisionResponse を返すこと."""
+    async def test_decide_raises_after_all_retries_fail(self) -> None:
+        """MAX_RETRIES 回すべて失敗した場合、最後の例外を raise すること."""
         adk = _make_adk_mock(side_effect=RuntimeError("ADK down"))
         svc = GmDecisionService(adk)
 
-        decision = await svc.decide("prompt")
+        with pytest.raises(RuntimeError, match="ADK down"):
+            await svc.decide("prompt")
 
-        assert decision.decision_type == "narrate"
-        assert "pause" in decision.narration_text  # fallback text
         assert adk.decide.await_count == GmDecisionService.MAX_RETRIES
 
     @pytest.mark.asyncio
