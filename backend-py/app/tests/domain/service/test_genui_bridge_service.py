@@ -24,6 +24,7 @@ from src.domain.entity.gm_types import (
     RelationshipChange,
     RepairData,
     SceneNode,
+    StatDelta,
     StateChanges,
 )
 from src.domain.service.genui_bridge_service import (
@@ -506,7 +507,12 @@ class TestBuildStateData:
         decision = GmDecisionResponse(
             decision_type="narrate",
             narration_text="Ouch!",
-            state_changes=StateChanges(stats_delta={"hp": -5, "san": -3}),
+            state_changes=StateChanges(
+                stats_delta=[
+                    StatDelta(stat="hp", delta=-5),
+                    StatDelta(stat="san", delta=-3),
+                ],
+            ),
         )
         result = GenuiBridgeService._build_state_data(decision)
         assert result is not None
@@ -1340,7 +1346,10 @@ class TestBuildStateDataExtended:
             decision_type="narrate",
             narration_text="Complex turn.",
             state_changes=StateChanges(
-                stats_delta={"hp": -10, "san": -5},
+                stats_delta=[
+                    StatDelta(stat="hp", delta=-10),
+                    StatDelta(stat="san", delta=-5),
+                ],
                 status_effect_adds=["cursed"],
                 status_effect_removes=["blessed"],
                 new_items=[NewItem(name="Ring", description="Magic ring")],
@@ -1371,7 +1380,7 @@ class TestBuildStateDataExtended:
             decision_type="narrate",
             narration_text="Nothing extra.",
             state_changes=StateChanges(
-                stats_delta={"hp": -1},
+                stats_delta=[StatDelta(stat="hp", delta=-1)],
                 status_effect_adds=None,
                 new_items=None,
             ),

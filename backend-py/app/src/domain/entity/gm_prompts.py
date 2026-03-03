@@ -107,9 +107,10 @@ You MUST:
 
 ## State Changes
 - Use state_changes.stats_delta to modify any player stat (e.g. hp, san, mp).
-  Example: {"hp": -10, "san": -5} subtracts 10 HP and 5 SAN.
+  Example: [{"stat": "hp", "delta": -10}, {"stat": "san", "delta": -5}]
+  This subtracts 10 HP and 5 SAN.
 - Use state_changes.npc_state_updates to change NPC internal state.
-  Example: [{"npc_name": "Guard", "state": {"mood": "angry"}}]
+  Example: [{"npc_name": "Guard", "state": [{"key": "mood", "value": "angry"}]}]
 - Use state_changes.item_updates to modify existing items.
   Example: [{"name": "Health Potion", "quantity_delta": -1}]
   or [{"name": "Iron Sword", "is_equipped": true}]

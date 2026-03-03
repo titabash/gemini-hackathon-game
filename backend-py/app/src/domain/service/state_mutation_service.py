@@ -84,8 +84,8 @@ class StateMutationService:
         pc = self.pc_gw.get_by_session(db, session_id)
         if pc:
             stats = dict(pc.stats)
-            for key, delta in changes.stats_delta.items():
-                stats[key] = stats.get(key, 0) + delta
+            for sd in changes.stats_delta:
+                stats[sd.stat] = stats.get(sd.stat, 0) + sd.delta
             self.pc_gw.update_stats(db, pc.id, stats)
 
     def _apply_items(
@@ -186,7 +186,7 @@ class StateMutationService:
             npc = next((n for n in npcs if n.name == nsu.npc_name), None)
             if npc is None:
                 continue
-            self.npc_gw.update_state(db, npc.id, nsu.state)
+            self.npc_gw.update_state(db, npc.id, {e.key: e.value for e in nsu.state})
 
     def _apply_npc_locations(
         self,

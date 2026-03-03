@@ -1288,8 +1288,8 @@ def _compute_latest_stats(
     """Compute latest stats from context + decision without DB re-read."""
     stats: dict[str, Any] = dict(context.player.stats)
     if changes and changes.stats_delta:
-        for key, delta in changes.stats_delta.items():
-            stats[key] = stats.get(key, 0) + delta
+        for sd in changes.stats_delta:
+            stats[sd.stat] = stats.get(sd.stat, 0) + sd.delta
     return stats
 
 

@@ -19,6 +19,7 @@ from src.domain.entity.gm_types import (
     GmTurnRequest,
     SceneNode,
     SessionEnd,
+    StatDelta,
     StateChanges,
 )
 
@@ -520,7 +521,9 @@ class TestConditionEvaluation:
 
             # stats_delta makes HP go to 0
             decision = _fake_decision(
-                state_changes=StateChanges(stats_delta={"hp": -10}),
+                state_changes=StateChanges(
+                    stats_delta=[StatDelta(stat="hp", delta=-10)],
+                ),
             )
             uc.decision_svc.decide = AsyncMock(return_value=decision)
             _stub_common(uc, turn_return=11)

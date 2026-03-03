@@ -272,7 +272,7 @@ def _merge_state_changes(data: dict[str, Any], sc: StateChanges) -> None:
     if sc.location_change:
         data["location"] = sc.location_change.model_dump()
     if sc.stats_delta:
-        data["stats_delta"] = sc.stats_delta
+        data["stats_delta"] = {sd.stat: sd.delta for sd in sc.stats_delta}
     if sc.status_effect_adds:
         data["status_effect_adds"] = sc.status_effect_adds
     if sc.status_effect_removes:

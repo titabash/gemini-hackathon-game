@@ -24,6 +24,7 @@ from src.domain.entity.gm_types import (
     RepairData,
     SceneNode,
     SessionEnd,
+    StatDelta,
     StateChanges,
     TurnSummary,
 )
@@ -143,7 +144,7 @@ class TestGmDecisionResponse:
             decision_type="narrate",
             narration_text="You found a potion.",
             state_changes=StateChanges(
-                stats_delta={"hp": 10},
+                stats_delta=[StatDelta(stat="hp", delta=10)],
                 new_items=[NewItem(name="Health Potion", description="Heals 50 HP")],
                 objective_updates=[
                     ObjectiveUpdate(
@@ -154,7 +155,7 @@ class TestGmDecisionResponse:
             ),
         )
         assert resp.state_changes is not None
-        assert resp.state_changes.stats_delta == {"hp": 10}
+        assert resp.state_changes.stats_delta == [StatDelta(stat="hp", delta=10)]
         assert resp.state_changes.new_items is not None
         assert len(resp.state_changes.new_items) == 1
 
@@ -514,7 +515,7 @@ class TestFlagChange:
     def test_state_changes_with_flags_json_roundtrip(self) -> None:
         """StateChanges with flag_changes should serialize correctly."""
         sc = StateChanges(
-            stats_delta={"hp": -5},
+            stats_delta=[StatDelta(stat="hp", delta=-5)],
             flag_changes=[
                 FlagChange(flag_id="key_found", value=True),
             ],
@@ -525,4 +526,4 @@ class TestFlagChange:
         assert len(restored.flag_changes) == 1
         assert restored.flag_changes[0].flag_id == "key_found"
         assert restored.flag_changes[0].value is True
-        assert restored.stats_delta == {"hp": -5}
+        assert restored.stats_delta == [StatDelta(stat="hp", delta=-5)]

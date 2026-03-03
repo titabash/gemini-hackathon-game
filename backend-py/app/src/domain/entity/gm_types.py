@@ -105,11 +105,25 @@ class FlagChange(BaseModel):
     value: bool
 
 
+class StatDelta(BaseModel):
+    """Single player stat delta (Gemini API does not support additionalProperties)."""
+
+    stat: str
+    delta: int
+
+
+class NpcStateEntry(BaseModel):
+    """Single NPC state key-value entry (avoids additionalProperties in schema)."""
+
+    key: str
+    value: str | int | float | bool | None = None
+
+
 class NpcStateUpdate(BaseModel):
     """NPC internal state mutation requested by GM decision."""
 
     npc_name: str
-    state: dict[str, object]
+    state: list[NpcStateEntry]
 
 
 class ItemUpdate(BaseModel):
@@ -131,7 +145,7 @@ class NpcLocationChange(BaseModel):
 class StateChanges(BaseModel):
     """Aggregated state mutations from a GM decision."""
 
-    stats_delta: dict[str, int] | None = None
+    stats_delta: list[StatDelta] | None = None
     new_items: list[NewItem] | None = None
     removed_items: list[str] | None = None
     item_updates: list[ItemUpdate] | None = None
