@@ -2408,3 +2408,272 @@ class TestAutoAdvanceAddition:
             assert "turn 5 of 5" in result
             assert "last" in result.lower()
             assert "choice" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Player action gating tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsPlayerAction:
+    """Unit tests for _is_player_action() helper."""
+
+    def test_say_is_player_action(self) -> None:
+        """'say' input is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("say", "Hello!") is True
+
+    def test_choice_is_player_action(self) -> None:
+        """'choice' input is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("choice", "Option A") is True
+
+    def test_clarify_answer_is_player_action(self) -> None:
+        """'clarify_answer' input is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("clarify_answer", "I meant the red door") is True
+
+    def test_do_with_real_text_is_player_action(self) -> None:
+        """'do' with real user text is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("do", "I open the chest") is True
+
+    def test_do_continue_is_not_player_action(self) -> None:
+        """'do' with 'continue' text is auto-advance, not a player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("do", "continue") is False
+
+    def test_start_is_not_player_action(self) -> None:
+        """'start' input is automatic game start, not a player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("start", "") is False
+
+
+class TestPlayerActionGating:
+    """Parameter changes must only apply on genuine player actions."""
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_skips_relationship_changes(self) -> None:
+        """Auto-advance narrate turn must NOT apply relationship_changes."""
+        from src.domain.entity.gm_types import RelationshipChange
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[
+                        RelationshipChange(npc_name="Rio", affinity_delta=10),
+                    ],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            # auto-advance continuation: input_type="do", input_text="continue"
+            req = _make_request(
+                input_type="do",
+                input_text="continue",
+            )
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.relationship_changes is None
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_skips_stats_delta(self) -> None:
+        """Auto-advance narrate turn must NOT apply stats_delta."""
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    stats_delta=[StatDelta(stat="hp", delta=-5)],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="do", input_text="continue")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.stats_delta is None
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_skips_npc_state_updates(self) -> None:
+        """Auto-advance narrate turn must NOT apply npc_state_updates."""
+        from src.domain.entity.gm_types import NpcStateEntry, NpcStateUpdate
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    npc_state_updates=[
+                        NpcStateUpdate(
+                            npc_name="Rio",
+                            state=[NpcStateEntry(key="mood", value="angry")],
+                        ),
+                    ],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="do", input_text="continue")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.npc_state_updates is None
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_preserves_session_end(self) -> None:
+        """Even on non-player-action turn, session_end must still be applied."""
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[],
+                    session_end=SessionEnd(
+                        ending_type="bad_end",
+                        ending_summary="Game over.",
+                    ),
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="do", input_text="continue")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.session_end is not None
+            assert applied.session_end.ending_type == "bad_end"
+
+    @pytest.mark.asyncio
+    async def test_choice_turn_applies_all_state_changes(self) -> None:
+        """Genuine player choice turn must apply all state changes."""
+        from src.domain.entity.gm_types import NewItem, RelationshipChange
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[
+                        RelationshipChange(npc_name="Rio", affinity_delta=5),
+                    ],
+                    new_items=[NewItem(name="Key", description="A rusty key")],
+                    stats_delta=[StatDelta(stat="hp", delta=-3)],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="choice", input_text="Option A")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.relationship_changes is not None
+            assert applied.new_items is not None
+            assert applied.stats_delta is not None
+
+    @pytest.mark.asyncio
+    async def test_start_turn_skips_parameter_changes(self) -> None:
+        """'start' turn (game open) must NOT apply parameter changes."""
+        from src.domain.entity.gm_types import RelationshipChange
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=0))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[
+                        RelationshipChange(npc_name="Guard", affinity_delta=2),
+                    ],
+                    stats_delta=[StatDelta(stat="hp", delta=10)],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=1)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="start", input_text="")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.relationship_changes is None
+            assert applied.stats_delta is None

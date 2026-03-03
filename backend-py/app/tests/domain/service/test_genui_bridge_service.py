@@ -560,13 +560,20 @@ class TestBuildSurfaceProperties:
     """Tests for _build_surface_properties()."""
 
     def test_choice_surface(self) -> None:
-        """Choice decision should return choiceGroup surface."""
+        """Choice decision should return choiceGroup surface from nodes."""
         decision = GmDecisionResponse(
             decision_type="choice",
             narration_text="Choose.",
-            choices=[
-                ChoiceOption(id="a", text="Fight"),
-                ChoiceOption(id="b", text="Run"),
+            nodes=[
+                SceneNode(type="narration", text="You face a dilemma."),
+                SceneNode(
+                    type="choice",
+                    text="What do you do?",
+                    choices=[
+                        ChoiceOption(id="a", text="Fight"),
+                        ChoiceOption(id="b", text="Run"),
+                    ],
+                ),
             ],
         )
         result = GenuiBridgeService._build_surface_properties(decision)
@@ -574,6 +581,34 @@ class TestBuildSurfaceProperties:
         assert result["type"] == "choiceGroup"
         assert len(result["properties"]["choices"]) == 2
         assert result["properties"]["allowFreeInput"] is True
+
+    def test_choice_surface_node_not_last(self) -> None:
+        """Choice node does not need to be the last node."""
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="Choose.",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="What do you do?",
+                    choices=[ChoiceOption(id="a", text="Fight")],
+                ),
+                SceneNode(type="narration", text="Trailing narration."),
+            ],
+        )
+        result = GenuiBridgeService._build_surface_properties(decision)
+        assert result is not None
+        assert result["type"] == "choiceGroup"
+        assert len(result["properties"]["choices"]) == 1
+
+    def test_choice_surface_no_nodes_returns_none(self) -> None:
+        """Choice decision with no nodes returns None (no surface)."""
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="Choose.",
+        )
+        result = GenuiBridgeService._build_surface_properties(decision)
+        assert result is None
 
     def test_clarify_surface(self) -> None:
         """Clarify decision should return clarifyQuestion surface."""
@@ -639,12 +674,11 @@ class TestBuildSurfaceProperties:
         assert result["type"] == "continueOrInput"
         assert result["properties"] == {}
 
-    def test_choice_without_choices_returns_none(self) -> None:
-        """Choice decision without choices list should return None."""
+    def test_choice_without_nodes_returns_none(self) -> None:
+        """Choice decision without nodes returns None."""
         decision = GmDecisionResponse(
             decision_type="choice",
             narration_text="Choose.",
-            choices=None,
         )
         result = GenuiBridgeService._build_surface_properties(decision)
         assert result is None
@@ -767,7 +801,13 @@ class TestStreamDecision:
         decision = GmDecisionResponse(
             decision_type="choice",
             narration_text="Choose wisely.",
-            choices=[ChoiceOption(id="a", text="Option A")],
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="What do you do?",
+                    choices=[ChoiceOption(id="a", text="Option A")],
+                ),
+            ],
         )
         svc = GenuiBridgeService()
         svc.WORD_DELAY = 0
@@ -1390,3 +1430,686 @@ class TestBuildStateDataExtended:
         assert "stats_delta" in result
         assert "status_effect_adds" not in result
         assert "new_items" not in result
+
+
+# ---------------------------------------------------------------------------
+# Catalog format contract tests
+# ---------------------------------------------------------------------------
+
+
+def _extract_surface_component(
+    events: list[dict[str, Any]],
+    surface_id: str,
+) -> dict[str, Any]:
+    """Find surfaceUpdate for given surfaceId and return the root component dict.
+
+    Returns the dict ``{"typeName": {...properties}}`` from the first
+    component's ``component`` key.
+    """
+    for e in events:
+        su = e.get("surfaceUpdate")
+        if su and su.get("surfaceId") == surface_id:
+            components = su.get("components", [])
+            assert len(components) == 1, (
+                f"Expected 1 component in {surface_id}, got {len(components)}"
+            )
+            comp = components[0]
+            assert comp["id"] == "root", (
+                f"Component id must be 'root', got {comp['id']!r}"
+            )
+            return comp["component"]  # type: ignore[return-value]
+    msg = f"No surfaceUpdate for surfaceId={surface_id!r} in events"
+    raise AssertionError(msg)
+
+
+def _extract_begin_rendering(
+    events: list[dict[str, Any]],
+    surface_id: str,
+) -> dict[str, Any]:
+    """Find beginRendering event for given surfaceId."""
+    for e in events:
+        br = e.get("beginRendering")
+        if br and br.get("surfaceId") == surface_id:
+            return br  # type: ignore[return-value]
+    msg = f"No beginRendering for surfaceId={surface_id!r} in events"
+    raise AssertionError(msg)
+
+
+class TestCatalogFormatContract:
+    """Verify backend SSE payloads exactly match the genui catalog spec.
+
+    The genui catalog (game_catalog_items.dart) defines the component
+    typenames and property keys that the frontend reads.  These tests act as
+    a contract between the backend SSE emitter and the frontend catalog parser.
+
+    Naming convention mirrors the Dart catalog:
+      - camelCase property keys (imagePath, allowFreeInput, …)
+      - snake_case only where Pydantic model_dump() emits it (proposed_fix)
+    """
+
+    # ------------------------------------------------------------------
+    # A2UI envelope structure
+    # ------------------------------------------------------------------
+
+    def test_a2ui_envelope_surfaceupdate_schema(self) -> None:
+        """SurfaceUpdate must have surfaceId and single root component."""
+        result = _a2ui_surface("game-test", "testWidget", {"key": "val"})
+        events = _parse_sse_events(result)
+        su = events[0]["surfaceUpdate"]
+        assert su["surfaceId"] == "game-test"
+        components = su["components"]
+        assert isinstance(components, list)
+        assert len(components) == 1
+        comp = components[0]
+        assert set(comp.keys()) == {"id", "component"}
+        assert comp["id"] == "root"
+        assert comp["component"] == {"testWidget": {"key": "val"}}
+
+    def test_a2ui_envelope_begin_rendering_schema(self) -> None:
+        """BeginRendering must reference surfaceId and root id."""
+        result = _a2ui_surface("game-test", "testWidget", {})
+        events = _parse_sse_events(result)
+        br = events[1]["beginRendering"]
+        assert br["surfaceId"] == "game-test"
+        assert br["root"] == "root"
+
+    # ------------------------------------------------------------------
+    # npcGallery component
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_npc_gallery_component_type_name(self) -> None:
+        """NpcGallery component must be registered under key 'npcGallery'."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Guard stands watch.",
+            npc_dialogues=[
+                NpcDialogue(npc_name="Guard", dialogue="Halt!", emotion="stern"),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-npcs")
+        assert "npcGallery" in comp, f"Expected 'npcGallery' key, got {list(comp)}"
+
+    @pytest.mark.asyncio
+    async def test_npc_gallery_npcs_camel_case_image_path(self) -> None:
+        """npcs[].imagePath must be camelCase — NOT image_path (snake_case).
+
+        The Dart catalog reads: n['imagePath']
+        """
+        svc = GenuiBridgeService()
+        npc_images: NpcImageMap = {
+            "Guard": ("guard/default.png", {"stern": "guard/stern.png"}),
+        }
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Guard speaks.",
+            npc_dialogues=[
+                NpcDialogue(npc_name="Guard", dialogue="Halt!", emotion="stern"),
+            ],
+        )
+        raw = await _collect_stream(svc, decision, npc_images=npc_images)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-npcs")
+        npcs = comp["npcGallery"]["npcs"]
+        assert len(npcs) == 1
+        npc = npcs[0]
+        # Catalog reads n['imagePath'] — key must be camelCase
+        assert "imagePath" in npc, f"Expected 'imagePath' key, got {list(npc)}"
+        assert "image_path" not in npc, (
+            "'image_path' (snake_case) must NOT appear in npcGallery npcs"
+        )
+
+    @pytest.mark.asyncio
+    async def test_npc_gallery_npcs_required_fields(self) -> None:
+        """npcs[*] must contain name, emotion, imagePath."""
+        svc = GenuiBridgeService()
+        npc_images: NpcImageMap = {
+            "Merchant": ("merchant/happy.png", {}),
+        }
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Merchant offers wares.",
+            npc_dialogues=[
+                NpcDialogue(
+                    npc_name="Merchant",
+                    dialogue="Buy something?",
+                    emotion="happy",
+                ),
+            ],
+        )
+        raw = await _collect_stream(svc, decision, npc_images=npc_images)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-npcs")
+        props = comp["npcGallery"]
+        assert "npcs" in props
+        assert "speakers" in props
+        npc = props["npcs"][0]
+        assert npc["name"] == "Merchant"
+        assert npc["emotion"] == "happy"
+        # imagePath should include the storage bucket prefix
+        assert npc["imagePath"] == "scenario-assets/merchant/happy.png"
+
+    @pytest.mark.asyncio
+    async def test_npc_gallery_no_image_is_null(self) -> None:
+        """npcs[*].imagePath should be null when no image map provided."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Unknown NPC speaks.",
+            npc_dialogues=[
+                NpcDialogue(npc_name="Stranger", dialogue="..."),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-npcs")
+        npc = comp["npcGallery"]["npcs"][0]
+        assert npc["imagePath"] is None
+
+    @pytest.mark.asyncio
+    async def test_npc_gallery_speakers_list(self) -> None:
+        """Speakers must list NPC names that have dialogues."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Two NPCs speak.",
+            npc_intents=[
+                NpcIntent(npc_name="Silent", intended_action="wait", adopted=True),
+            ],
+            npc_dialogues=[
+                NpcDialogue(npc_name="Hero", dialogue="Let's go!"),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-npcs")
+        speakers = comp["npcGallery"]["speakers"]
+        # Only "Hero" has a dialogue; "Silent" has only an intent
+        assert speakers == ["Hero"]
+
+    # ------------------------------------------------------------------
+    # narrativePanel component
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_narrative_panel_component_type_name(self) -> None:
+        """game-narration surface must use 'narrativePanel' component."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The wind howls.",
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-narration")
+        assert "narrativePanel" in comp
+
+    @pytest.mark.asyncio
+    async def test_narrative_panel_sections_structure(self) -> None:
+        """sections[*] must have type, text; dialogue sections also have speaker."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Rain falls.",
+            npc_dialogues=[
+                NpcDialogue(npc_name="Witch", dialogue="Beware the storm."),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-narration")
+        sections = comp["narrativePanel"]["sections"]
+        assert len(sections) == 2
+
+        dialogue_section = sections[0]
+        assert dialogue_section["type"] == "dialogue"
+        assert dialogue_section["speaker"] == "Witch"
+        assert dialogue_section["text"] == "Beware the storm."
+
+        narration_section = sections[1]
+        assert narration_section["type"] == "narration"
+        assert narration_section["text"] == "Rain falls."
+        # narration sections must NOT have a speaker key
+        assert "speaker" not in narration_section
+
+    @pytest.mark.asyncio
+    async def test_narrative_panel_narration_only(self) -> None:
+        """Narration-only decision should produce a single narration section."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="You enter the dungeon.",
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-narration")
+        sections = comp["narrativePanel"]["sections"]
+        assert len(sections) == 1
+        assert sections[0] == {"type": "narration", "text": "You enter the dungeon."}
+
+    # ------------------------------------------------------------------
+    # choiceGroup component
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_choice_group_component_type_name(self) -> None:
+        """game-surface for choice decisions must use 'choiceGroup' component."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="Choose your path.",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="What do you do?",
+                    choices=[
+                        ChoiceOption(id="a", text="Fight"),
+                        ChoiceOption(id="b", text="Flee"),
+                    ],
+                ),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert "choiceGroup" in comp
+
+    @pytest.mark.asyncio
+    async def test_choice_group_choices_fields(self) -> None:
+        """choices[*] must have id, text, hint (from ChoiceOption.model_dump())."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="The merchant waits.",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="Pick one.",
+                    choices=[
+                        ChoiceOption(id="buy", text="Buy the sword", hint="costs 50g"),
+                        ChoiceOption(id="leave", text="Leave"),
+                    ],
+                ),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        props = comp["choiceGroup"]
+        choices = props["choices"]
+        assert len(choices) == 2
+
+        c0 = choices[0]
+        assert c0["id"] == "buy"
+        assert c0["text"] == "Buy the sword"
+        assert c0["hint"] == "costs 50g"
+
+        c1 = choices[1]
+        assert c1["id"] == "leave"
+        assert c1["text"] == "Leave"
+        # hint is None when not set (from model_dump())
+        assert c1["hint"] is None
+
+    @pytest.mark.asyncio
+    async def test_choice_group_allow_free_input_true(self) -> None:
+        """ChoiceGroup must always include allowFreeInput=True.
+
+        The Dart catalog reads: data['allowFreeInput']
+        """
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="What next?",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="Choose.",
+                    choices=[ChoiceOption(id="x", text="Do X")],
+                ),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        props = comp["choiceGroup"]
+        assert "allowFreeInput" in props
+        assert props["allowFreeInput"] is True
+
+    @pytest.mark.asyncio
+    async def test_choice_group_node_not_last_still_emits(self) -> None:
+        """ChoiceGroup must be emitted even when choice node is not the last node."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="Battle begins.",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="What do you do?",
+                    choices=[
+                        ChoiceOption(id="atk", text="Attack"),
+                        ChoiceOption(id="def", text="Defend"),
+                    ],
+                ),
+                # narration node AFTER choice node
+                SceneNode(type="narration", text="The enemy approaches."),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert "choiceGroup" in comp
+        assert len(comp["choiceGroup"]["choices"]) == 2
+
+    # ------------------------------------------------------------------
+    # clarifyQuestion component
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_clarify_question_component_type_name(self) -> None:
+        """game-surface for clarify decisions must use 'clarifyQuestion'."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="clarify",
+            narration_text="",
+            clarify_question="Do you mean the red door or the blue door?",
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert "clarifyQuestion" in comp
+
+    @pytest.mark.asyncio
+    async def test_clarify_question_property_key(self) -> None:
+        """ClarifyQuestion must have 'question' key — NOT 'clarify_question'.
+
+        The Dart catalog reads: data['question']
+        """
+        svc = GenuiBridgeService()
+        question_text = "Do you mean the red door or the blue door?"
+        decision = GmDecisionResponse(
+            decision_type="clarify",
+            narration_text="",
+            clarify_question=question_text,
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        props = comp["clarifyQuestion"]
+        assert "question" in props, f"Expected 'question' key, got {list(props)}"
+        assert "clarify_question" not in props
+        assert props["question"] == question_text
+
+    # ------------------------------------------------------------------
+    # repairConfirm component
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_repair_confirm_component_type_name(self) -> None:
+        """game-surface for repair decisions must use 'repairConfirm'."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="repair",
+            narration_text="",
+            repair=RepairData(
+                contradiction="You said you don't have the key.",
+                proposed_fix="Use the lockpick instead.",
+            ),
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert "repairConfirm" in comp
+
+    @pytest.mark.asyncio
+    async def test_repair_confirm_proposed_fix_snake_case(self) -> None:
+        """RepairConfirm must use 'proposed_fix' (snake_case) — NOT 'proposedFix'.
+
+        Pydantic model_dump() emits snake_case field names.
+        The Dart catalog reads: data['proposed_fix']
+        """
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="repair",
+            narration_text="",
+            repair=RepairData(
+                contradiction="You lack the key.",
+                proposed_fix="Use brute force.",
+            ),
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        props = comp["repairConfirm"]
+        # Must be snake_case (Pydantic model_dump default)
+        assert "proposed_fix" in props, (
+            f"Expected 'proposed_fix' key (snake_case), got {list(props)}"
+        )
+        assert "proposedFix" not in props, (
+            "'proposedFix' (camelCase) must NOT appear — Dart reads 'proposed_fix'"
+        )
+        assert props["proposed_fix"] == "Use brute force."
+        assert props["contradiction"] == "You lack the key."
+
+    # ------------------------------------------------------------------
+    # continueButton component
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_continue_button_component_type_name(self) -> None:
+        """game-surface for narrate decisions must use 'continueButton'."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="You rest for the night.",
+        )
+        raw = [
+            event
+            async for event in svc.stream_decision(
+                decision,
+                show_continue_button=True,
+                show_continue_input_cta=False,
+            )
+        ]
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert "continueButton" in comp
+
+    @pytest.mark.asyncio
+    async def test_continue_button_empty_properties(self) -> None:
+        """ContinueButton must have empty properties dict {}."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Journey continues.",
+        )
+        raw = [
+            event
+            async for event in svc.stream_decision(
+                decision,
+                show_continue_button=True,
+                show_continue_input_cta=False,
+            )
+        ]
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert comp["continueButton"] == {}
+
+    # ------------------------------------------------------------------
+    # continueOrInput component
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_continue_or_input_component_type_name(self) -> None:
+        """ContinueOrInput surface must use 'continueOrInput' component."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="What will you do next?",
+        )
+        raw = [
+            event
+            async for event in svc.stream_decision(
+                decision,
+                show_continue_button=True,
+                show_continue_input_cta=True,
+            )
+        ]
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert "continueOrInput" in comp
+
+    @pytest.mark.asyncio
+    async def test_continue_or_input_empty_properties(self) -> None:
+        """ContinueOrInput must have empty properties dict {}."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Your turn.",
+        )
+        raw = [
+            event
+            async for event in svc.stream_decision(
+                decision,
+                show_continue_button=True,
+                show_continue_input_cta=True,
+            )
+        ]
+        events = _parse_raw_events(raw)
+        comp = _extract_surface_component(events, "game-surface")
+        assert comp["continueOrInput"] == {}
+
+    # ------------------------------------------------------------------
+    # Stream event sequence
+    # ------------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_stream_event_sequence_nodes_path(self) -> None:
+        """Event order for node-based (narrate) decision must match protocol.
+
+        Expected sequence:
+          delete(game-narration), delete(game-surface),
+          nodesReady,
+          stateUpdate (if any),
+          surfaceUpdate(game-npcs), beginRendering(game-npcs),
+          surfaceUpdate(game-narration), beginRendering(game-narration),
+          [surfaceUpdate(game-surface), beginRendering(game-surface),] (optional)
+          done
+        """
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The world is vast.",
+            nodes=[SceneNode(type="narration", text="You stand at a crossroads.")],
+        )
+        raw = [
+            event
+            async for event in svc.stream_decision(
+                decision,
+                show_continue_button=False,
+            )
+        ]
+        events = _parse_raw_events(raw)
+
+        labels = [_classify_event(e) for e in events]
+        # delete x2 must come first
+        assert labels[0] == "delete"
+        assert labels[1] == "delete"
+        assert events[0]["deleteSurface"]["surfaceId"] == "game-narration"
+        assert events[1]["deleteSurface"]["surfaceId"] == "game-surface"
+        # nodesReady follows immediately after deletes
+        assert labels[2] == "nodesReady"
+        # done must be last
+        assert labels[-1] == "done"
+        # game-npcs surface must appear before game-narration surface
+        npcs_idx = next(
+            i
+            for i, e in enumerate(events)
+            if e.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
+        )
+        narration_idx = next(
+            i
+            for i, e in enumerate(events)
+            if e.get("surfaceUpdate", {}).get("surfaceId") == "game-narration"
+        )
+        assert npcs_idx < narration_idx
+
+    @pytest.mark.asyncio
+    async def test_stream_event_sequence_choice_path(self) -> None:
+        """Event order for choice decision includes game-surface after narration."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="Pick one.",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="Choose.",
+                    choices=[ChoiceOption(id="a", text="A")],
+                ),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+
+        surface_updates = [
+            e["surfaceUpdate"]["surfaceId"] for e in events if "surfaceUpdate" in e
+        ]
+        # Must have all three surface updates in correct order
+        assert surface_updates.index("game-npcs") < surface_updates.index(
+            "game-narration"
+        )
+        assert surface_updates.index("game-narration") < surface_updates.index(
+            "game-surface"
+        )
+        # done is last event
+        assert events[-1] == {"type": "done"}
+
+    @pytest.mark.asyncio
+    async def test_stream_nodes_ready_payload(self) -> None:
+        """NodesReady event must contain type='nodesReady' and nodes list."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Summary.",
+            nodes=[
+                SceneNode(type="narration", text="Scene 1."),
+                SceneNode(type="dialogue", text="Hello!", speaker="Npc"),
+            ],
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+        nodes_ready = next((e for e in events if e.get("type") == "nodesReady"), None)
+        assert nodes_ready is not None
+        assert "nodes" in nodes_ready
+        assert len(nodes_ready["nodes"]) == 2
+        assert nodes_ready["nodes"][0]["type"] == "narration"
+        assert nodes_ready["nodes"][1]["type"] == "dialogue"
+
+    @pytest.mark.asyncio
+    async def test_begin_rendering_follows_surface_update(self) -> None:
+        """BeginRendering for each surface must immediately follow its surfaceUpdate."""
+        svc = GenuiBridgeService()
+        decision = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Test.",
+        )
+        raw = await _collect_stream(svc, decision)
+        events = _parse_raw_events(raw)
+
+        for i, event in enumerate(events):
+            if "surfaceUpdate" in event:
+                surface_id = event["surfaceUpdate"]["surfaceId"]
+                # Next event must be beginRendering for the same surfaceId
+                assert i + 1 < len(events), (
+                    f"surfaceUpdate({surface_id}) has no following event"
+                )
+                next_event = events[i + 1]
+                assert "beginRendering" in next_event, (
+                    f"Expected beginRendering after surfaceUpdate({surface_id}), "
+                    f"got {next_event}"
+                )
+                assert next_event["beginRendering"]["surfaceId"] == surface_id

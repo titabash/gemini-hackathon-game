@@ -236,14 +236,27 @@ class GenuiBridgeService:
     ) -> dict[str, Any] | None:
         """Build surface component type and properties for A2UI."""
         dt = decision.decision_type
-        if dt == "choice" and decision.choices:
-            return {
-                "type": "choiceGroup",
-                "properties": {
-                    "choices": [c.model_dump() for c in decision.choices],
-                    "allowFreeInput": True,
-                },
-            }
+        if dt == "choice" and decision.nodes:
+            choice_node = next(
+                (
+                    n
+                    for n in reversed(decision.nodes)
+                    if n.type == "choice" and n.choices
+                ),
+                None,
+            )
+            if choice_node:
+                return {
+                    "type": "choiceGroup",
+                    "properties": {
+                        "choices": [c.model_dump() for c in choice_node.choices],
+                        "allowFreeInput": True,
+                    },
+                }
+            logger.warning(
+                "decision_type=choice but no choice node found in nodes",
+                node_types=[n.type for n in decision.nodes],
+            )
         if dt == "clarify" and decision.clarify_question:
             return {
                 "type": "clarifyQuestion",

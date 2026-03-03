@@ -412,30 +412,46 @@ class TrpgSessionNotifier {
   /// Restore choice surface from turn output if applicable.
   void _restoreChoiceSurface(Map<String, dynamic> output) {
     final decisionType = output['decision_type'] as String?;
-    final choices = output['choices'] as List<dynamic>?;
-    if (decisionType == 'choice' && choices != null && choices.isNotEmpty) {
-      final proc = _ref.read(gameProcessorProvider);
-      proc.handleMessage(
-        A2uiMessage.fromJson({
-          'surfaceUpdate': {
-            'surfaceId': 'game-surface',
-            'components': [
-              {
-                'id': 'root',
-                'component': {
-                  'choiceGroup': {'choices': choices, 'allowFreeInput': true},
-                },
-              },
-            ],
-          },
-        }),
-      );
-      proc.handleMessage(
-        A2uiMessage.fromJson({
-          'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'},
-        }),
-      );
+    if (decisionType != 'choice') return;
+    // Choices are stored in nodes[-1].choices (node-based architecture).
+    final rawNodes = output['nodes'] as List<dynamic>?;
+    final lastNode = rawNodes?.isNotEmpty == true
+        ? rawNodes!.last as Map<String, dynamic>?
+        : null;
+    final choices = lastNode?['type'] == 'choice'
+        ? lastNode!['choices'] as List<dynamic>?
+        : null;
+    if (choices != null && choices.isNotEmpty) {
+      _ensureChoiceSurface(choices.cast<Map<String, dynamic>>());
     }
+  }
+
+  /// Builds a choiceGroup surface on game-surface using the provided choices.
+  /// Used as a fallback when the A2UI event was not received (restore scenarios).
+  void _ensureChoiceSurface(List<Map<String, dynamic>> choices) {
+    if (choices.isEmpty) return;
+    final proc = _ref.read(gameProcessorProvider);
+    proc.handleMessage(
+      A2uiMessage.fromJson({
+        'surfaceUpdate': {
+          'surfaceId': 'game-surface',
+          'components': [
+            {
+              'id': 'root',
+              'component': {
+                'choiceGroup': {'choices': choices, 'allowFreeInput': true},
+              },
+            },
+          ],
+        },
+      }),
+    );
+    proc.handleMessage(
+      A2uiMessage.fromJson({
+        'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'},
+      }),
+    );
+    _hasSurface = true;
   }
 
   Future<void> _restoreBgmFromLastTurn(
@@ -605,8 +621,11 @@ class TrpgSessionNotifier {
     required bool isProcessing,
     required bool hasSurface,
   }) {
-    if (isProcessing) return NovelDisplayMode.processing;
+    // hasSurface=true は isProcessing より優先する。
+    // choiceGroupなど表示すべきsurfaceが既に準備されている場合、
+    // バックエンドの処理状態に関わらず即座にsurfaceを表示すべき。
     if (hasSurface) return NovelDisplayMode.surface;
+    if (isProcessing) return NovelDisplayMode.processing;
     return NovelDisplayMode.input;
   }
 
@@ -617,6 +636,15 @@ class TrpgSessionNotifier {
       return;
     }
     if (_willAutoContinue) {
+      if (_hasSurface) {
+        // choiceGroupなど表示すべきsurfaceがある場合、auto-continueより優先してsurfaceを表示
+        Logger.debug(
+          'onPagingComplete: willAutoContinue but hasSurface, showing surface',
+        );
+        _bufferIncomingTurnEvents = false;
+        _displayModeNotifier.value = NovelDisplayMode.surface;
+        return;
+      }
       Logger.debug('onPagingComplete: willAutoContinue, showing processing');
       _bufferIncomingTurnEvents = false;
       _displayModeNotifier.value = NovelDisplayMode.processing;
@@ -651,6 +679,18 @@ class TrpgSessionNotifier {
       if (advanced) {
         _applyNodeVisualState(nodePlayer.currentNode.value);
         _saveCurrentNodeIndex(nodePlayer.currentIndex);
+        // choiceノードに達した時点で自動的にページング完了（surfaceに切り替え）
+        if (nodePlayer.currentNode.value?.type == 'choice') {
+          // _hasSurface が false の場合（復旧シナリオやA2UI未受信時）、
+          // choiceノードのデータから直接サーフェスを構築する
+          if (!_hasSurface) {
+            final choices = nodePlayer.currentNode.value!.choices;
+            if (choices != null && choices.isNotEmpty) {
+              _ensureChoiceSurface(choices);
+            }
+          }
+          onPagingComplete();
+        }
       } else {
         onPagingComplete();
       }

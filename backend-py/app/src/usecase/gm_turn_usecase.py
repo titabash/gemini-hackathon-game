@@ -193,6 +193,10 @@ class GmTurnUseCase:
                     session_id,
                     context,
                     decision,
+                    is_player_action=_is_player_action(
+                        current_input_type,
+                        current_input_text,
+                    ),
                 )
 
                 # Persist turn
@@ -539,10 +543,15 @@ class GmTurnUseCase:
         session_id: uuid.UUID,
         context: GameContext,
         decision: GmDecisionResponse,
+        *,
+        is_player_action: bool,
     ) -> bool:
         """Apply mutations, log session end, and evaluate conditions."""
         if decision.state_changes:
-            self.mutation_svc.apply(db, session_id, decision.state_changes)
+            changes = decision.state_changes
+            if not is_player_action:
+                changes = _filter_for_player_action(changes)
+            self.mutation_svc.apply(db, session_id, changes)
         llm_ended = _has_session_end(decision.state_changes)
         if llm_ended:
             _log_session_end(session_id, decision.state_changes)
@@ -1445,6 +1454,35 @@ def _build_stop_reason(
     if requires_user_action:
         return "requires_user_action"
     return "completed"
+
+
+_PLAYER_ACTION_INPUT_TYPES: frozenset[str] = frozenset(
+    {"say", "choice", "clarify_answer"},
+)
+
+
+def _is_player_action(input_type: str, input_text: str) -> bool:
+    """Return True if this turn was triggered by a genuine player decision.
+
+    Auto-advance continuation turns (input_type="do", input_text="continue")
+    and game-start turns (input_type="start") are NOT player actions.
+    Parameter changes (stats, NPC relationships, etc.) must only apply
+    on genuine player actions to prevent unfair hidden state mutations.
+    """
+    if input_type in _PLAYER_ACTION_INPUT_TYPES:
+        return True
+    return input_type == "do" and input_text != "continue"
+
+
+def _filter_for_player_action(changes: StateChanges) -> StateChanges:
+    """Strip all parameter mutations from state_changes for non-player turns.
+
+    Only session_end is preserved so that story-driven endings still work.
+    All other fields (stats, relationships, items, flags, etc.) are cleared.
+    """
+    return changes.model_copy(
+        update={k: None for k in StateChanges.model_fields if k != "session_end"},
+    )
 
 
 def _env_bool(name: str, *, default: bool) -> bool:

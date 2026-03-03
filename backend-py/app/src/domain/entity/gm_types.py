@@ -206,7 +206,6 @@ class GmDecisionResponse(BaseModel):
     bgm_mood: str | None = None
     bgm_music_prompt: str | None = None
 
-    choices: list[ChoiceOption] | None = None
     clarify_question: str | None = None
     repair: RepairData | None = None
 

@@ -11,12 +11,13 @@ void main() {
       expect(result, NovelDisplayMode.processing);
     });
 
-    test('returns processing when isProcessing=true and hasSurface=true', () {
+    test('returns surface when isProcessing=true and hasSurface=true', () {
+      // hasSurface=true は isProcessing より優先される（choiceGroupなど表示すべきsurfaceがある場合）
       final result = TrpgSessionNotifier.resolvePostPagingMode(
         isProcessing: true,
         hasSurface: true,
       );
-      expect(result, NovelDisplayMode.processing);
+      expect(result, NovelDisplayMode.surface);
     });
 
     test('returns surface when isProcessing=false and hasSurface=true', () {
