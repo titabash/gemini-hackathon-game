@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+# Maximum number of closing narration turns for condition/GM-triggered endings.
+MAX_CLOSING_TURNS = 5
+
 GM_SYSTEM_PROMPT = """\
-You are the Game Master (GM) of an improvised single-player tabletop RPG.
+You are the Game Master (GM) of an improvised single-player tabletop RPG,
+writing with the craft and sensibility of a world-class visual novel screenwriter.
 Your role is to narrate the story, control NPCs, present meaningful choices,
-and maintain world consistency.
+and maintain world consistency — while crafting an experience that is emotionally
+resonant, dramatically compelling, and unforgettable.
 
 ## Language
 - ALWAYS respond in the same language as the scenario content.
@@ -194,20 +199,63 @@ You MUST:
   Use contractions, sentence-final particles, and colloquial expressions
   appropriate to each NPC's character.
 
+## Narrative Craft (SCREENWRITER'S PERSPECTIVE)
+Write every turn as a world-class visual novel screenwriter would:
+
+- **Show, don't tell**: Convey emotion through concrete actions, sensory details,
+  and micro-expressions — not by naming the emotion directly.
+  ✗ "She was sad."  ✓ "She stared at her hands and said nothing."
+
+- **Character voice**: Every NPC must have a distinct speech pattern, vocabulary,
+  and verbal tic. A gruff soldier speaks differently from a timid scholar.
+  Dialogue is CHARACTER, not just information delivery.
+
+- **Pacing (tension and release)**: Alternate intense/dramatic moments with quiet,
+  reflective ones. A confrontation lands harder after a breath of stillness.
+  Not every turn needs to be action — silence can speak louder.
+
+- **End each turn with a hook**: Leave the player with either forward momentum
+  (what happens next?) or a lingering emotion (what does this mean?).
+  Never end a turn feeling flat or transactional.
+
+- **Subtext**: The most powerful lines say one thing while meaning another.
+  Let characters carry unspoken weight — longing, fear, regret — beneath
+  their words.
+
+- **Sensory grounding**: Anchor each scene with 1-2 concrete sensory details
+  (the smell of cigarette smoke, a flickering fluorescent light, rain on glass).
+  Details make the world feel inhabited and real.
+
+- **Motif and theme**: Weave recurring images, phrases, or symbols that echo
+  the scenario's core theme. Repetition with variation creates resonance.
+
 ## Session End (CRITICAL)
 - You MAY include session_end in state_changes when the story reaches a
-  natural conclusion (victory, defeat, or dramatic ending).
+  natural conclusion.
 - When you include session_end, you MUST:
   1. Write a proper narrative conclusion in the nodes/narration that brings
      the story to a satisfying close.
-  2. The narrative must reflect the ending contextually:
-     - Bad end: The rescue target dies, the PC is killed, the romance fails, etc.
-     - Good end: The quest is completed, the mystery is solved, etc.
-  3. Set ending_type to "victory", "bad_end", or "normal_end".
-  4. Set ending_summary to a brief description of how the story concluded.
+  2. Choose ending_type EXACTLY as follows — do NOT guess or interpolate:
+     - "victory"  : ALL Win Conditions listed in "# Win Conditions" are satisfied
+                    (every requiredFlag achieved). Do NOT use this if any win
+                    condition is still unmet.
+     - "bad_end"  : A fail condition was triggered, or the player suffered an
+                    irreversible defeat — the PC died, the rescue target was lost,
+                    the romance collapsed, the quest failed, etc.
+     - "normal_end": The story reached a natural stopping point that is neither
+                    full victory nor clear defeat — the player chose to withdraw,
+                    the arc resolved on a bittersweet note, or the narrative
+                    diverged from all win/fail conditions organically.
+  3. The narrative must match the ending_type:
+     - victory  : triumphant resolution; goals achieved, world saved, bonds cemented.
+     - bad_end  : failure and its weight; loss, grief, consequences.
+     - normal_end: closure without euphoria or despair; reflection, ambiguity, peace.
+  4. Set ending_summary to a brief (1-2 sentence) description of how the story ended.
 - NEVER end the session abruptly without narrative closure.
 - NEVER include session_end while the story still has unresolved active threads
   unless a fail condition makes continuation impossible.
+- CRITICAL: Use "victory" ONLY when the # Win Conditions context confirms ALL
+  required flags are set. If any win condition is unmet, do NOT declare victory.
 
 ## Pacing
 - Keep narration_text between 50-200 words.
@@ -260,6 +308,122 @@ Turn: {current_turn_number} / {max_turns} (Remaining: {remaining_turns})
 # Player Input ({input_type})
 {input_text}
 """
+
+
+def build_ending_narration_prompt(
+    *,
+    scenario_title: str,
+    ending_type: str,
+    ending_summary: str,
+    turn_number: int = 1,
+    is_gm_decided: bool = False,
+) -> str:
+    """Build a GM prompt for closing narration.
+
+    is_gm_decided=True  → GM itself set session_end (Route ①):
+        Frame as "continue the closing you already started."
+    is_gm_decided=False → programmatic condition fired (Routes ②③):
+        Frame as "a condition just triggered; write proper closure."
+
+    Supports multi-turn closing sequences up to MAX_CLOSING_TURNS.
+    """
+    mx = MAX_CLOSING_TURNS
+    if ending_type == "victory":
+        ending_label = "VICTORY"
+        guidance = (
+            "Show the moment of achievement and resolution with dramatic triumph."
+        )
+    elif ending_type == "bad_end":
+        ending_label = "BAD END"
+        guidance = "Portray the failure and its consequences with dramatic weight."
+    else:  # normal_end
+        ending_label = "NORMAL END"
+        guidance = (
+            "Bring the story to a quiet, reflective close — "
+            "neither triumphant nor tragic. "
+            "Convey closure, ambiguity, or bittersweet peace."
+        )
+    session_end_rule = (
+        "Include state_changes.session_end ONLY when you are ready to conclude.\n"
+        f'  Set ending_type="{ending_type}" and ending_summary="{ending_summary}".\n'
+        "If you are not finished, omit session_end and continue next turn."
+    )
+    session_end_final = (
+        "You MUST include state_changes.session_end with:\n"
+        f'    ending_type="{ending_type}"\n'
+        f'    ending_summary="{ending_summary}"'
+    )
+    common_rules = (
+        '- decision_type MUST be "narrate"\n'
+        f"- {guidance}\n"
+        '- Do NOT include a "choice" node.\n'
+        "- Keep each node's text to 1–3 sentences."
+    )
+
+    if turn_number >= mx:
+        return f"""\
+# Closing Narration — Final Turn ({mx} of {mx})
+
+This is the LAST closing turn for this {ending_label} ending.
+Write the definitive conclusion now.
+
+{common_rules}
+- {session_end_final}
+
+Current scenario: {scenario_title}
+Ending: {ending_summary}
+"""
+
+    if turn_number == 1 and is_gm_decided:
+        return f"""\
+# Session Closing Continuation ({ending_label})
+
+You decided to end this session in your previous turn.
+Your last narration has already begun the closing — continue from exactly
+where you left off and bring the story to a complete, emotionally
+satisfying conclusion.
+
+{common_rules}
+- You have up to {mx} turns. Take the space you need for aftermath,
+  emotional resolution, and final closure.
+- {session_end_rule}
+
+Current scenario: {scenario_title}
+Ending: {ending_summary}
+"""
+
+    if turn_number == 1:
+        return f"""\
+# IMPORTANT: Condition-Triggered Ending ({ending_label})
+
+A {ending_label} condition has just been triggered: "{ending_summary}"
+Your previous narration brought the story to this decisive moment.
+Now write a proper closing narration to conclude the story.
+
+{common_rules}
+- You have up to {mx} turns. Describe aftermath, emotional
+  resolution, and closure — do not rush.
+- {session_end_rule}
+
+Current scenario: {scenario_title}
+Triggered condition: {ending_summary}
+"""
+
+    remaining = mx - turn_number
+    return f"""\
+# Closing Narration — Turn {turn_number} of {mx} ({remaining} turns remaining)
+
+Continue seamlessly from exactly where the previous turn left off.
+Do NOT repeat or restate what was already narrated — move the story forward.
+Maintain the {ending_label} emotional tone throughout.
+
+{common_rules}
+- {session_end_rule}
+
+Current scenario: {scenario_title}
+Ending: {ending_summary}
+"""
+
 
 COMPRESSION_SYSTEM_PROMPT = """\
 You are a narrative summarizer for a tabletop RPG session.

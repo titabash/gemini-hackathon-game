@@ -114,7 +114,7 @@ class AdkGmClient:
     """
 
     _APP_NAME = "gm"
-    MODEL = "gemini-3-flash-preview"
+    MODEL = "gemini-3.1-flash-lite-preview"
 
     def __init__(self, memory_service: GameMemoryService) -> None:
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")

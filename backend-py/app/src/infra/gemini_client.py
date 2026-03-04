@@ -65,7 +65,7 @@ class GeminiClient:
         contents: str,
         system_instruction: str,
         response_type: type[T],
-        model: str = "gemini-3-flash-preview",
+        model: str = "gemini-3.1-flash-lite-preview",
         temperature: float = 0.8,
     ) -> T:
         """構造化出力でPydanticモデルを返す."""
@@ -83,7 +83,7 @@ class GeminiClient:
         contents: str,
         system_instruction: str,
         response_type: type[T],
-        model: str = "gemini-3-flash-preview",
+        model: str = "gemini-3.1-flash-lite-preview",
         temperature: float = 0.8,
         *,
         previous_interaction_id: str | None = None,
@@ -132,7 +132,7 @@ class GeminiClient:
                 temperature=temperature,
                 cached_content=cached_content_name,
                 thinking_config=types.ThinkingConfig(
-                    thinking_budget=-1,
+                    thinking_level="MINIMAL",
                 ),
             ),
         )
