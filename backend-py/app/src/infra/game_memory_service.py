@@ -1,19 +1,22 @@
-"""Context compression service for GM narrative memory.
+"""PostgreSQL-backed ADK MemoryService for GM narrative memory.
 
-context_summary テーブルを長期記憶のストアとして使用し、
-一定ターン数ごとに Gemini で会話履歴を圧縮・要約する。
+BaseMemoryService を継承し、context_summary テーブルを長期記憶のストアとして使用する。
+user_id = ゲームセッション UUID (str) でメモリをスコープする。
 
-BaseMemoryService 継承を廃止した理由:
-- BaseMemoryService は search_memory / add_session_to_memory を持つ
-  メモリ検索インターフェース (PreloadMemoryTool 経由でプロンプトに注入) であり、
-  圧縮トリガーとして使用するのは設計上の誤用だった。
-- Runner(memory_service=...) が PreloadMemoryTool を自動注入し、
-  GmContextService が構築したプロンプトに <PAST_CONVERSATIONS> が二重注入される。
-- add_events_to_memory(events=[]) という空リスト呼び出しも ADK 仕様に反する。
+設計:
+- search_memory(): context_summary を MemoryEntry で返す。
+  PreloadMemoryTool が毎ターン呼び出し、<PAST_CONVERSATIONS> として
+  システム指示に自動注入するため、CONTEXT_TEMPLATE に plot_essentials /
+  short_term_summary / confirmed_facts のセクションは含めない。
+- add_session_to_memory(): セッション終了時に強制圧縮を実行。
+  Runner は自動呼び出しをしないため AdkGmClient.cleanup_session() から呼ぶ。
+- trigger_compression_if_due(): 毎ターン後に呼び出し、閾値到達時のみ圧縮。
+  BaseMemoryService 標準メソッドにはない ADK 拡張メソッド。
+- add_events_to_memory() は利用しない。イベントデルタではなく DB 集計で
+  圧縮タイミングを判断するため、基底クラスの NotImplementedError をそのまま使う。
 
-代わりに純粋なサービスクラスとして以下を提供する:
-- trigger_compression_if_due: ターン数閾値に達した場合に圧縮を実行
-- flush: セッション終了時に強制圧縮を実行 (best effort)
+将来 VertexAiMemoryBankService への差し替えは Runner(memory_service=...) の
+1行変更で対応可能。
 """
 
 from __future__ import annotations
@@ -22,6 +25,10 @@ import json
 import uuid
 from typing import TYPE_CHECKING
 
+from google.adk.memory import BaseMemoryService
+from google.adk.memory.base_memory_service import SearchMemoryResponse
+from google.adk.memory.memory_entry import MemoryEntry
+from google.genai import types as genai_types
 from pydantic import BaseModel
 from sqlmodel import Session as SQLModelSession
 
@@ -52,15 +59,19 @@ class _CompressionResult(BaseModel):
     confirmed_facts: dict[str, object]
 
 
-class GameMemoryService:
-    """Context compression service for GM narrative memory.
+class GameMemoryService(BaseMemoryService):
+    """PostgreSQL-backed MemoryService using context_summary table.
 
-    context_summary テーブルを長期記憶ストアとして使用し、
-    一定ターン数ごとに Gemini で会話履歴を圧縮・要約する。
+    user_id = ゲームセッション UUID (str) でスコープ。
+    ADK の BaseMemoryService を継承することで:
+    - Runner(memory_service=...) に渡せる → PreloadMemoryTool が自動注入
+    - VertexAiMemoryBankService への差し替えが容易
+    - ADK の設計パターンに準拠
 
-    ADK BaseMemoryService を継承しないため:
-    - Runner に memory_service として渡さない → PreloadMemoryTool 二重注入なし
-    - trigger_compression_if_due / flush を AdkGmClient から直接呼び出す
+    PreloadMemoryTool は毎 LLM 呼び出し前に search_memory() を実行し、
+    結果を <PAST_CONVERSATIONS> としてシステム指示に注入する。
+    よって CONTEXT_TEMPLATE 側に plot_essentials / short_term_summary /
+    confirmed_facts を含めないことで二重注入を防ぐ。
     """
 
     def __init__(self, gemini: GeminiClient) -> None:
@@ -68,26 +79,69 @@ class GameMemoryService:
         self._context_gw = ContextSummaryGateway()
         self._turn_gw = TurnGateway()
 
+    async def add_session_to_memory(self, session: object) -> None:
+        """Force compression when a session ends.
+
+        Runner は自動呼び出しをしないため AdkGmClient.cleanup_session() から
+        手動で呼び出す。session.user_id をゲームセッション ID として使用する。
+        """
+        user_id = getattr(session, "user_id", None)
+        if not user_id:
+            return
+        try:
+            session_uuid = uuid.UUID(str(user_id))
+        except ValueError:
+            logger.warning("Invalid user_id for memory", user_id=user_id)
+            return
+        await self._fetch_and_run_compression(session_uuid)
+
+    async def search_memory(
+        self,
+        *,
+        app_name: str,
+        user_id: str,
+        query: str,
+    ) -> SearchMemoryResponse:
+        """Return context_summary as MemoryEntry for PreloadMemoryTool injection.
+
+        query は無視する。ゲームセッションの文脈は常に全体を返すため
+        セマンティック検索は不要。
+        """
+        try:
+            session_uuid = uuid.UUID(user_id)
+        except ValueError:
+            return SearchMemoryResponse()
+
+        with SQLModelSession(engine) as db:
+            ctx = self._context_gw.get_by_session(db, session_uuid)
+
+        if ctx is None:
+            return SearchMemoryResponse()
+
+        memory_text = _format_context_summary(ctx)
+        return SearchMemoryResponse(
+            memories=[
+                MemoryEntry(
+                    content=genai_types.Content(
+                        parts=[genai_types.Part(text=memory_text)],
+                        role="user",
+                    ),
+                )
+            ]
+        )
+
     async def trigger_compression_if_due(self, game_session_id: str) -> None:
-        """Compress context if the compression interval has been reached."""
+        """Compress context if the compression interval has been reached.
+
+        毎ターン後に AdkGmClient.decide() から呼び出す。
+        閾値未満の場合はノーオペレーション。
+        """
         try:
             session_uuid = uuid.UUID(game_session_id)
         except ValueError:
             logger.warning("Invalid game_session_id", game_session_id=game_session_id)
             return
         await self._compress_if_due(session_uuid)
-
-    async def flush(self, game_session_id: str) -> None:
-        """Force context compression at session end (best effort)."""
-        try:
-            session_uuid = uuid.UUID(game_session_id)
-        except ValueError:
-            logger.warning(
-                "Invalid game_session_id for flush",
-                game_session_id=game_session_id,
-            )
-            return
-        await self._fetch_and_run_compression(session_uuid)
 
     async def _compress_if_due(self, game_session_id: uuid.UUID) -> None:
         """Skip compression if the interval threshold has not been reached.
@@ -111,7 +165,10 @@ class GameMemoryService:
         )
 
     async def _fetch_and_run_compression(self, game_session_id: uuid.UUID) -> None:
-        """Fetch DB data once and run compression unconditionally (for flush)."""
+        """Fetch DB data once and run compression unconditionally.
+
+        add_session_to_memory() からセッション終了時に呼び出す。
+        """
         with SQLModelSession(engine) as db:
             ctx = self._context_gw.get_by_session(db, game_session_id)
             turns = self._turn_gw.get_recent(db, game_session_id, limit=10)
@@ -190,3 +247,21 @@ class GameMemoryService:
             session_id=str(game_session_id),
             turn=current_turn,
         )
+
+
+def _format_context_summary(ctx: object) -> str:
+    """Format context_summary fields for PreloadMemoryTool injection.
+
+    セクションヘッダーを維持することで GM_SYSTEM_PROMPT との整合性を保つ。
+    """
+    lines: list[str] = []
+    plot = getattr(ctx, "plot_essentials", {})
+    if plot:
+        lines.append(f"# Plot Essentials\n{json.dumps(plot, ensure_ascii=False)}")
+    summary = getattr(ctx, "short_term_summary", "")
+    if summary:
+        lines.append(f"# Story So Far\n{summary}")
+    facts = getattr(ctx, "confirmed_facts", {})
+    if facts:
+        lines.append(f"# Confirmed Facts\n{json.dumps(facts, ensure_ascii=False)}")
+    return "\n\n".join(lines)

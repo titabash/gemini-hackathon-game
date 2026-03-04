@@ -94,9 +94,12 @@ class AdkGmClient:
     DatabaseSessionService により ADK セッション履歴は PostgreSQL の
     adk スキーマに永続化される (public スキーマとは完全に分離)。
 
-    memory_service を Runner に渡すことで、各ターン後にコンテキスト圧縮が
-    トリガーされる。user_id には game_session_id (UUID 文字列) を使用し、
-    メモリスコープをゲームセッション単位に限定する。
+    memory_service を Runner に渡すことで PreloadMemoryTool が自動注入され、
+    毎 LLM 呼び出し前に search_memory() が実行されて <PAST_CONVERSATIONS> として
+    コンテキストが注入される。二重注入を防ぐため CONTEXT_TEMPLATE 側には
+    plot_essentials / short_term_summary / confirmed_facts を含めない。
+    user_id には game_session_id (UUID 文字列) を使用し、メモリスコープを
+    ゲームセッション単位に限定する。
     """
 
     _APP_NAME = "gm"
@@ -118,14 +121,11 @@ class AdkGmClient:
             instruction=GM_SYSTEM_PROMPT,
             output_schema=GmDecisionResponse,
         )
-        # memory_service は Runner に渡さない。
-        # Runner(memory_service=...) は PreloadMemoryTool を自動注入し、
-        # GmContextService が構築したプロンプトに <PAST_CONVERSATIONS> が
-        # 二重注入されるため。圧縮は decide() / cleanup_session() で直接呼び出す。
         self._runner = Runner(
             agent=agent,
             app_name=self._APP_NAME,
             session_service=_adk_session_service(),
+            memory_service=memory_service,
             auto_create_session=True,
         )
 
@@ -178,7 +178,29 @@ class AdkGmClient:
         return result
 
     async def cleanup_session(self, session_id: str, game_session_id: str) -> None:
-        """Delete the ADK session and flush context compression (best effort)."""
+        """Force memory compression then delete the ADK session (best effort).
+
+        セッション終了時に add_session_to_memory() で強制圧縮を実行してから
+        ADK セッションを削除する。Runner は add_session_to_memory() を自動呼び出し
+        しないため手動でトリガーする。
+        """
+        # 1. セッション取得 → add_session_to_memory() で強制圧縮 (best effort)
+        try:
+            session = await self._runner.session_service.get_session(
+                app_name=self._APP_NAME,
+                user_id=game_session_id,
+                session_id=session_id,
+            )
+            if session is not None:
+                await self._memory_service.add_session_to_memory(session)
+        except Exception as exc:
+            logger.warning(
+                "Context compression flush failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+
+        # 2. ADK セッション削除 (best effort)
         try:
             await self._runner.session_service.delete_session(
                 app_name=self._APP_NAME,
@@ -188,15 +210,6 @@ class AdkGmClient:
         except Exception as exc:
             logger.warning(
                 "ADK session cleanup failed",
-                session_id=session_id,
-                error=str(exc),
-            )
-
-        try:
-            await self._memory_service.flush(game_session_id)
-        except Exception as exc:
-            logger.warning(
-                "Context compression flush failed",
                 session_id=session_id,
                 error=str(exc),
             )

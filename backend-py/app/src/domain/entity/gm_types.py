@@ -283,9 +283,6 @@ class GameContext(BaseModel):
     system_prompt: str
     win_conditions: list[dict[str, Any]]
     fail_conditions: list[dict[str, Any]]
-    plot_essentials: dict[str, Any]
-    short_term_summary: str
-    confirmed_facts: dict[str, Any]
     recent_turns: list[TurnSummary]
     player: PlayerSummary
     active_npcs: list[NpcSummary]

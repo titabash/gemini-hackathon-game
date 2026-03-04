@@ -226,17 +226,8 @@ CONTEXT_TEMPLATE = """\
 # Fail Conditions
 {fail_conditions}
 
-# Plot Essentials
-{plot_essentials}
-
 # Available Scene Backgrounds
 {available_backgrounds}
-
-# Story So Far
-{short_term_summary}
-
-# Confirmed Facts
-{confirmed_facts}
 
 # Recent Turns
 {recent_turns}

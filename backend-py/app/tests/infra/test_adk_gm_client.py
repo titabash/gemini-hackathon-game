@@ -20,7 +20,7 @@ def _make_memory_service_mock() -> MagicMock:
     """Build a mock for GameMemoryService."""
     mock = MagicMock()
     mock.trigger_compression_if_due = AsyncMock()
-    mock.flush = AsyncMock()
+    mock.add_session_to_memory = AsyncMock()
     return mock
 
 
@@ -416,26 +416,36 @@ class TestAdkGmClientDecide:
     async def test_cleanup_session_deletes_adk_session(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """cleanup_session() should call session_service.delete_session and flush."""
+        """cleanup_session() should call add_session_to_memory then delete_session."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
 
         memory_mock = _make_memory_service_mock()
         client = AdkGmClient(memory_service=memory_mock)
+
+        fake_session = MagicMock()
+        fake_session.user_id = "test-game-session"
+        get_mock = AsyncMock(return_value=fake_session)
         delete_mock = AsyncMock()
+        client._runner.session_service.get_session = get_mock  # type: ignore[method-assign]
         client._runner.session_service.delete_session = delete_mock  # type: ignore[method-assign]
 
         await client.cleanup_session(
             "session-to-delete", game_session_id="test-game-session"
         )
 
+        get_mock.assert_awaited_once_with(
+            app_name="gm",
+            user_id="test-game-session",
+            session_id="session-to-delete",
+        )
+        memory_mock.add_session_to_memory.assert_awaited_once_with(fake_session)
         delete_mock.assert_awaited_once_with(
             app_name="gm",
             user_id="test-game-session",
             session_id="session-to-delete",
         )
-        memory_mock.flush.assert_awaited_once_with("test-game-session")
 
     @pytest.mark.asyncio
     async def test_cleanup_session_swallows_errors(

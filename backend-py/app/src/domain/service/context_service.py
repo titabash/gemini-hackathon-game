@@ -19,7 +19,6 @@ from domain.entity.gm_types import (
     PlayerSummary,
     TurnSummary,
 )
-from gateway.context_summary_gateway import ContextSummaryGateway
 from gateway.item_gateway import ItemGateway
 from gateway.npc_gateway import NpcGateway
 from gateway.objective_gateway import ObjectiveGateway
@@ -82,7 +81,6 @@ class ContextService:
         self._turn_gw = TurnGateway()
         self._npc_gw = NpcGateway()
         self._pc_gw = PlayerCharacterGateway()
-        self._context_gw = ContextSummaryGateway()
         self._objective_gw = ObjectiveGateway()
         self._item_gw = ItemGateway()
         self._scenario_gw = ScenarioGateway()
@@ -116,9 +114,6 @@ class ContextService:
             system_prompt="",
             win_conditions=scenario.win_conditions,
             fail_conditions=scenario.fail_conditions,
-            plot_essentials=self._load_plot(db, session_id),
-            short_term_summary=self._load_summary(db, session_id),
-            confirmed_facts=self._load_facts(db, session_id),
             recent_turns=self._load_turns(db, session_id),
             player=self._build_player(pc) if pc else _DEFAULT_PLAYER,
             active_npcs=self._load_npcs(db, session_id),
@@ -171,9 +166,6 @@ class ContextService:
                 system_prompt=context.system_prompt,
                 win_conditions=json.dumps(context.win_conditions),
                 fail_conditions=json.dumps(context.fail_conditions),
-                plot_essentials=json.dumps(context.plot_essentials),
-                short_term_summary=context.short_term_summary,
-                confirmed_facts=json.dumps(context.confirmed_facts),
                 recent_turns=self._format_turns(context.recent_turns),
                 player_name=context.player.name,
                 player_stats=json.dumps(context.player.stats),
@@ -237,14 +229,8 @@ class ContextService:
             context.max_turns - context.current_turn_number,
         )
         prompt = (
-            "# Plot Essentials\n"
-            f"{json.dumps(context.plot_essentials)}\n\n"
             "# Available Scene Backgrounds\n"
             f"{self._format_backgrounds(context.available_backgrounds)}\n\n"
-            "# Story So Far\n"
-            f"{context.short_term_summary}\n\n"
-            "# Confirmed Facts\n"
-            f"{json.dumps(context.confirmed_facts)}\n\n"
             "# Recent Turns\n"
             f"{self._format_turns(context.recent_turns)}\n\n"
             "# Player Character\n"
@@ -334,30 +320,6 @@ class ContextService:
                 " fundamentally changes."
             )
         return "No BGM playing."
-
-    def _load_plot(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-    ) -> dict[str, object]:
-        ctx = self._context_gw.get_by_session(db, session_id)
-        return dict(ctx.plot_essentials) if ctx else {}
-
-    def _load_summary(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-    ) -> str:
-        ctx = self._context_gw.get_by_session(db, session_id)
-        return str(ctx.short_term_summary) if ctx else ""
-
-    def _load_facts(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-    ) -> dict[str, object]:
-        ctx = self._context_gw.get_by_session(db, session_id)
-        return dict(ctx.confirmed_facts) if ctx else {}
 
     def _load_turns(
         self,

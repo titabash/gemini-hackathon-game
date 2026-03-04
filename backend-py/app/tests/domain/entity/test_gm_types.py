@@ -400,9 +400,6 @@ class TestGameContext:
             system_prompt="You are a game master.",
             win_conditions=[{"defeat_boss": True}],
             fail_conditions=[{"party_wipe": True}],
-            plot_essentials={"main_quest": "Defeat the dragon"},
-            short_term_summary="The party entered the dungeon.",
-            confirmed_facts={"has_sword": True},
             recent_turns=[],
             player=PlayerSummary(
                 name="Hero",
@@ -428,9 +425,6 @@ class TestGameContext:
             system_prompt="P",
             win_conditions=[],
             fail_conditions=[],
-            plot_essentials={},
-            short_term_summary="",
-            confirmed_facts={},
             recent_turns=[],
             player=PlayerSummary(
                 name="H",
@@ -456,9 +450,6 @@ class TestGameContext:
             system_prompt="P",
             win_conditions=[],
             fail_conditions=[],
-            plot_essentials={},
-            short_term_summary="",
-            confirmed_facts={},
             recent_turns=[
                 TurnSummary(
                     turn_number=1,
