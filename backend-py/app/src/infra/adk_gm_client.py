@@ -26,6 +26,7 @@ sslmode=require が含まれる場合は URL から除去し connect_args["ssl"]
 from __future__ import annotations
 
 import os
+from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 from google.adk.agents import LlmAgent
@@ -38,11 +39,14 @@ from domain.entity.gm_prompts import GM_SYSTEM_PROMPT
 from domain.entity.gm_types import GmDecisionResponse
 from util.logging import get_logger
 
+if TYPE_CHECKING:
+    from infra.game_memory_service import GameMemoryService
+
 logger = get_logger(__name__)
 
 
 def _adk_session_service() -> DatabaseSessionService:
-    """ADK 用 DatabaseSessionService を構築する.
+    """Build a DatabaseSessionService for ADK.
 
     DATABASE_URL を PostgreSQL+asyncpg に変換して使用する。
     adk スキーマへの search_path 指定により ADK テーブルが public スキーマに
@@ -89,13 +93,16 @@ class AdkGmClient:
     run_async() 呼び出し時に session_id が存在しなければ ADK が自動生成する。
     DatabaseSessionService により ADK セッション履歴は PostgreSQL の
     adk スキーマに永続化される (public スキーマとは完全に分離)。
+
+    memory_service を Runner に渡すことで、各ターン後にコンテキスト圧縮が
+    トリガーされる。user_id には game_session_id (UUID 文字列) を使用し、
+    メモリスコープをゲームセッション単位に限定する。
     """
 
     _APP_NAME = "gm"
-    _USER_ID = "gm"
     MODEL = "gemini-3-flash-preview"
 
-    def __init__(self) -> None:
+    def __init__(self, memory_service: GameMemoryService) -> None:
         api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not api_key:
             msg = "GEMINI_API_KEY or GOOGLE_API_KEY environment variable is not set"
@@ -104,6 +111,7 @@ class AdkGmClient:
         # ADK は GOOGLE_API_KEY を読む; GEMINI_API_KEY がある場合はマップする
         os.environ.setdefault("GOOGLE_API_KEY", api_key)
 
+        self._memory_service = memory_service
         agent = LlmAgent(
             name="gm_agent",
             model=Gemini(model=self.MODEL),
@@ -114,14 +122,18 @@ class AdkGmClient:
             agent=agent,
             app_name=self._APP_NAME,
             session_service=_adk_session_service(),
+            memory_service=memory_service,
             auto_create_session=True,
         )
 
-    async def decide(self, *, prompt: str, session_id: str) -> GmDecisionResponse:
-        """ADK エージェントを実行して GM 決定を返す.
+    async def decide(
+        self, *, prompt: str, session_id: str, game_session_id: str
+    ) -> GmDecisionResponse:
+        """Run the ADK agent and return a structured GM decision.
 
-        同一 session_id の呼び出しでは ADK セッションが再利用され、
-        会話履歴が引き継がれる (auto-advance 時の複数ターン連鎖)。
+        game_session_id を ADK の user_id として使用することで、メモリスコープを
+        ゲームセッション単位に限定する。同一 session_id の呼び出しでは ADK セッションが
+        再利用され、会話履歴が引き継がれる (auto-advance 時の複数ターン連鎖)。
         セッション作成は auto_create_session で ADK に委譲済み。
         """
         message = genai_types.Content(
@@ -131,7 +143,7 @@ class AdkGmClient:
 
         result: GmDecisionResponse | None = None
         async for event in self._runner.run_async(
-            user_id=self._USER_ID,
+            user_id=game_session_id,
             session_id=session_id,
             new_message=message,
         ):
@@ -156,14 +168,24 @@ class AdkGmClient:
             session_id=session_id,
             decision_type=result.decision_type,
         )
+
+        # ADK Runner は自動で add_events_to_memory を呼ばないため手動でトリガーする。
+        # GameMemoryService は events を参照せず DB のターン数のみで圧縮判定するため
+        # 空リストを渡すことで副作用なく圧縮チェックが実行される。
+        await self._memory_service.add_events_to_memory(
+            app_name=self._APP_NAME,
+            user_id=game_session_id,
+            events=[],
+        )
+
         return result
 
-    async def cleanup_session(self, session_id: str) -> None:
-        """ADK セッションを削除する (ベストエフォート)."""
+    async def cleanup_session(self, session_id: str, game_session_id: str) -> None:
+        """Delete the ADK session (best effort)."""
         try:
             await self._runner.session_service.delete_session(
                 app_name=self._APP_NAME,
-                user_id=self._USER_ID,
+                user_id=game_session_id,
                 session_id=session_id,
             )
         except Exception as exc:

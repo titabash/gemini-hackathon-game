@@ -1,7 +1,7 @@
 """3-layer context management for the AI GM.
 
-Builds GameContext from DB data, determines compression timing,
-and compresses accumulated context via Gemini.
+Builds GameContext from DB data and formats it as a structured prompt.
+Compression is delegated to GameMemoryService (BaseMemoryService).
 """
 
 from __future__ import annotations
@@ -9,13 +9,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
-
-from domain.entity.gm_prompts import (
-    COMPRESSION_CONTEXT_TEMPLATE,
-    COMPRESSION_SYSTEM_PROMPT,
-    CONTEXT_TEMPLATE,
-)
+from domain.entity.gm_prompts import CONTEXT_TEMPLATE
 from domain.entity.gm_types import (
     BackgroundResourceSummary,
     GameContext,
@@ -25,10 +19,7 @@ from domain.entity.gm_types import (
     PlayerSummary,
     TurnSummary,
 )
-from gateway.context_summary_gateway import (
-    ContextSummaryData,
-    ContextSummaryGateway,
-)
+from gateway.context_summary_gateway import ContextSummaryGateway
 from gateway.item_gateway import ItemGateway
 from gateway.npc_gateway import NpcGateway
 from gateway.objective_gateway import ObjectiveGateway
@@ -44,11 +35,7 @@ if TYPE_CHECKING:
 
     from sqlmodel import Session
 
-    from infra.gemini_client import GeminiClient
-
 logger = get_logger(__name__)
-
-COMPRESSION_INTERVAL = 5
 
 
 def extract_nodes_text(output: dict[str, object]) -> str:
@@ -87,16 +74,8 @@ _DEFAULT_PLAYER = PlayerSummary(
 )
 
 
-class _CompressionResult(BaseModel):
-    """Structured output for context compression."""
-
-    plot_essentials: dict[str, object]
-    short_term_summary: str
-    confirmed_facts: dict[str, object]
-
-
 class ContextService:
-    """Builds, formats, and compresses game context."""
+    """Builds and formats game context for the GM prompt."""
 
     def __init__(self) -> None:
         self._session_gw = SessionGateway()
@@ -294,72 +273,6 @@ class ContextService:
             if section:
                 prompt += "\n" + section
         return prompt
-
-    def should_compress(
-        self,
-        current_turn: int,
-        last_updated_turn: int,
-    ) -> bool:
-        """Check if context compression is due."""
-        return (current_turn - last_updated_turn) >= COMPRESSION_INTERVAL
-
-    async def compress(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-        gemini: GeminiClient,
-        current_turn: int,
-    ) -> None:
-        """Compress context via Gemini structured output."""
-        ctx_rec = self._context_gw.get_by_session(db, session_id)
-        prev_plot = json.dumps(
-            ctx_rec.plot_essentials if ctx_rec else {},
-        )
-        prev_facts = json.dumps(
-            ctx_rec.confirmed_facts if ctx_rec else {},
-        )
-        turns = self._turn_gw.get_recent(db, session_id, limit=10)
-        parts: list[str] = []
-        for t in reversed(turns):
-            narr = t.output.get("narration_text", "")
-            nodes = extract_nodes_text(t.output)
-            detail = nodes if nodes else str(narr)
-            parts.append(
-                f"T{t.turn_number}: [{t.input_type}]"
-                f" {t.input_text}"
-                f" -> {t.gm_decision_type}:"
-                f" {detail}",
-            )
-        turns_text = "\n".join(parts)
-
-        prompt = COMPRESSION_CONTEXT_TEMPLATE.format(
-            previous_plot_essentials=prev_plot,
-            previous_confirmed_facts=prev_facts,
-            turns_to_compress=turns_text,
-        )
-
-        result = await gemini.generate_structured(
-            contents=prompt,
-            system_instruction=COMPRESSION_SYSTEM_PROMPT,
-            response_type=_CompressionResult,
-            temperature=0.3,
-        )
-
-        self._context_gw.upsert(
-            db,
-            session_id,
-            ContextSummaryData(
-                plot_essentials=result.plot_essentials,
-                short_term_summary=result.short_term_summary,
-                confirmed_facts=result.confirmed_facts,
-                last_updated_turn=current_turn,
-            ),
-        )
-        logger.info(
-            "Context compressed",
-            session_id=str(session_id),
-            turn=current_turn,
-        )
 
     # --- private helpers ---
 

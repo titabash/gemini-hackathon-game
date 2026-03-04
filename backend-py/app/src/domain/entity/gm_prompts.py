@@ -292,6 +292,9 @@ COMPRESSION_CONTEXT_TEMPLATE = """\
 # Previous Confirmed Facts
 {previous_confirmed_facts}
 
+# Previous Story Summary
+{previous_short_term_summary}
+
 # Turns to Compress
 {turns_to_compress}
 """

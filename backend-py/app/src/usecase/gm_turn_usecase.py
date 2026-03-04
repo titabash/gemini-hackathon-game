@@ -32,12 +32,12 @@ from domain.service.npc_clone_service import NpcCloneService
 from domain.service.state_mutation_service import StateMutationService
 from domain.service.storage_constants import SCENARIO_ASSETS_BUCKET
 from domain.service.turn_limit_service import TurnLimitService
-from gateway.context_summary_gateway import ContextSummaryGateway
 from gateway.npc_gateway import NpcGateway
 from gateway.scene_background_gateway import SceneBackgroundGateway
 from gateway.session_gateway import SessionGateway
 from gateway.turn_gateway import TurnGateway
 from infra.adk_gm_client import AdkGmClient
+from infra.game_memory_service import GameMemoryService
 from infra.gemini_client import GeminiClient
 from infra.storage_service import StorageService
 from util.logging import get_logger
@@ -65,11 +65,11 @@ except ValueError:
 _adk_client: AdkGmClient | None = None
 
 
-def _get_adk_client() -> AdkGmClient:
+def _get_adk_client(gemini: GeminiClient) -> AdkGmClient:
     """Return the shared AdkGmClient, creating it on first call."""
     global _adk_client  # noqa: PLW0603
     if _adk_client is None:
-        _adk_client = AdkGmClient()
+        _adk_client = AdkGmClient(memory_service=GameMemoryService(gemini))
     return _adk_client
 
 
@@ -106,9 +106,8 @@ class GmTurnUseCase:
         self.gemini = GeminiClient()
         self.session_gw = SessionGateway()
         self.turn_gw = TurnGateway()
-        self.context_gw = ContextSummaryGateway()
         self.context_svc = ContextService()
-        self.decision_svc = GmDecisionService(_get_adk_client())
+        self.decision_svc = GmDecisionService(_get_adk_client(self.gemini))
         self.mutation_svc = StateMutationService()
         self.bridge_svc = GenuiBridgeService()
         self.bgm_svc = BgmService()
@@ -183,6 +182,7 @@ class GmTurnUseCase:
                 decision = await self._resolve_decision(
                     context,
                     turn_request,
+                    game_session_id=str(session_id),
                     runtime=decision_runtime,
                     auto_advance_section=auto_section,
                 )
@@ -204,12 +204,6 @@ class GmTurnUseCase:
                     turn_request, decision, db, game_session
                 )
                 generated_turn_count += 1
-
-                await self._maybe_compress_context(
-                    db,
-                    session_id,
-                    context.current_turn_number,
-                )
 
                 npc_images = self._resolve_npc_images(
                     db,
@@ -274,7 +268,9 @@ class GmTurnUseCase:
                 session_id=str(session_id),
                 total_turns=generated_turn_count,
             )
-            await self.decision_svc.cleanup_runtime(decision_runtime)
+            await self.decision_svc.cleanup_runtime(
+                decision_runtime, game_session_id=str(session_id)
+            )
 
     def _build_decision_runtime(
         self,
@@ -304,30 +300,6 @@ class GmTurnUseCase:
         sid = game_session.scenario_id  # type: ignore[attr-defined]
         state = game_session.current_state  # type: ignore[attr-defined]
         self.clone_svc.clone_npcs_for_session(db, sid, session_id, state)
-
-    async def _maybe_compress_context(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-        current_turn_number: int,
-    ) -> None:
-        """Run context compression when threshold is met."""
-        ctx_rec = self.context_gw.get_by_session(db, session_id)
-        last_updated = ctx_rec.last_updated_turn if ctx_rec else 0
-        if not self.context_svc.should_compress(current_turn_number, last_updated):
-            return
-        try:
-            await self.context_svc.compress(
-                db,
-                session_id,
-                self.gemini,
-                current_turn_number,
-            )
-        except Exception:
-            logger.warning(
-                "Context compression failed, will retry next turn",
-                session_id=str(session_id),
-            )
 
     async def _stream_turn_events(
         self,
@@ -419,6 +391,7 @@ class GmTurnUseCase:
         context: GameContext,
         request: GmTurnRequest,
         *,
+        game_session_id: str,
         runtime: GmDecisionRuntime | None = None,
         auto_advance_section: str = "",
     ) -> GmDecisionResponse:
@@ -452,7 +425,9 @@ class GmTurnUseCase:
             request.input_text,
             extra_sections=extra_sections,
         )
-        decision = await self.decision_svc.decide(prompt, runtime=runtime)
+        decision = await self.decision_svc.decide(
+            prompt, game_session_id=game_session_id, runtime=runtime
+        )
 
         # Fallback: force session_end if GM omitted it at hard limit
         if is_hard_limit and not _has_session_end(decision.state_changes):

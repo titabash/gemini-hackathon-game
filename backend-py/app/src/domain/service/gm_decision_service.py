@@ -48,6 +48,7 @@ class GmDecisionService:
         self,
         prompt: str,
         *,
+        game_session_id: str,
         runtime: GmDecisionRuntime | None = None,
     ) -> GmDecisionResponse:
         """Get GM decision with retry.  Raises the last exception on exhaustion."""
@@ -55,7 +56,11 @@ class GmDecisionService:
         for attempt in range(self.MAX_RETRIES):
             try:
                 session_id = self._get_or_create_session_id(runtime)
-                result = await self._adk.decide(prompt=prompt, session_id=session_id)
+                result = await self._adk.decide(
+                    prompt=prompt,
+                    session_id=session_id,
+                    game_session_id=game_session_id,
+                )
                 logger.info("GM decision succeeded", attempt=attempt + 1)
                 return result
             except Exception as exc:
@@ -70,7 +75,9 @@ class GmDecisionService:
         )
         raise last_exc
 
-    async def cleanup_runtime(self, runtime: GmDecisionRuntime) -> None:
+    async def cleanup_runtime(
+        self, runtime: GmDecisionRuntime, *, game_session_id: str
+    ) -> None:
         """Delete ephemeral ADK session resources (best effort)."""
         session_id = runtime.adk_session_id
         runtime.adk_session_id = None
@@ -78,7 +85,7 @@ class GmDecisionService:
         if not session_id:
             return
 
-        await self._adk.cleanup_session(session_id)
+        await self._adk.cleanup_session(session_id, game_session_id=game_session_id)
 
     @staticmethod
     def _get_or_create_session_id(runtime: GmDecisionRuntime | None) -> str:

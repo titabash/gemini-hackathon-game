@@ -23,6 +23,10 @@ module = [
 ]
 disable_error_code = ["arg-type", "no-any-return", "union-attr", "call-arg", "return-value"]
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["method-assign", "assignment", "attr-defined", "unused-ignore", "no-untyped-def", "no-any-return", "arg-type"]
+
 [tool.ruff]
 # Same as Black.
 line-length = 88

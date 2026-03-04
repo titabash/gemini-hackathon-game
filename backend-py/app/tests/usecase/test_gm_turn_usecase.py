@@ -130,9 +130,6 @@ def _stub_common(uc: object, *, turn_return: int) -> None:
         return_value=turn_return,
     )
     uc.turn_gw.create = MagicMock()  # type: ignore[attr-defined]
-    uc.context_gw.get_by_session = MagicMock(  # type: ignore[attr-defined]
-        return_value=None,
-    )
     uc.npc_gw.get_by_session = MagicMock(  # type: ignore[attr-defined]
         return_value=[],
     )
@@ -1789,7 +1786,6 @@ class TestAutoAdvanceUntilUserAction:
             uc.mutation_svc.apply_session_end = MagicMock()
             uc.session_gw.increment_turn = MagicMock(side_effect=[2, 3])
             uc.turn_gw.create = MagicMock()
-            uc.context_gw.get_by_session = MagicMock(return_value=None)
             uc.npc_gw.get_by_session = MagicMock(return_value=[])
             uc.npc_gw.get_by_scenario = MagicMock(return_value=[])
 

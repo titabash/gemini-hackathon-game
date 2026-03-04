@@ -9,25 +9,33 @@ a PostgreSQL URL without a running server as long as no session methods are call
 from __future__ import annotations
 
 import os
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src.domain.entity.gm_types import GmDecisionResponse
 
 
+def _make_memory_service_mock() -> MagicMock:
+    """Build a mock for GameMemoryService."""
+    mock = MagicMock()
+    mock.add_events_to_memory = AsyncMock()
+    mock.search_memory = AsyncMock()
+    mock.add_session_to_memory = AsyncMock()
+    return mock
+
+
 def _make_final_event(json_text: str) -> object:
     """Build a MagicMock mimicking an ADK final response event.
 
-    part.thought は None に設定する。MagicMock() のままだと truthy になり、
-    ADK 内部と同じ `if part.text and not part.thought` フィルタで除外されてしまう。
+    part.thought is set to None so that the `if part.text and not part.thought`
+    filter used inside AdkGmClient.decide() does not exclude it.
     """
-    from unittest.mock import MagicMock
-
     event = MagicMock()
     event.is_final_response.return_value = True
     part = MagicMock()
     part.text = json_text
-    part.thought = None  # thought parts を除外するフィルタに引っかからないよう明示
+    part.thought = None
     event.content = MagicMock()
     event.content.parts = [part]
     return event
@@ -35,8 +43,6 @@ def _make_final_event(json_text: str) -> object:
 
 def _make_empty_final_event() -> object:
     """Build a final response event with no content."""
-    from unittest.mock import MagicMock
-
     event = MagicMock()
     event.is_final_response.return_value = True
     event.content = None
@@ -189,7 +195,7 @@ class TestAdkGmClientDecide:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         decision = GmDecisionResponse(
             decision_type="narrate",
@@ -205,6 +211,7 @@ class TestAdkGmClientDecide:
         result = await client.decide(
             prompt="I enter the tavern.",
             session_id="test-session-1",
+            game_session_id="test-game-session",
         )
 
         assert result.decision_type == "narrate"
@@ -219,7 +226,7 @@ class TestAdkGmClientDecide:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         turn1 = GmDecisionResponse(decision_type="narrate", narration_text="Turn 1.")
         turn2 = GmDecisionResponse(decision_type="choice", narration_text="Turn 2.")
@@ -238,8 +245,16 @@ class TestAdkGmClientDecide:
 
         client._runner.run_async = fake_run_async  # type: ignore[assignment]
 
-        result1 = await client.decide(prompt="Turn 1", session_id="same-session")
-        result2 = await client.decide(prompt="Turn 2", session_id="same-session")
+        result1 = await client.decide(
+            prompt="Turn 1",
+            session_id="same-session",
+            game_session_id="test-game-session",
+        )
+        result2 = await client.decide(
+            prompt="Turn 2",
+            session_id="same-session",
+            game_session_id="test-game-session",
+        )
 
         assert result1.decision_type == "narrate"
         assert result2.decision_type == "choice"
@@ -251,13 +266,11 @@ class TestAdkGmClientDecide:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Non-final response events must be skipped; only the final event is used."""
-        from unittest.mock import MagicMock
-
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         decision = GmDecisionResponse(
             decision_type="choice", narration_text="Make a choice."
@@ -273,7 +286,11 @@ class TestAdkGmClientDecide:
 
         client._runner.run_async = fake_run_async  # type: ignore[assignment]
 
-        result = await client.decide(prompt="test", session_id="test-session")
+        result = await client.decide(
+            prompt="test",
+            session_id="test-session",
+            game_session_id="test-game-session",
+        )
 
         assert result.decision_type == "choice"
 
@@ -282,13 +299,11 @@ class TestAdkGmClientDecide:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """Parts with thought=True must be excluded before JSON parsing."""
-        from unittest.mock import MagicMock
-
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         decision = GmDecisionResponse(
             decision_type="narrate", narration_text="Valid response."
@@ -310,7 +325,11 @@ class TestAdkGmClientDecide:
 
         client._runner.run_async = fake_run_async  # type: ignore[assignment]
 
-        result = await client.decide(prompt="test", session_id="test-session")
+        result = await client.decide(
+            prompt="test",
+            session_id="test-session",
+            game_session_id="test-game-session",
+        )
 
         # If thought_part were NOT filtered, JSON parsing would fail because
         # the combined text would be invalid JSON.
@@ -321,13 +340,11 @@ class TestAdkGmClientDecide:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """decide() should raise RuntimeError when all parts contain only whitespace."""
-        from unittest.mock import MagicMock
-
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         event = MagicMock()
         event.is_final_response.return_value = True
@@ -343,7 +360,11 @@ class TestAdkGmClientDecide:
         client._runner.run_async = fake_run_async  # type: ignore[assignment]
 
         with pytest.raises(RuntimeError, match="no structured output"):
-            await client.decide(prompt="test", session_id="test-session")
+            await client.decide(
+                prompt="test",
+                session_id="test-session",
+                game_session_id="test-game-session",
+            )
 
     @pytest.mark.asyncio
     async def test_decide_raises_on_empty_output(
@@ -354,7 +375,7 @@ class TestAdkGmClientDecide:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         async def fake_run_async(**_: object) -> object:
             yield _make_empty_final_event()
@@ -362,7 +383,11 @@ class TestAdkGmClientDecide:
         client._runner.run_async = fake_run_async  # type: ignore[assignment]
 
         with pytest.raises(RuntimeError, match="no structured output"):
-            await client.decide(prompt="test", session_id="test-session")
+            await client.decide(
+                prompt="test",
+                session_id="test-session",
+                game_session_id="test-game-session",
+            )
 
     @pytest.mark.asyncio
     async def test_decide_raises_when_run_async_fails(
@@ -373,7 +398,7 @@ class TestAdkGmClientDecide:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         async def fake_run_async_error(**_: object) -> object:
             raise RuntimeError("ADK API error")
@@ -382,28 +407,32 @@ class TestAdkGmClientDecide:
         client._runner.run_async = fake_run_async_error  # type: ignore[assignment]
 
         with pytest.raises(RuntimeError, match="ADK API error"):
-            await client.decide(prompt="test", session_id="test-session")
+            await client.decide(
+                prompt="test",
+                session_id="test-session",
+                game_session_id="test-game-session",
+            )
 
     @pytest.mark.asyncio
     async def test_cleanup_session_deletes_adk_session(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """cleanup_session() should call session_service.delete_session."""
-        from unittest.mock import AsyncMock
-
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
         delete_mock = AsyncMock()
         client._runner.session_service.delete_session = delete_mock  # type: ignore[method-assign]
 
-        await client.cleanup_session("session-to-delete")
+        await client.cleanup_session(
+            "session-to-delete", game_session_id="test-game-session"
+        )
 
         delete_mock.assert_awaited_once_with(
             app_name="gm",
-            user_id="gm",
+            user_id="test-game-session",
             session_id="session-to-delete",
         )
 
@@ -412,19 +441,19 @@ class TestAdkGmClientDecide:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """cleanup_session() should not propagate errors on session deletion failure."""
-        from unittest.mock import AsyncMock
-
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
         client._runner.session_service.delete_session = AsyncMock(  # type: ignore[method-assign]
             side_effect=RuntimeError("session not found"),
         )
 
         # No exception should be raised
-        await client.cleanup_session("nonexistent-session")
+        await client.cleanup_session(
+            "nonexistent-session", game_session_id="test-game-session"
+        )
 
 
 class TestAdkGmClientInit:
@@ -438,7 +467,7 @@ class TestAdkGmClientInit:
         from src.infra.adk_gm_client import AdkGmClient
 
         with pytest.raises(ValueError, match="API_KEY"):
-            AdkGmClient()
+            AdkGmClient(memory_service=_make_memory_service_mock())
 
     def test_gemini_api_key_accepted(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """GEMINI_API_KEY alone must be sufficient to initialize AdkGmClient."""
@@ -447,7 +476,7 @@ class TestAdkGmClientInit:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         assert client._runner is not None
 
@@ -458,7 +487,7 @@ class TestAdkGmClientInit:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         assert client._runner is not None
 
@@ -471,7 +500,7 @@ class TestAdkGmClientInit:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        AdkGmClient()
+        AdkGmClient(memory_service=_make_memory_service_mock())
 
         assert os.environ.get("GOOGLE_API_KEY") == "gemini-key-value"
 
@@ -483,6 +512,6 @@ class TestAdkGmClientInit:
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient()
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
 
         assert client._runner.auto_create_session is True

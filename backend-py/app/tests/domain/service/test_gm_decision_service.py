@@ -41,7 +41,7 @@ class TestGmDecisionRuntime:
 
         assert runtime.adk_session_id is None
 
-        decision = await svc.decide("prompt", runtime=runtime)
+        decision = await svc.decide("prompt", game_session_id="gs-1", runtime=runtime)
 
         assert decision.decision_type == "narrate"
         assert runtime.adk_session_id is not None
@@ -56,10 +56,10 @@ class TestGmDecisionRuntime:
         svc = GmDecisionService(adk)
         runtime = GmDecisionRuntime(use_interactions=True)
 
-        await svc.decide("turn 1", runtime=runtime)
+        await svc.decide("turn 1", game_session_id="gs-1", runtime=runtime)
         first_session_id = runtime.adk_session_id
 
-        await svc.decide("turn 2", runtime=runtime)
+        await svc.decide("turn 2", game_session_id="gs-1", runtime=runtime)
         second_session_id = runtime.adk_session_id
 
         assert first_session_id == second_session_id
@@ -76,7 +76,7 @@ class TestGmDecisionRuntime:
         svc = GmDecisionService(adk)
 
         with pytest.raises(RuntimeError, match="ADK down"):
-            await svc.decide("prompt")
+            await svc.decide("prompt", game_session_id="gs-1")
 
         assert adk.decide.await_count == GmDecisionService.MAX_RETRIES
 
@@ -95,7 +95,7 @@ class TestGmDecisionRuntime:
         )
         svc = GmDecisionService(adk)
 
-        decision = await svc.decide("prompt")
+        decision = await svc.decide("prompt", game_session_id="gs-1")
 
         assert decision.decision_type == "choice"
         assert adk.decide.await_count == 2
@@ -110,9 +110,11 @@ class TestGmDecisionRuntime:
             adk_session_id="session-to-cleanup",
         )
 
-        await svc.cleanup_runtime(runtime)
+        await svc.cleanup_runtime(runtime, game_session_id="gs-1")
 
-        adk.cleanup_session.assert_awaited_once_with("session-to-cleanup")
+        adk.cleanup_session.assert_awaited_once_with(
+            "session-to-cleanup", game_session_id="gs-1"
+        )
         assert runtime.adk_session_id is None
 
     @pytest.mark.asyncio
@@ -122,6 +124,6 @@ class TestGmDecisionRuntime:
         svc = GmDecisionService(adk)
         runtime = GmDecisionRuntime()
 
-        await svc.cleanup_runtime(runtime)
+        await svc.cleanup_runtime(runtime, game_session_id="gs-1")
 
         adk.cleanup_session.assert_not_awaited()
