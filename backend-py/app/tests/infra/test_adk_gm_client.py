@@ -413,6 +413,35 @@ class TestAdkGmClientDecide:
             )
 
     @pytest.mark.asyncio
+    async def test_decide_calls_trigger_compression_after_decision(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """trigger_compression_if_due() must be called after decide()."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        from src.infra.adk_gm_client import AdkGmClient
+
+        memory_mock = _make_memory_service_mock()
+        client = AdkGmClient(memory_service=memory_mock)
+
+        decision = GmDecisionResponse(decision_type="narrate", narration_text="Test.")
+
+        async def fake_run_async(**_: object) -> object:
+            yield _make_final_event(decision.model_dump_json())
+
+        client._runner.run_async = fake_run_async  # type: ignore[assignment]
+
+        await client.decide(
+            prompt="test",
+            session_id="test-session",
+            game_session_id="11111111-1111-1111-1111-111111111111",
+        )
+
+        memory_mock.trigger_compression_if_due.assert_awaited_once_with(
+            "11111111-1111-1111-1111-111111111111"
+        )
+
+    @pytest.mark.asyncio
     async def test_cleanup_session_deletes_adk_session(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -448,10 +477,10 @@ class TestAdkGmClientDecide:
         )
 
     @pytest.mark.asyncio
-    async def test_cleanup_session_swallows_errors(
+    async def test_cleanup_session_swallows_delete_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """cleanup_session() should not propagate errors on session deletion failure."""
+        """cleanup_session() must not propagate errors on session deletion failure."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
@@ -465,6 +494,34 @@ class TestAdkGmClientDecide:
         await client.cleanup_session(
             "nonexistent-session", game_session_id="test-game-session"
         )
+
+    @pytest.mark.asyncio
+    async def test_cleanup_session_swallows_get_session_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """cleanup_session() must not propagate get_session errors.
+
+        delete_session must still be attempted even when get_session fails.
+        """
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        from src.infra.adk_gm_client import AdkGmClient
+
+        memory_mock = _make_memory_service_mock()
+        client = AdkGmClient(memory_service=memory_mock)
+        client._runner.session_service.get_session = AsyncMock(  # type: ignore[method-assign]
+            side_effect=RuntimeError("connection error"),
+        )
+        delete_mock = AsyncMock()
+        client._runner.session_service.delete_session = delete_mock  # type: ignore[method-assign]
+
+        # No exception should be raised
+        await client.cleanup_session("session-id", game_session_id="test-game-session")
+
+        # add_session_to_memory must NOT be called when get_session fails
+        memory_mock.add_session_to_memory.assert_not_awaited()
+        # delete_session must still be attempted
+        delete_mock.assert_awaited_once()
 
 
 class TestAdkGmClientInit:

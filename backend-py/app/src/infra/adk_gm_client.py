@@ -95,10 +95,11 @@ class AdkGmClient:
     DatabaseSessionService により ADK セッション履歴は PostgreSQL の
     adk スキーマに永続化される (public スキーマとは完全に分離)。
 
-    memory_service を Runner に渡すことで PreloadMemoryTool が自動注入され、
-    毎 LLM 呼び出し前に search_memory() が実行されて <PAST_CONVERSATIONS> として
-    コンテキストが注入される。二重注入を防ぐため CONTEXT_TEMPLATE 側には
-    plot_essentials / short_term_summary / confirmed_facts を含めない。
+    memory_service を Runner に渡すことで InvocationContext に保存される。
+    PreloadMemoryTool は agent.tools に明示的に追加されており、毎 LLM 呼び出し前に
+    search_memory() を実行して <PAST_CONVERSATIONS> としてコンテキストを注入する。
+    二重注入を防ぐため CONTEXT_TEMPLATE 側には plot_essentials /
+    short_term_summary / confirmed_facts を含めない。
     user_id には game_session_id (UUID 文字列) を使用し、メモリスコープを
     ゲームセッション単位に限定する。
     """

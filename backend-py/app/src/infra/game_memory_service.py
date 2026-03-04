@@ -165,14 +165,22 @@ class GameMemoryService(BaseMemoryService):
         )
 
     async def _fetch_and_run_compression(self, game_session_id: uuid.UUID) -> None:
-        """Fetch DB data once and run compression unconditionally.
+        """Fetch DB data once and run compression if there are new turns.
 
         add_session_to_memory() からセッション終了時に呼び出す。
+        ターンが0件の場合、または前回圧縮以降に新しいターンがない場合はスキップする。
         """
         with SQLModelSession(engine) as db:
             ctx = self._context_gw.get_by_session(db, game_session_id)
             turns = self._turn_gw.get_recent(db, game_session_id, limit=10)
             current_turn = int(turns[0].turn_number) if turns else 0
+
+        if not turns:
+            return
+
+        last_updated = int(ctx.last_updated_turn) if ctx else 0
+        if current_turn <= last_updated:
+            return
 
         await self._run_compression(
             game_session_id,
