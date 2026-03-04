@@ -1,13 +1,19 @@
-"""PostgreSQL-backed ADK MemoryService for GM narrative memory.
+"""Context compression service for GM narrative memory.
 
-BaseMemoryService を継承し、context_summary テーブルを長期記憶のストアとして使用する。
-user_id = ゲームセッション UUID (str) でメモリをスコープする。
+context_summary テーブルを長期記憶のストアとして使用し、
+一定ターン数ごとに Gemini で会話履歴を圧縮・要約する。
 
-compress() / should_compress() の責務を ContextService から移管し、
-ADK の設計パターンに準拠させる。
+BaseMemoryService 継承を廃止した理由:
+- BaseMemoryService は search_memory / add_session_to_memory を持つ
+  メモリ検索インターフェース (PreloadMemoryTool 経由でプロンプトに注入) であり、
+  圧縮トリガーとして使用するのは設計上の誤用だった。
+- Runner(memory_service=...) が PreloadMemoryTool を自動注入し、
+  GmContextService が構築したプロンプトに <PAST_CONVERSATIONS> が二重注入される。
+- add_events_to_memory(events=[]) という空リスト呼び出しも ADK 仕様に反する。
 
-VertexAiMemoryBankService への将来的な差し替えも
-Runner(memory_service=...) の1行変更で対応可能。
+代わりに純粋なサービスクラスとして以下を提供する:
+- trigger_compression_if_due: ターン数閾値に達した場合に圧縮を実行
+- flush: セッション終了時に強制圧縮を実行 (best effort)
 """
 
 from __future__ import annotations
@@ -16,10 +22,6 @@ import json
 import uuid
 from typing import TYPE_CHECKING
 
-from google.adk.memory import BaseMemoryService
-from google.adk.memory.base_memory_service import SearchMemoryResponse
-from google.adk.memory.memory_entry import MemoryEntry
-from google.genai import types as genai_types
 from pydantic import BaseModel
 from sqlmodel import Session as SQLModelSession
 
@@ -34,10 +36,7 @@ from infra.db_client import engine
 from util.logging import get_logger
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping, Sequence
-
-    from google.adk.events import Event
-
+    from domain.entity.models import ContextSummaries, Turns
     from infra.gemini_client import GeminiClient
 
 logger = get_logger(__name__)
@@ -53,14 +52,15 @@ class _CompressionResult(BaseModel):
     confirmed_facts: dict[str, object]
 
 
-class GameMemoryService(BaseMemoryService):
-    """PostgreSQL-backed MemoryService using context_summary table.
+class GameMemoryService:
+    """Context compression service for GM narrative memory.
 
-    user_id = ゲームセッション UUID (str) でスコープ。
-    ADK の BaseMemoryService を継承することで:
-    - Runner(memory_service=...) に渡せる
-    - VertexAiMemoryBankService への差し替えが容易
-    - ADK の設計パターンに準拠
+    context_summary テーブルを長期記憶ストアとして使用し、
+    一定ターン数ごとに Gemini で会話履歴を圧縮・要約する。
+
+    ADK BaseMemoryService を継承しないため:
+    - Runner に memory_service として渡さない → PreloadMemoryTool 二重注入なし
+    - trigger_compression_if_due / flush を AdkGmClient から直接呼び出す
     """
 
     def __init__(self, gemini: GeminiClient) -> None:
@@ -68,89 +68,77 @@ class GameMemoryService(BaseMemoryService):
         self._context_gw = ContextSummaryGateway()
         self._turn_gw = TurnGateway()
 
-    async def add_session_to_memory(self, session: object) -> None:
-        """Run forced compression when a session ends."""
-        user_id = getattr(session, "user_id", None)
-        if not user_id:
-            return
-        try:
-            game_session_id = uuid.UUID(str(user_id))
-        except ValueError:
-            logger.warning("Invalid user_id for memory", user_id=user_id)
-            return
-        await self._compress(game_session_id)
-
-    async def add_events_to_memory(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        events: Sequence[Event],
-        session_id: str | None = None,
-        custom_metadata: Mapping[str, object] | None = None,
-    ) -> None:
+    async def trigger_compression_if_due(self, game_session_id: str) -> None:
         """Compress context if the compression interval has been reached."""
         try:
-            game_session_id = uuid.UUID(user_id)
+            session_uuid = uuid.UUID(game_session_id)
         except ValueError:
-            logger.warning("Invalid user_id for memory", user_id=user_id)
+            logger.warning("Invalid game_session_id", game_session_id=game_session_id)
             return
-        await self._compress_if_due(game_session_id)
+        await self._compress_if_due(session_uuid)
 
-    async def search_memory(
-        self,
-        *,
-        app_name: str,
-        user_id: str,
-        query: str,
-    ) -> SearchMemoryResponse:
-        """Return context_summary as MemoryEntry for PreloadMemoryTool injection."""
+    async def flush(self, game_session_id: str) -> None:
+        """Force context compression at session end (best effort)."""
         try:
-            game_session_id = uuid.UUID(user_id)
+            session_uuid = uuid.UUID(game_session_id)
         except ValueError:
-            return SearchMemoryResponse()
-
-        with SQLModelSession(engine) as db:
-            ctx = self._context_gw.get_by_session(db, game_session_id)
-
-        if ctx is None:
-            return SearchMemoryResponse()
-
-        memory_text = _format_context_summary(ctx)
-        return SearchMemoryResponse(
-            memories=[
-                MemoryEntry(
-                    content=genai_types.Content(
-                        parts=[genai_types.Part(text=memory_text)],
-                        role="user",
-                    ),
-                )
-            ]
-        )
+            logger.warning(
+                "Invalid game_session_id for flush",
+                game_session_id=game_session_id,
+            )
+            return
+        await self._fetch_and_run_compression(session_uuid)
 
     async def _compress_if_due(self, game_session_id: uuid.UUID) -> None:
-        """Skip compression if the interval threshold has not been reached."""
+        """Skip compression if the interval threshold has not been reached.
+
+        DB を1回だけフェッチしてインターバル判定と圧縮データの両方に使用する。
+        """
         with SQLModelSession(engine) as db:
             ctx = self._context_gw.get_by_session(db, game_session_id)
             last_updated = int(ctx.last_updated_turn) if ctx else 0
-            recent = self._turn_gw.get_recent(db, game_session_id, limit=1)
-            current_turn = int(recent[0].turn_number) if recent else 0
+            turns = self._turn_gw.get_recent(db, game_session_id, limit=10)
+            current_turn = int(turns[0].turn_number) if turns else 0
 
         if (current_turn - last_updated) < COMPRESSION_INTERVAL:
             return
 
-        await self._compress(game_session_id)
+        await self._run_compression(
+            game_session_id,
+            ctx_rec=ctx,
+            turns=turns,
+            current_turn=current_turn,
+        )
 
-    async def _compress(self, game_session_id: uuid.UUID) -> None:
-        """Run Gemini compression and persist results to context_summary."""
+    async def _fetch_and_run_compression(self, game_session_id: uuid.UUID) -> None:
+        """Fetch DB data once and run compression unconditionally (for flush)."""
         with SQLModelSession(engine) as db:
-            ctx_rec = self._context_gw.get_by_session(db, game_session_id)
-            prev_plot = json.dumps(ctx_rec.plot_essentials if ctx_rec else {})
-            prev_facts = json.dumps(ctx_rec.confirmed_facts if ctx_rec else {})
-            prev_summary = ctx_rec.short_term_summary if ctx_rec else ""
+            ctx = self._context_gw.get_by_session(db, game_session_id)
             turns = self._turn_gw.get_recent(db, game_session_id, limit=10)
-            recent_1 = turns[:1]
-            current_turn = int(recent_1[0].turn_number) if recent_1 else 0
+            current_turn = int(turns[0].turn_number) if turns else 0
+
+        await self._run_compression(
+            game_session_id,
+            ctx_rec=ctx,
+            turns=turns,
+            current_turn=current_turn,
+        )
+
+    async def _run_compression(
+        self,
+        game_session_id: uuid.UUID,
+        *,
+        ctx_rec: ContextSummaries | None,
+        turns: list[Turns],
+        current_turn: int,
+    ) -> None:
+        """Run Gemini compression and persist results to context_summary.
+
+        フェッチ済みデータを受け取るため DB への再アクセスは発生しない。
+        """
+        prev_plot = json.dumps(ctx_rec.plot_essentials if ctx_rec else {})
+        prev_facts = json.dumps(ctx_rec.confirmed_facts if ctx_rec else {})
+        prev_summary = ctx_rec.short_term_summary if ctx_rec else ""
 
         parts: list[str] = []
         for t in reversed(turns):
@@ -202,18 +190,3 @@ class GameMemoryService(BaseMemoryService):
             session_id=str(game_session_id),
             turn=current_turn,
         )
-
-
-def _format_context_summary(ctx: object) -> str:
-    """Format context_summary fields as a plain-text string for search_memory."""
-    lines: list[str] = []
-    plot = getattr(ctx, "plot_essentials", {})
-    if plot:
-        lines.append(f"# Plot Essentials\n{json.dumps(plot, ensure_ascii=False)}")
-    summary = getattr(ctx, "short_term_summary", "")
-    if summary:
-        lines.append(f"# Story So Far\n{summary}")
-    facts = getattr(ctx, "confirmed_facts", {})
-    if facts:
-        lines.append(f"# Confirmed Facts\n{json.dumps(facts, ensure_ascii=False)}")
-    return "\n\n".join(lines)

@@ -118,11 +118,14 @@ class AdkGmClient:
             instruction=GM_SYSTEM_PROMPT,
             output_schema=GmDecisionResponse,
         )
+        # memory_service は Runner に渡さない。
+        # Runner(memory_service=...) は PreloadMemoryTool を自動注入し、
+        # GmContextService が構築したプロンプトに <PAST_CONVERSATIONS> が
+        # 二重注入されるため。圧縮は decide() / cleanup_session() で直接呼び出す。
         self._runner = Runner(
             agent=agent,
             app_name=self._APP_NAME,
             session_service=_adk_session_service(),
-            memory_service=memory_service,
             auto_create_session=True,
         )
 
@@ -169,19 +172,13 @@ class AdkGmClient:
             decision_type=result.decision_type,
         )
 
-        # ADK Runner は自動で add_events_to_memory を呼ばないため手動でトリガーする。
-        # GameMemoryService は events を参照せず DB のターン数のみで圧縮判定するため
-        # 空リストを渡すことで副作用なく圧縮チェックが実行される。
-        await self._memory_service.add_events_to_memory(
-            app_name=self._APP_NAME,
-            user_id=game_session_id,
-            events=[],
-        )
+        # ターン数閾値に達した場合のみ圧縮を実行する。
+        await self._memory_service.trigger_compression_if_due(game_session_id)
 
         return result
 
     async def cleanup_session(self, session_id: str, game_session_id: str) -> None:
-        """Delete the ADK session (best effort)."""
+        """Delete the ADK session and flush context compression (best effort)."""
         try:
             await self._runner.session_service.delete_session(
                 app_name=self._APP_NAME,
@@ -191,6 +188,15 @@ class AdkGmClient:
         except Exception as exc:
             logger.warning(
                 "ADK session cleanup failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+
+        try:
+            await self._memory_service.flush(game_session_id)
+        except Exception as exc:
+            logger.warning(
+                "Context compression flush failed",
                 session_id=session_id,
                 error=str(exc),
             )

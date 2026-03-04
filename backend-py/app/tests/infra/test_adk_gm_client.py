@@ -19,9 +19,8 @@ from src.domain.entity.gm_types import GmDecisionResponse
 def _make_memory_service_mock() -> MagicMock:
     """Build a mock for GameMemoryService."""
     mock = MagicMock()
-    mock.add_events_to_memory = AsyncMock()
-    mock.search_memory = AsyncMock()
-    mock.add_session_to_memory = AsyncMock()
+    mock.trigger_compression_if_due = AsyncMock()
+    mock.flush = AsyncMock()
     return mock
 
 
@@ -417,12 +416,13 @@ class TestAdkGmClientDecide:
     async def test_cleanup_session_deletes_adk_session(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """cleanup_session() should call session_service.delete_session."""
+        """cleanup_session() should call session_service.delete_session and flush."""
         monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         from src.infra.adk_gm_client import AdkGmClient
 
-        client = AdkGmClient(memory_service=_make_memory_service_mock())
+        memory_mock = _make_memory_service_mock()
+        client = AdkGmClient(memory_service=memory_mock)
         delete_mock = AsyncMock()
         client._runner.session_service.delete_session = delete_mock  # type: ignore[method-assign]
 
@@ -435,6 +435,7 @@ class TestAdkGmClientDecide:
             user_id="test-game-session",
             session_id="session-to-delete",
         )
+        memory_mock.flush.assert_awaited_once_with("test-game-session")
 
     @pytest.mark.asyncio
     async def test_cleanup_session_swallows_errors(
