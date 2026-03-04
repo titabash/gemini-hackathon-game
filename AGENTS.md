@@ -454,6 +454,69 @@ final session = supabase.auth.currentSession;
 3. **Context7** > 古いドキュメント・慣習
 4. **IDE MCP** > 手動エラーチェック
 
+## CRITICAL: Google ADK GM Agent パターン
+
+GM エージェントは **Google ADK** を使用（`backend-py/app/src/infra/adk_gm_client.py`）。
+
+### ADK 採用理由
+
+`langchain-google-genai` は `response_json_schema` 未対応 → Pydantic 構造化出力には ADK の `output_schema=` を使用。
+
+### CRITICAL: 選択肢アクセスパターン（ADK 導入後）
+
+```python
+# ✅ ADK 後の正しい方法 - decision.nodes の中の choice ノードを参照
+choice_node = next(
+    (n for n in reversed(decision.nodes) if n.type == "choice" and n.choices),
+    None,
+)
+
+# ❌ 古い方法 - decision.choices は ADK 導入後は存在しない
+choices = decision.choices  # AttributeError になる
+```
+
+`decision_type="choice"` の場合、選択肢は **`decision.nodes` の `type="choice"` ノードの `.choices`** に格納される。
+
+### ADK セットアップ
+
+```python
+agent = LlmAgent(
+    name="gm_agent",
+    model=Gemini(model="gemini-3-flash-preview"),
+    instruction=GM_SYSTEM_PROMPT,
+    output_schema=GmDecisionResponse,  # Pydantic 直接指定
+    # use_interactions_api=True は絶対に使わない（構造化出力が壊れる）
+)
+```
+
+## CRITICAL: TrpgSession Surface 優先順位
+
+`frontend/apps/web/lib/features/trpg/model/trpg_session_provider.dart`
+
+### resolvePostPagingMode ルール
+
+```dart
+// hasSurface=true は isProcessing=true より必ず優先される
+static NovelDisplayMode resolvePostPagingMode({...}) {
+  if (hasSurface) return NovelDisplayMode.surface;  // ← 最優先
+  if (isProcessing) return NovelDisplayMode.processing;
+  return NovelDisplayMode.input;
+}
+```
+
+**理由**: auto-advance シナリオで `isProcessing=true` のまま choice が完了する場合がある。
+`hasSurface=true` はバックエンドが選択肢 surface を送信済みを意味するため、処理状態より優先して表示すべき。
+
+## CRITICAL: genui game-surface パターン
+
+| surfaceId | 用途 |
+|-----------|------|
+| `game-surface` | choiceGroup / continueButton / clarifyQuestion |
+| `game-narration` | narrativePanel |
+| `game-npcs` | npcGallery |
+
+`surfaceUpdate` だけでは surface は表示されない。**`beginRendering` とセット**で送ること。
+
 ## ベストプラクティスまとめ
 
 ### Frontend (Flutter)
