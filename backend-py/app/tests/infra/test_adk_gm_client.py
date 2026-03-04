@@ -17,7 +17,12 @@ from src.domain.entity.gm_types import GmDecisionResponse
 
 
 def _make_memory_service_mock() -> MagicMock:
-    """Build a mock for GameMemoryService."""
+    """Build a mock for GameMemoryService.
+
+    GameMemoryService はモジュールレベルで DATABASE_URL を必須とするため、
+    create_autospec は使用できない (テスト収集時にインポートが失敗する)。
+    代わりに AsyncMock を手動で設定し、呼び出し検証を可能にする。
+    """
     mock = MagicMock()
     mock.trigger_compression_if_due = AsyncMock()
     mock.add_session_to_memory = AsyncMock()

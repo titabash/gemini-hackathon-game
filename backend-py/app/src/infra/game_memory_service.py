@@ -64,9 +64,12 @@ class GameMemoryService(BaseMemoryService):
 
     user_id = ゲームセッション UUID (str) でスコープ。
     ADK の BaseMemoryService を継承することで:
-    - Runner(memory_service=...) に渡せる → PreloadMemoryTool が自動注入
+    - Runner(memory_service=...) に渡せる → InvocationContext に保存される
     - VertexAiMemoryBankService への差し替えが容易
     - ADK の設計パターンに準拠
+
+    注意: PreloadMemoryTool の起動には agent.tools への明示追加が必要。
+    Runner(memory_service=...) だけでは PreloadMemoryTool は起動しない。
 
     PreloadMemoryTool は毎 LLM 呼び出し前に search_memory() を実行し、
     結果を <PAST_CONVERSATIONS> としてシステム指示に注入する。
@@ -119,6 +122,8 @@ class GameMemoryService(BaseMemoryService):
             return SearchMemoryResponse()
 
         memory_text = _format_context_summary(ctx)
+        if not memory_text:
+            return SearchMemoryResponse()
         return SearchMemoryResponse(
             memories=[
                 MemoryEntry(
