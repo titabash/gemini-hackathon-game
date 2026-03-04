@@ -21,6 +21,14 @@ SSL:
 asyncpg は URL クエリの sslmode パラメータを解釈しない。
 sslmode=require が含まれる場合は URL から除去し connect_args["ssl"]=True で対応する。
 参照: https://github.com/MagicStack/asyncpg/issues/737
+
+メモリ注入:
+PreloadMemoryTool は output_schema と同時使用すると _OutputSchemaRequestProcessor が
+SetModelResponseTool を挿入し、GmDecisionResponse の複雑な型 (list[SceneNode] | None)
+のパース時に ValueError が発生する (non-Vertex AI 環境, google-adk v1.26.0)。
+  参照: https://github.com/google/adk-python/issues/701
+そのため agent.tools には何も追加せず、decide() 内で search_memory() を直接呼び出して
+<PAST_CONVERSATIONS> としてプロンプトに付加する。
 """
 
 from __future__ import annotations
@@ -33,7 +41,6 @@ from google.adk.agents import LlmAgent
 from google.adk.models.google_llm import Gemini
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
-from google.adk.tools.preload_memory_tool import preload_memory_tool
 from google.genai import types as genai_types
 
 from domain.entity.gm_prompts import GM_SYSTEM_PROMPT
@@ -96,8 +103,10 @@ class AdkGmClient:
     adk スキーマに永続化される (public スキーマとは完全に分離)。
 
     memory_service を Runner に渡すことで InvocationContext に保存される。
-    PreloadMemoryTool は agent.tools に明示的に追加されており、毎 LLM 呼び出し前に
-    search_memory() を実行して <PAST_CONVERSATIONS> としてコンテキストを注入する。
+    メモリコンテキストは decide() 内で search_memory() を直接呼び出し、
+    <PAST_CONVERSATIONS> としてプロンプトに付加することで注入する。
+    agent.tools は空のまま維持することで SetModelResponseTool の挿入を回避し、
+    output_schema=GmDecisionResponse が API リクエストに直接設定される。
     二重注入を防ぐため CONTEXT_TEMPLATE 側には plot_essentials /
     short_term_summary / confirmed_facts を含めない。
     user_id には game_session_id (UUID 文字列) を使用し、メモリスコープを
@@ -122,7 +131,11 @@ class AdkGmClient:
             model=Gemini(model=self.MODEL),
             instruction=GM_SYSTEM_PROMPT,
             output_schema=GmDecisionResponse,
-            tools=[preload_memory_tool],
+            # tools は指定しない。
+            # PreloadMemoryTool を tools に追加すると _OutputSchemaRequestProcessor が
+            # SetModelResponseTool を挿入し、list[SceneNode]|None の anyOf 型で
+            # ValueError が発生する (non-Vertex AI, google-adk v1.26.0)。
+            # メモリ注入は decide() 内で search_memory() を直接呼び出して行う。
         )
         self._runner = Runner(
             agent=agent,
@@ -141,10 +154,34 @@ class AdkGmClient:
         ゲームセッション単位に限定する。同一 session_id の呼び出しでは ADK セッションが
         再利用され、会話履歴が引き継がれる (auto-advance 時の複数ターン連鎖)。
         セッション作成は auto_create_session で ADK に委譲済み。
+
+        メモリコンテキストを search_memory() で取得し、<PAST_CONVERSATIONS> として
+        プロンプトに付加してから run_async() を呼び出す。
         """
+        # メモリコンテキストを取得してプロンプトに付加する。
+        memory_resp = await self._memory_service.search_memory(
+            app_name=self._APP_NAME,
+            user_id=game_session_id,
+            query="",
+        )
+        memory_parts: list[str] = [
+            part.text
+            for entry in memory_resp.memories
+            if entry.content and entry.content.parts
+            for part in entry.content.parts
+            if part.text
+        ]
+        if memory_parts:
+            context = "\n\n".join(memory_parts)
+            full_prompt = (
+                f"<PAST_CONVERSATIONS>\n{context}\n</PAST_CONVERSATIONS>\n\n{prompt}"
+            )
+        else:
+            full_prompt = prompt
+
         message = genai_types.Content(
             role="user",
-            parts=[genai_types.Part(text=prompt)],
+            parts=[genai_types.Part(text=full_prompt)],
         )
 
         result: GmDecisionResponse | None = None

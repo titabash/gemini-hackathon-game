@@ -12,6 +12,7 @@ import os
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from google.adk.memory.base_memory_service import SearchMemoryResponse
 
 from src.domain.entity.gm_types import GmDecisionResponse
 
@@ -26,6 +27,7 @@ def _make_memory_service_mock() -> MagicMock:
     mock = MagicMock()
     mock.trigger_compression_if_due = AsyncMock()
     mock.add_session_to_memory = AsyncMock()
+    mock.search_memory = AsyncMock(return_value=SearchMemoryResponse())
     return mock
 
 
@@ -416,6 +418,91 @@ class TestAdkGmClientDecide:
                 session_id="test-session",
                 game_session_id="test-game-session",
             )
+
+    @pytest.mark.asyncio
+    async def test_decide_injects_memory_context_into_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Memory context must be prepended to the prompt as <PAST_CONVERSATIONS>."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        from google.adk.memory.memory_entry import MemoryEntry
+        from google.genai import types as genai_types
+
+        from src.infra.adk_gm_client import AdkGmClient
+
+        memory_mock = _make_memory_service_mock()
+        memory_mock.search_memory = AsyncMock(
+            return_value=SearchMemoryResponse(
+                memories=[
+                    MemoryEntry(
+                        content=genai_types.Content(
+                            parts=[genai_types.Part(text="# Story So Far\nTest ctx.")],
+                            role="user",
+                        )
+                    )
+                ]
+            )
+        )
+        client = AdkGmClient(memory_service=memory_mock)
+
+        received_prompt: list[str] = []
+
+        async def fake_run_async(**kwargs: object) -> object:
+            msg = kwargs.get("new_message")
+            if msg and hasattr(msg, "parts"):
+                received_prompt.extend(p.text for p in msg.parts if p.text)
+            decision = GmDecisionResponse(
+                decision_type="narrate", narration_text="Test."
+            )
+            yield _make_final_event(decision.model_dump_json())
+
+        client._runner.run_async = fake_run_async  # type: ignore[assignment]
+
+        await client.decide(
+            prompt="Player action.",
+            session_id="test-session",
+            game_session_id="11111111-1111-1111-1111-111111111111",
+        )
+
+        assert len(received_prompt) == 1
+        assert "<PAST_CONVERSATIONS>" in received_prompt[0]
+        assert "# Story So Far" in received_prompt[0]
+        assert "Player action." in received_prompt[0]
+
+    @pytest.mark.asyncio
+    async def test_decide_skips_memory_prefix_when_no_context(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Prompt must be passed as-is when search_memory returns no memories."""
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+
+        from src.infra.adk_gm_client import AdkGmClient
+
+        client = AdkGmClient(memory_service=_make_memory_service_mock())
+
+        received_prompt: list[str] = []
+
+        async def fake_run_async(**kwargs: object) -> object:
+            msg = kwargs.get("new_message")
+            if msg and hasattr(msg, "parts"):
+                received_prompt.extend(p.text for p in msg.parts if p.text)
+            decision = GmDecisionResponse(
+                decision_type="narrate", narration_text="Test."
+            )
+            yield _make_final_event(decision.model_dump_json())
+
+        client._runner.run_async = fake_run_async  # type: ignore[assignment]
+
+        await client.decide(
+            prompt="Player action.",
+            session_id="test-session",
+            game_session_id="11111111-1111-1111-1111-111111111111",
+        )
+
+        assert len(received_prompt) == 1
+        assert received_prompt[0] == "Player action."
+        assert "<PAST_CONVERSATIONS>" not in received_prompt[0]
 
     @pytest.mark.asyncio
     async def test_decide_calls_trigger_compression_after_decision(
