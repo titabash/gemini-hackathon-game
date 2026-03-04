@@ -33,6 +33,7 @@ from google.adk.agents import LlmAgent
 from google.adk.models.google_llm import Gemini
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
+from google.adk.tools.preload_memory_tool import preload_memory_tool
 from google.genai import types as genai_types
 
 from domain.entity.gm_prompts import GM_SYSTEM_PROMPT
@@ -120,6 +121,7 @@ class AdkGmClient:
             model=Gemini(model=self.MODEL),
             instruction=GM_SYSTEM_PROMPT,
             output_schema=GmDecisionResponse,
+            tools=[preload_memory_tool],
         )
         self._runner = Runner(
             agent=agent,
