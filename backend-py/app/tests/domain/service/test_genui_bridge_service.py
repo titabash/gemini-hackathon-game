@@ -601,14 +601,57 @@ class TestBuildSurfaceProperties:
         assert result["type"] == "choiceGroup"
         assert len(result["properties"]["choices"]) == 1
 
-    def test_choice_surface_no_nodes_returns_none(self) -> None:
-        """Choice decision with no nodes returns None (no surface)."""
+    def test_choice_surface_no_nodes_returns_action_input(self) -> None:
+        """Choice with no nodes falls back to actionInput using narration_text."""
         decision = GmDecisionResponse(
             decision_type="choice",
-            narration_text="Choose.",
+            narration_text="What will you do next?",
         )
         result = GenuiBridgeService._build_surface_properties(decision)
-        assert result is None
+        assert result is not None
+        assert result["type"] == "actionInput"
+        assert result["properties"]["question"] == "What will you do next?"
+
+    def test_choice_surface_only_narration_nodes_returns_action_input(self) -> None:
+        """Choice decision with only narration nodes falls back to actionInput."""
+        decision = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="Two paths diverge before you. Which do you take?",
+            nodes=[
+                SceneNode(type="narration", text="You face a crossroads."),
+                SceneNode(type="narration", text="Two paths diverge."),
+            ],
+        )
+        result = GenuiBridgeService._build_surface_properties(decision)
+        assert result is not None
+        assert result["type"] == "actionInput"
+        assert (
+            result["properties"]["question"]
+            == "Two paths diverge before you. Which do you take?"
+        )
+
+    def test_act_surface_with_action_prompt(self) -> None:
+        """Act decision returns actionInput surface with action_prompt."""
+        decision = GmDecisionResponse(
+            decision_type="act",
+            narration_text="Summary.",
+            action_prompt="次にどうする？",
+        )
+        result = GenuiBridgeService._build_surface_properties(decision)
+        assert result is not None
+        assert result["type"] == "actionInput"
+        assert result["properties"]["question"] == "次にどうする？"
+
+    def test_act_surface_falls_back_to_narration_text(self) -> None:
+        """Act decision without action_prompt falls back to narration_text."""
+        decision = GmDecisionResponse(
+            decision_type="act",
+            narration_text="You stand at the crossroads.",
+        )
+        result = GenuiBridgeService._build_surface_properties(decision)
+        assert result is not None
+        assert result["type"] == "actionInput"
+        assert result["properties"]["question"] == "You stand at the crossroads."
 
     def test_clarify_surface(self) -> None:
         """Clarify decision should return clarifyQuestion surface."""
@@ -635,6 +678,30 @@ class TestBuildSurfaceProperties:
         result = GenuiBridgeService._build_surface_properties(decision)
         assert result is not None
         assert result["type"] == "repairConfirm"
+
+    def test_clarify_without_question_falls_back_to_action_input(self) -> None:
+        """Clarify without clarify_question should fall back to actionInput."""
+        decision = GmDecisionResponse(
+            decision_type="clarify",
+            narration_text="Something is unclear here.",
+            clarify_question=None,
+        )
+        result = GenuiBridgeService._build_surface_properties(decision)
+        assert result is not None, "Must never return None for clarify"
+        assert result["type"] == "actionInput"
+        assert result["properties"]["question"] == "Something is unclear here."
+
+    def test_repair_without_data_falls_back_to_action_input(self) -> None:
+        """Repair without repair data should fall back to actionInput."""
+        decision = GmDecisionResponse(
+            decision_type="repair",
+            narration_text="Let me clarify what happened.",
+            repair=None,
+        )
+        result = GenuiBridgeService._build_surface_properties(decision)
+        assert result is not None, "Must never return None for repair"
+        assert result["type"] == "actionInput"
+        assert result["properties"]["question"] == "Let me clarify what happened."
 
     def test_narrate_surface(self) -> None:
         """Narrate decision should return continueButton surface."""
@@ -674,14 +741,16 @@ class TestBuildSurfaceProperties:
         assert result["type"] == "continueOrInput"
         assert result["properties"] == {}
 
-    def test_choice_without_nodes_returns_none(self) -> None:
-        """Choice decision without nodes returns None."""
+    def test_choice_without_nodes_returns_action_input(self) -> None:
+        """Choice decision without nodes falls back to actionInput."""
         decision = GmDecisionResponse(
             decision_type="choice",
             narration_text="Choose.",
         )
         result = GenuiBridgeService._build_surface_properties(decision)
-        assert result is None
+        assert result is not None
+        assert result["type"] == "actionInput"
+        assert result["properties"]["question"] == "Choose."
 
 
 # ---------------------------------------------------------------------------

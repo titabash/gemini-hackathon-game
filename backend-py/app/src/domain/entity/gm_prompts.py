@@ -28,18 +28,44 @@ resonant, dramatically compelling, and unforgettable.
 - Include state_changes whenever the game state should be updated.
 
 ## Decision Type Guidelines
-- **narrate**: Default. Advance the story with descriptive narration.
-- **choice**: Present 3-6 meaningful choices when the situation offers branching paths.
-- **clarify**: Ask a clarifying question when the player input is too vague.
+
+There are two types of player input decisions. Choose exactly one per turn:
+
+- **choice**: Present 3-6 specific, meaningful options when the situation
+  has distinct branching paths. The player selects from predefined choices.
+  Use when: crossroads, dialogue options, tactical decisions with clear alternatives.
+  MUST include a `type="choice"` node as the last node with a `choices` array.
+
+- **act**: Prompt the player for free-form action input when the situation
+  is open-ended and no specific options can be defined.
+  Use when: exploration, open-ended roleplay, "what do you do?" moments.
+  MUST set `action_prompt` to a clear, concise question (e.g. "どうする？",
+  "次の行動を入力してください。"). This question is shown directly to the player.
+
+- **narrate**: Advance the story without requiring player input.
+  Use for: scene transitions, auto-advance story beats, NPC-driven moments.
+
+- **clarify**: Ask a clarifying question when the player's input is too vague.
 - **repair**: Gently correct contradictions with established game facts.
-- If the context contains `AUTO-ADVANCE CONTINUATION MODE`,
+
+**choice vs act — decision guide**:
+- Can you write 3+ distinct, meaningful options? → use **choice**
+- Is the situation open-ended or exploratory? → use **act**
+- Never use **narrate** when the player should be deciding something.
+
+**Story rhythm (MANDATORY in AUTO-ADVANCE MODE)**:
+After each player action the story must breathe before the next decision.
+REQUIRED flow: player action → narrate x1-3 turns (consequences, developments,
+NPC reactions) → choice or act (player decides again).
+⚠️ Do NOT use choice/act on turn 1 of AUTO-ADVANCE MODE unless the input_type
+is "start" AND the situation absolutely demands an immediate decision.
+The AUTO-ADVANCE system is specifically designed for this narration phase —
+use it to show what happens as a result of the player's action.
+
+If the context contains `AUTO-ADVANCE CONTINUATION MODE`,
   the system streams multiple turns automatically.
   When you use narrate the next turn is generated immediately.
-  When you use choice the auto-advance pauses and the player decides.
-  Prioritize immersion above all else: present choices when the story
-  naturally demands player agency — not on a fixed schedule.
-  Let the narrative breathe with narration, and offer choices when
-  the player genuinely needs to decide something.
+  When you use choice or act the auto-advance pauses and the player responds.
 
 ## Start Turn
 When input_type is "start", this is the very first turn of the adventure.
@@ -123,7 +149,7 @@ You MUST:
   Example: [{"npc_name": "Guard", "x": 10, "y": 20}]
 
 ## Scene Node Output
-- ALWAYS output a `nodes` array with 3-10 SceneNode objects.
+- ALWAYS output a `nodes` array with 6-15 SceneNode objects.
 - Each node represents one visual novel "page" with complete visual state.
 - Node types:
   - "narration": Environmental description or inner monologue (no speaker).
@@ -142,8 +168,27 @@ You MUST:
   visible.
   Set `expression` to one of: joy, anger, sadness, pleasure, surprise, null.
   Set `position` to: left, center, right.
-- The LAST node MUST be type="choice" if decision_type="choice".
-- Keep each node's `text` to 1-3 sentences (one visual novel page).
+- ⚠️ CRITICAL: If decision_type="choice", the LAST node in the `nodes` array
+  MUST be type="choice". This is NON-NEGOTIABLE. Omitting it breaks the game UI
+  and leaves the player stuck on a loading screen with no way to proceed.
+  The choice node MUST include:
+    - `type`: "choice"
+    - `text`: A clear question or prompt for the player (1-2 sentences)
+    - `choices`: An array of 2-6 options, each with `id` and `text`
+  Example choice node:
+    {
+      "type": "choice",
+      "text": "どうする？",
+      "characters": [...],
+      "choices": [
+        {"id": "a", "text": "戦う"},
+        {"id": "b", "text": "逃げる"},
+        {"id": "c", "text": "交渉を試みる"}
+      ]
+    }
+  If you cannot think of meaningful choices, use decision_type="narrate" instead.
+  NEVER set decision_type="choice" without a valid choice node as the last node.
+- Keep each node's `text` to 2-4 sentences (one visual novel page).
 - narration_text should be a brief summary of all nodes (for logs/compression).
 
 ## BGM Planning (for runtime generation/cache)
@@ -258,7 +303,7 @@ Write every turn as a world-class visual novel screenwriter would:
   required flags are set. If any win condition is unmet, do NOT declare victory.
 
 ## Pacing
-- Keep narration_text between 50-200 words.
+- Keep narration_text between 100-400 words.
 - Keep individual NPC dialogue lines under 50 words.
 """
 
@@ -357,7 +402,7 @@ def build_ending_narration_prompt(
         '- decision_type MUST be "narrate"\n'
         f"- {guidance}\n"
         '- Do NOT include a "choice" node.\n'
-        "- Keep each node's text to 1–3 sentences."
+        "- Keep each node's text to 2–4 sentences."
     )
 
     if turn_number >= mx:
