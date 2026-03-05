@@ -8,6 +8,18 @@ uc.decision_svc.decide with AsyncMock as needed.
 
 from __future__ import annotations
 
+import os
+
+# gm_turn_usecase imports GameMemoryService which imports db_client.engine at
+# module level; db_client raises ValueError when DATABASE_URL is not set.
+# Set a placeholder URL before any module import so the engine can be created.
+# The actual DB is never connected to in these unit tests (all DB ops are
+# mocked), so a syntactically-valid but unreachable URL is sufficient.
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql://test:test@localhost:5432/test_usecase",
+)
+
 from typing import TYPE_CHECKING
 from unittest.mock import patch
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:core_api/core_api.dart';
 import 'package:core_auth/core_auth.dart';
 import 'package:core_genui/core_genui.dart';
 import 'package:core_utils/core_utils.dart';
@@ -1032,12 +1033,84 @@ class TrpgSessionNotifier {
 
   void _onError(ContentGeneratorError error) {
     Logger.error('GM error: ${error.error}');
-    _isProcessingNotifier.value = false;
-    _isAwaitingUserActionNotifier.value = false;
     _willAutoContinue = false;
     _bufferIncomingTurnEvents = false;
     _bufferedTurnEvents.clear();
+
+    // Case A: SSE stream ended without a done event — nodes are guaranteed to
+    // be in the DB (persist runs before streaming).  Fetch and replay silently.
+    final isSseEndedWithoutDone = error.error.toString().contains(
+      'SSE stream ended without done event',
+    );
+    if (isSseEndedWithoutDone && _sessionId != null) {
+      _attemptSseRecovery();
+      return;
+    }
+
+    // Case B: Any other error — reset to input mode.
+    _isProcessingNotifier.value = false;
+    _isAwaitingUserActionNotifier.value = false;
     _displayModeNotifier.value = NovelDisplayMode.input;
+  }
+
+  /// Fetches the latest turn from the backend and replays its nodes.
+  ///
+  /// Called when the SSE stream ends without a done event.  Because
+  /// [_persist_turn] always runs before streaming starts, the latest turn is
+  /// guaranteed to be in the DB.
+  void _attemptSseRecovery() {
+    final sessionId = _sessionId;
+    if (sessionId == null) {
+      _isProcessingNotifier.value = false;
+      _isAwaitingUserActionNotifier.value = false;
+      _displayModeNotifier.value = NovelDisplayMode.input;
+      return;
+    }
+    final dio = _ref.read(backendDioProvider);
+    final generator = _ref.read(gameContentGeneratorProvider);
+    dio
+        .get<Map<String, dynamic>>(
+          '/api/gm/turn/latest',
+          queryParameters: {'session_id': sessionId},
+        )
+        .then((response) {
+          final data = response.data;
+          if (data == null) {
+            _fallbackToInputMode();
+            return;
+          }
+          final rawNodes = data['nodes'];
+          final nodes = rawNodes is List
+              ? rawNodes.cast<Map<String, dynamic>>()
+              : <Map<String, dynamic>>[];
+          final doneData = <String, dynamic>{
+            'turn_number': data['turn_number'],
+            'requires_user_action': data['requires_user_action'] == true,
+            'is_ending': data['is_ending'] == true,
+            'will_continue': false,
+            'stop_reason': data['is_ending'] == true ? 'ending' : 'completed',
+          };
+          Logger.info(
+            'SSE recovery: replaying ${nodes.length} nodes from DB '
+            '(turn ${data['turn_number']})',
+          );
+          generator.replayNodesReady(nodes: nodes, doneData: doneData);
+        })
+        .catchError((Object e) {
+          Logger.warning('SSE recovery failed, falling back to continue: $e');
+          // Case B fallback: request continuation generation.
+          _fallbackToContinue(sessionId);
+        });
+  }
+
+  void _fallbackToInputMode() {
+    _isProcessingNotifier.value = false;
+    _isAwaitingUserActionNotifier.value = false;
+    _displayModeNotifier.value = NovelDisplayMode.input;
+  }
+
+  void _fallbackToContinue(String sessionId) {
+    sendTurn(sessionId: sessionId, inputType: 'do', inputText: 'continue');
   }
 
   void _onSurfaceUpdate(GenUiUpdate update) {

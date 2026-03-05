@@ -18,7 +18,12 @@ from typing import TYPE_CHECKING, Any
 from sqlmodel import Session as SQLModelSession
 
 from domain.entity.gm_prompts import MAX_CLOSING_TURNS, build_ending_narration_prompt
-from domain.entity.gm_types import GmTurnRequest, SessionEnd, StateChanges
+from domain.entity.gm_types import (
+    GmTurnRequest,
+    LatestTurnResponse,
+    SessionEnd,
+    StateChanges,
+)
 from domain.entity.models import Npcs, SceneBackgrounds, Turns
 from domain.service.action_resolution_service import ActionResolutionService
 from domain.service.bgm_service import BgmService
@@ -98,7 +103,7 @@ class _TurnStreamParams:
     done_meta: _DoneMeta
     show_continue_button: bool
     show_continue_input_cta: bool
-    ending_nodes: list = field(default_factory=list)
+    ending_nodes: list[Any] = field(default_factory=list)
 
 
 class GmTurnUseCase:
@@ -205,7 +210,7 @@ class GmTurnUseCase:
                 # whether the GM set session_end itself (route ①) or a
                 # programmatic condition triggered it (routes ②③).
                 # This prevents abrupt story termination in all cases.
-                ending_nodes: list = []
+                ending_nodes: list[Any] = []
                 if is_ending:
                     ending_nodes = await self._resolve_ending_narration(
                         db=db,
@@ -288,6 +293,51 @@ class GmTurnUseCase:
             await self.decision_svc.cleanup_runtime(
                 decision_runtime, game_session_id=str(session_id)
             )
+
+    def get_latest_turn(
+        self, session_id: str, db: Session
+    ) -> LatestTurnResponse | None:
+        """Return the latest persisted turn output for SSE error recovery.
+
+        Called by GET /api/gm/turn/latest when the frontend needs to recover
+        from an SSE stream that ended without a done event.  Nodes are always
+        persisted before streaming starts, so this is guaranteed to return the
+        correct turn data in the error-recovery scenario.
+        """
+        try:
+            sid = uuid.UUID(session_id)
+        except ValueError:
+            return None
+
+        turn = self.turn_gw.get_latest(db, sid)
+        if turn is None:
+            return None
+
+        output: dict[str, Any] = turn.output or {}
+        from domain.entity.gm_types import GmDecisionResponse  # noqa: PLC0415
+
+        try:
+            decision = GmDecisionResponse(**output)
+        except Exception:
+            return None
+
+        nodes = [n.model_dump() for n in decision.nodes] if decision.nodes else None
+        is_ending = bool(
+            decision.state_changes and decision.state_changes.session_end is not None
+        )
+        requires_user_action = decision.decision_type in {
+            "choice",
+            "act",
+            "clarify",
+            "repair",
+        }
+        return LatestTurnResponse(
+            turn_number=turn.turn_number,
+            decision_type=decision.decision_type,
+            nodes=nodes,
+            is_ending=is_ending,
+            requires_user_action=requires_user_action,
+        )
 
     def _build_decision_runtime(
         self,
@@ -487,15 +537,23 @@ class GmTurnUseCase:
             return ""
 
         is_last = should_handoff_with_cta or current_turn >= total_turns
-        turn_note = (
-            "\n- This is the opening turn. Use narrate to establish the scene."
-            if input_type == "start"
-            else ""
-        )
+        is_early = not is_last and current_turn <= max(1, total_turns // 2)
+        if input_type == "start":
+            turn_note = (
+                "\n- MANDATORY: Opening turn — use narrate to establish"
+                " atmosphere. Do NOT use choice or act on this first turn."
+            )
+        elif is_early:
+            turn_note = (
+                "\n- PACING: Early turn — use narrate to show consequences"
+                " and develop the story. Avoid choice/act unless the scene"
+                " absolutely demands an immediate player decision."
+            )
+        else:
+            turn_note = ""
         last_turn_note = (
-            "\n- This is the LAST auto-advance turn. Present a choice to"
-            " give the player agency, unless the scene truly calls for"
-            " pure narration (in which case the player can type freely)."
+            "\n- MANDATORY: Final turn — you MUST end with choice or act."
+            " Do NOT use narrate on this last turn."
             if is_last
             else ""
         )
@@ -503,9 +561,8 @@ class GmTurnUseCase:
             f"AUTO-ADVANCE CONTINUATION MODE (turn {current_turn} of"
             f" {total_turns}):\n"
             "- narrate → next turn is generated immediately.\n"
-            "- choice  → auto-advance pauses, player decides.\n"
-            "Prioritize immersion: present choices when the story\n"
-            "naturally demands player agency, not on a fixed schedule.\n"
+            "- choice/act → auto-advance pauses, player decides.\n"
+            "RHYTHM: narrate consequences first, then request player action.\n"
             '- Avoid decision_type="clarify" and "repair" unless truly needed.'
             f"{turn_note}{last_turn_note}"
         )
@@ -631,7 +688,7 @@ class GmTurnUseCase:
         context: GameContext,
         runtime: GmDecisionRuntime | None,
         is_gm_decided: bool,
-    ) -> list:
+    ) -> list[Any]:
         """Return ending narration nodes for any ending route.
 
         _apply_and_evaluate() always writes session_end to DB before this is
@@ -659,14 +716,14 @@ class GmTurnUseCase:
         ending_summary: str,
         is_gm_decided: bool,
         runtime: GmDecisionRuntime | None,
-    ) -> list:
+    ) -> list[Any]:
         """Generate closing narration for any session-ending route.
 
         Loops up to MAX_CLOSING_TURNS, continuing until the GM includes
         session_end or the turn limit is reached.  Returns all collected
         nodes, or [] on failure.
         """
-        all_nodes: list = []
+        all_nodes: list[Any] = []
         for turn_num in range(1, MAX_CLOSING_TURNS + 1):
             prompt = build_ending_narration_prompt(
                 scenario_title=context.scenario_title,
@@ -693,6 +750,7 @@ class GmTurnUseCase:
                     "Ending narration failed; stopping early",
                     turn=turn_num,
                     ending_type=ending_type,
+                    exc_info=True,
                 )
                 break
 
@@ -1469,7 +1527,7 @@ def _bgm_generating_event(mood: str) -> str:
     return f"data: {payload}\n\n"
 
 
-def _nodes_ready_event(nodes: list) -> str:
+def _nodes_ready_event(nodes: list[Any]) -> str:
     """Build an SSE nodesReady event for a list of scene nodes."""
     payload = json.dumps(
         {"type": "nodesReady", "nodes": [n.model_dump() for n in nodes]},
@@ -1522,7 +1580,7 @@ def _requires_user_action(
     narrate_requires_continue: bool,
 ) -> bool:
     """Return whether this decision needs explicit user input to continue."""
-    if decision.decision_type in {"choice", "clarify", "repair"}:
+    if decision.decision_type in {"choice", "act", "clarify", "repair"}:
         return True
     if decision.decision_type == "narrate":
         return narrate_requires_continue

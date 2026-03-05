@@ -196,7 +196,7 @@ class SceneNode(BaseModel):
 class GmDecisionResponse(BaseModel):
     """Gemini構造化出力スキーマ。1回の呼出で全情報を返す."""
 
-    decision_type: Literal["narrate", "choice", "clarify", "repair"]
+    decision_type: Literal["narrate", "choice", "act", "clarify", "repair"]
     narration_text: str
 
     nodes: list[SceneNode] | None = None
@@ -206,6 +206,7 @@ class GmDecisionResponse(BaseModel):
     bgm_mood: str | None = None
     bgm_music_prompt: str | None = None
 
+    action_prompt: str | None = None
     clarify_question: str | None = None
     repair: RepairData | None = None
 
@@ -213,6 +214,19 @@ class GmDecisionResponse(BaseModel):
     npc_intents: list[NpcIntent] | None = None
 
     state_changes: StateChanges | None = None
+
+
+# --- SSE Recovery ---
+
+
+class LatestTurnResponse(BaseModel):
+    """Response for GET /api/gm/turn/latest used for SSE error recovery."""
+
+    turn_number: int
+    decision_type: str
+    nodes: list[dict[str, Any]] | None
+    is_ending: bool
+    requires_user_action: bool
 
 
 # --- Game Context (prompt construction) ---
