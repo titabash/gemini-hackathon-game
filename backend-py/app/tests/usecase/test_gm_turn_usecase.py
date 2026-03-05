@@ -2689,3 +2689,284 @@ class TestPlayerActionGating:
             applied: StateChanges = call_args[0][2]
             assert applied.relationship_changes is None
             assert applied.stats_delta is None
+
+
+# ---------------------------------------------------------------------------
+# TestGetLatestTurn – GmTurnUseCase.get_latest_turn()
+# ---------------------------------------------------------------------------
+
+
+class TestGetLatestTurn:
+    """Unit tests for GmTurnUseCase.get_latest_turn().
+
+    Verifies that the method correctly:
+    - Parses persisted `output` JSON into LatestTurnResponse
+    - Derives `is_ending` from state_changes.session_end presence
+    - Derives `requires_user_action` from decision_type
+    - Returns None for invalid UUIDs, missing turns, or malformed output
+    """
+
+    # ------------------------------------------------------------------
+    # Helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_uc() -> GmTurnUseCase:
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            return GmTurnUseCase()
+
+    @staticmethod
+    def _fake_turn(
+        *,
+        turn_number: int = 1,
+        output: dict[str, Any] | None = None,
+    ) -> MagicMock:
+        """Return a minimal Turns ORM mock with the given output."""
+        turn = MagicMock()
+        turn.turn_number = turn_number
+        turn.output = output
+        return turn
+
+    # ------------------------------------------------------------------
+    # Normal cases
+    # ------------------------------------------------------------------
+
+    def test_narrate_turn_returns_correct_response(self) -> None:
+        """Narrate turn: nodes serialised, is_ending=False, no user action."""
+        from domain.entity.gm_types import LatestTurnResponse
+
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The hero walks forward.",
+            nodes=[
+                SceneNode(type="narration", text="A dark forest."),
+            ],
+        ).model_dump()
+
+        turn = self._fake_turn(turn_number=3, output=output)
+        uc.turn_gw.get_latest = MagicMock(return_value=turn)
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert isinstance(result, LatestTurnResponse)
+        assert result.turn_number == 3
+        assert result.decision_type == "narrate"
+        assert result.is_ending is False
+        assert result.requires_user_action is False
+        assert result.nodes is not None
+        assert len(result.nodes) == 1
+        assert result.nodes[0]["text"] == "A dark forest."
+
+    def test_choice_turn_sets_requires_user_action(self) -> None:
+        """Choice decision_type → requires_user_action=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="You stand at a fork.",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="Choose your path.",
+                    choices=[
+                        {"id": "left", "text": "Go left"},
+                        {"id": "right", "text": "Go right"},
+                    ],
+                ),
+            ],
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is True
+        assert result.decision_type == "choice"
+
+    def test_act_turn_sets_requires_user_action(self) -> None:
+        """Act decision_type → requires_user_action=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="act",
+            narration_text="What do you do?",
+            action_prompt="どうする？",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is True
+
+    def test_session_end_sets_is_ending_true(self) -> None:
+        """session_end present in state_changes → is_ending=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The end.",
+            state_changes=StateChanges(
+                session_end=SessionEnd(
+                    ending_type="victory",
+                    ending_summary="Hero saved the world.",
+                ),
+            ),
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.is_ending is True
+
+    def test_no_session_end_sets_is_ending_false(self) -> None:
+        """state_changes without session_end → is_ending=False."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Combat continues.",
+            state_changes=StateChanges(
+                stats_delta=[StatDelta(stat="hp", delta=-10)],
+            ),
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.is_ending is False
+
+    def test_nodes_none_when_decision_has_no_nodes(self) -> None:
+        """Decision without nodes → nodes=None in response."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Brief narration.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.nodes is None
+
+    def test_multiple_nodes_all_serialised(self) -> None:
+        """All nodes in the decision are included in the response."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Long scene.",
+            nodes=[
+                SceneNode(type="narration", text="Page 1."),
+                SceneNode(type="dialogue", text="Page 2.", speaker="Hero"),
+                SceneNode(type="narration", text="Page 3."),
+            ],
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.nodes is not None
+        assert len(result.nodes) == 3
+        assert result.nodes[1]["speaker"] == "Hero"
+
+    # ------------------------------------------------------------------
+    # requires_user_action for each relevant decision_type
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("dt", ["choice", "act", "clarify", "repair"])
+    def test_requires_user_action_true_for_interactive_types(self, dt: str) -> None:
+        """choice/act/clarify/repair → requires_user_action=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type=dt,  # type: ignore[arg-type]
+            narration_text="Player input needed.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is True
+
+    def test_requires_user_action_false_for_narrate(self) -> None:
+        """Narrate → requires_user_action=False."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Story continues.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is False
+
+    # ------------------------------------------------------------------
+    # Error / edge cases
+    # ------------------------------------------------------------------
+
+    def test_returns_none_for_invalid_uuid(self) -> None:
+        """Non-UUID session_id → None (no DB query)."""
+        uc = self._make_uc()
+        uc.turn_gw.get_latest = MagicMock()
+
+        result = uc.get_latest_turn("not-a-uuid", MagicMock())
+
+        assert result is None
+        uc.turn_gw.get_latest.assert_not_called()
+
+    def test_returns_none_when_no_turn_in_db(self) -> None:
+        """No turn persisted for session → None."""
+        uc = self._make_uc()
+        uc.turn_gw.get_latest = MagicMock(return_value=None)
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is None
+
+    def test_returns_none_when_output_is_none(self) -> None:
+        """Turn with output=None (empty DB column) → None."""
+        uc = self._make_uc()
+        turn = self._fake_turn(output=None)
+        # output=None → turn.output or {} = {} → GmDecisionResponse(**{}) fails
+        uc.turn_gw.get_latest = MagicMock(return_value=turn)
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is None
+
+    def test_returns_none_when_output_is_malformed(self) -> None:
+        """Unrecognised output dict (not a valid GmDecisionResponse) → None."""
+        uc = self._make_uc()
+        malformed = {"unexpected_key": "garbage", "decision_type": "narrate"}
+        # Missing required `narration_text` → Pydantic validation error
+        uc.turn_gw.get_latest = MagicMock(
+            return_value=self._fake_turn(output=malformed)
+        )
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is None
+
+    def test_turn_number_propagated_correctly(self) -> None:
+        """turn_number from DB row is surfaced in the response."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Turn 42.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(
+            return_value=self._fake_turn(turn_number=42, output=output)
+        )
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.turn_number == 42
