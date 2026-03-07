@@ -1533,10 +1533,10 @@ packages:
     dependency: transitive
     description:
       name: swagger_parser
-      sha256: "4c4a6471b92a04f4c1c0280f89fa410a30e9890ff3409b31f5f115f40af71627"
+      sha256: "625734b8b811c892f5dc6f980b865644e375d47edd0baae6a423ec6ae326a357"
       url: "https://pub.dev"
     source: hosted
-    version: "1.38.0"
+    version: "1.42.0"
   sync_http:
     dependency: transitive
     description:
