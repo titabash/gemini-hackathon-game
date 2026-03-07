@@ -40,7 +40,7 @@ dependencies:
   cupertino_icons: ^1.0.8
 
   # State management
-  hooks_riverpod: ^3.0.3
+  hooks_riverpod: ^3.2.1
   flutter_hooks: ^0.21.3+1
   riverpod_annotation: ^4.0.0
 

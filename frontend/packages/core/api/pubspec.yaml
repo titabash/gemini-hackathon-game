@@ -18,7 +18,7 @@ dependencies:
   flutter_client_sse: ^2.0.3
 
   # State management
-  hooks_riverpod: ^3.0.3
+  hooks_riverpod: ^3.2.1
   riverpod_annotation: ^4.0.0
   riverpod: ^3.0.3
 

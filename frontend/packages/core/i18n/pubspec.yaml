@@ -15,7 +15,7 @@ dependencies:
     sdk: flutter
   slang: ^4.9.1
   slang_flutter: ^4.9.0
-  hooks_riverpod: ^3.0.3
+  hooks_riverpod: ^3.2.1
   riverpod_annotation: ^4.0.0
   shared_preferences: ^2.5.3
 
