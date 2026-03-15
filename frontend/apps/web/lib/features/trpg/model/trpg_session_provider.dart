@@ -77,9 +77,23 @@ class _TurnStreamEvent {
 /// Uses [GameContentGenerator] for SSE communication and
 /// [A2uiMessageProcessor] for genui surface management.
 class TrpgSessionNotifier {
-  TrpgSessionNotifier(this._ref);
+  TrpgSessionNotifier(this._ref) {
+    // Cache provider references for use in dispose().
+    // Riverpod 3.x forbids _ref.read() inside onDispose lifecycle callbacks
+    // (debug assertion: _debugCallbackStack == 0), so we capture instances
+    // here at construction time where _ref.read() is always safe.
+    _bgmPlayer = _ref.read(bgmPlayerProvider);
+    _processor = _ref.read(gameProcessorProvider);
+  }
 
   final Ref _ref;
+
+  /// Cached [BgmPlayerNotifier] instance – must not call [_ref.read] inside
+  /// Riverpod lifecycle callbacks such as [dispose].
+  late final BgmPlayerNotifier _bgmPlayer;
+
+  /// Cached [A2uiMessageProcessor] instance – same rationale as [_bgmPlayer].
+  late final A2uiMessageProcessor _processor;
 
   final _messagesNotifier = ValueNotifier<List<TrpgMessage>>([]);
   final _isProcessingNotifier = ValueNotifier<bool>(false);
@@ -112,6 +126,9 @@ class TrpgSessionNotifier {
 
   /// Whether the current turn uses node-based playback (read-only).
   bool get useNodePlayer => _useNodePlayer;
+
+  /// The scenario ID for the current session (null before init or after reset).
+  String? get scenarioId => _scenarioId;
 
   /// Text buffer for accumulating streamed text within a turn.
   final _textBuffer = StringBuffer();
@@ -160,7 +177,7 @@ class TrpgSessionNotifier {
       _pendingChangesNotifier;
 
   /// The [A2uiMessageProcessor] that manages genui surfaces.
-  A2uiMessageProcessor get processor => _ref.read(gameProcessorProvider);
+  A2uiMessageProcessor get processor => _processor;
 
   /// Initialise (or re-initialise) for a new session.
   Future<void> initSession(String sessionId) async {
@@ -238,7 +255,7 @@ class TrpgSessionNotifier {
     try {
       final supabase = _ref.read(supabaseClientProvider);
 
-      // Parallel queries for all turns, backgrounds, and NPCs
+      // Parallel queries for all turns, backgrounds, NPCs, and items
       final results = await Future.wait([
         // All turns ordered chronologically
         supabase
@@ -262,10 +279,40 @@ class TrpgSessionNotifier {
               'session_id.eq.$sessionId'
               '${scenarioId != null ? ',scenario_id.eq.$scenarioId' : ''}',
             ),
+        // Persisted inventory items for this session
+        supabase
+            .from('items')
+            .select(
+              'name, description, type, quantity, is_equipped, image_path',
+            )
+            .eq('session_id', sessionId),
       ]);
 
       final allTurnRows = (results[0] as List<dynamic>)
           .cast<Map<String, dynamic>>();
+
+      // Restore persisted inventory items into visual state
+      final itemRows = (results[3] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      if (itemRows.isNotEmpty) {
+        final items = itemRows.map((m) {
+          final rawPath = m['image_path'] as String?;
+          return InventoryItem(
+            name: m['name'] as String? ?? '',
+            description: m['description'] as String? ?? '',
+            itemType: m['type'] as String? ?? '',
+            quantity: (m['quantity'] as num?)?.toInt() ?? 1,
+            isEquipped: m['is_equipped'] as bool? ?? false,
+            imagePath: (rawPath != null && rawPath.isNotEmpty)
+                ? _resolveStorageUrl(rawPath)
+                : null,
+          );
+        }).toList();
+        _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+          items: items,
+        );
+      }
+
       if (allTurnRows.isEmpty) {
         _displayModeNotifier.value = NovelDisplayMode.input;
         return;
@@ -608,9 +655,8 @@ class TrpgSessionNotifier {
 
   /// Remove all active genui surfaces from the processor.
   void _clearProcessorSurfaces() {
-    final proc = _ref.read(gameProcessorProvider);
-    for (final surfaceId in proc.surfaces.keys.toList()) {
-      proc.handleMessage(SurfaceDeletion(surfaceId: surfaceId));
+    for (final surfaceId in _processor.surfaces.keys.toList()) {
+      _processor.handleMessage(SurfaceDeletion(surfaceId: surfaceId));
     }
   }
 
@@ -1060,6 +1106,9 @@ class TrpgSessionNotifier {
   /// guaranteed to be in the DB.
   void _attemptSseRecovery() {
     final sessionId = _sessionId;
+    // Defensive guard: _onError already verifies _sessionId != null before
+    // calling this method, so sessionId should never be null here.  The check
+    // is retained to make the method safe if called from other call sites.
     if (sessionId == null) {
       _isProcessingNotifier.value = false;
       _isAwaitingUserActionNotifier.value = false;
@@ -1308,11 +1357,15 @@ class TrpgSessionNotifier {
             quantity: qty,
           ),
         );
+        final rawPath = m['image_path'] as String?;
         return InventoryItem(
           name: itemName,
           description: desc,
           itemType: m['item_type'] as String? ?? '',
           quantity: qty,
+          imagePath: (rawPath != null && rawPath.isNotEmpty)
+              ? _resolveStorageUrl(rawPath)
+              : null,
         );
       }).toList();
       state = state.copyWith(items: [...state.items, ...parsed]);
@@ -1651,7 +1704,17 @@ class TrpgSessionNotifier {
     _pendingChangesNotifier.dispose();
     textPager.dispose();
     nodePlayer.dispose();
-    await _ref.read(bgmPlayerProvider).stop();
+    await _bgmPlayer.stop();
+  }
+
+  /// Set [_sessionId] and activate stream subscriptions without touching DB.
+  ///
+  /// Intended for unit tests only — skips Supabase queries and the initial
+  /// `sendTurn` call that [initSession] would trigger.
+  @visibleForTesting
+  void subscribeForTest(String sessionId) {
+    _sessionId = sessionId;
+    _setupSubscriptions();
   }
 }
 
