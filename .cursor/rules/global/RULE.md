@@ -76,6 +76,33 @@ After modifying Freezed models, Riverpod providers, or i18n:
 make frontend-generate
 ```
 
+## CRITICAL: Google ADK GM Agent
+
+GMエージェントは `google.adk` を使用（LangChain 不使用）。`adk_gm_client.py` 参照。
+
+```python
+# ✅ ADK 後の選択肢アクセス（decision.choices は存在しない）
+choice_node = next(
+    (n for n in reversed(decision.nodes) if n.type == "choice" and n.choices),
+    None,
+)
+
+# ❌ 禁止: ADK 前の古いアクセス方法
+choices = decision.choices  # AttributeError
+```
+
+## CRITICAL: TrpgSession Surface 優先順位
+
+`trpg_session_provider.dart` の `resolvePostPagingMode`:
+
+```dart
+// hasSurface が isProcessing より必ず優先される
+if (hasSurface) return NovelDisplayMode.surface;  // ← 最優先
+if (isProcessing) return NovelDisplayMode.processing;
+```
+
+auto-advance シナリオで `isProcessing=true` でも `hasSurface=true` なら surface を表示すべき。
+
 ## Supabase MCP Usage
 
 Before any database operations:

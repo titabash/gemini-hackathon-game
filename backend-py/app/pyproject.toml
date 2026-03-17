@@ -23,6 +23,10 @@ module = [
 ]
 disable_error_code = ["arg-type", "no-any-return", "union-attr", "call-arg", "return-value"]
 
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disable_error_code = ["method-assign", "assignment", "attr-defined", "unused-ignore", "no-untyped-def", "no-any-return", "arg-type"]
+
 [tool.ruff]
 # Same as Black.
 line-length = 88
@@ -78,7 +82,6 @@ split-on-trailing-comma = true
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"src/app.py" = ["E402"]  # warnings.filterwarnings must precede controller import (pydub SyntaxWarning)
 "tests/**/*.py" = [
     "S101",    # use of assert
     "PLR2004", # magic value in comparison
@@ -160,6 +163,8 @@ dependencies = [
     "pydub",
     # Google Gemini (直接SDK使用: Gemini構造化出力がLangChainラッパー未対応のため)
     "google-genai>=1.64.0",
+    # Google ADK (Geminiネイティブエージェントフレームワーク: response_json_schema対応)
+    "google-adk>=1.26.0",
     # Logging
     "structlog",
     "pyyaml>=6.0.2",

@@ -46,6 +46,11 @@ class GameContentGenerator implements ContentGenerator {
   SseConnection? _activeConnection;
   StreamSubscription<SseMessage>? _activeSubscription;
 
+  /// Tracks whether the current SSE turn stream has received a game-level
+  /// `{"type":"done"}` event.  Used by [simulateStreamEnd] (and the real
+  /// `onDone` callback) to detect premature stream termination.
+  bool _doneReceived = false;
+
   @override
   Stream<A2uiMessage> get a2uiMessageStream => _a2uiController.stream;
 
@@ -87,6 +92,7 @@ class GameContentGenerator implements ContentGenerator {
     _activeConnection?.close();
     _activeConnection = null;
     _isProcessing.value = false;
+    _doneReceived = false;
   }
 
   /// Send a game turn to the GM backend via SSE.
@@ -99,6 +105,7 @@ class GameContentGenerator implements ContentGenerator {
     try {
       cancelActiveTurn();
       _isProcessing.value = true;
+      _doneReceived = false;
 
       final payload = <String, dynamic>{
         'session_id': sessionId,
@@ -129,6 +136,16 @@ class GameContentGenerator implements ContentGenerator {
           _isProcessing.value = false;
         },
         onDone: () {
+          if (!_doneReceived) {
+            Logger.warning(
+              'GM SSE stream ended without done event; resetting state',
+            );
+            _errorController.add(
+              const ContentGeneratorError(
+                'SSE stream ended without done event',
+              ),
+            );
+          }
           _isProcessing.value = false;
         },
       );
@@ -162,7 +179,10 @@ class GameContentGenerator implements ContentGenerator {
   }
 
   void _handleSseMessage(SseMessage sseMessage) {
-    if (sseMessage.isDone) {
+    // SSE protocol-level synthetic event with no data (e.g. flutter_client_sse
+    // end-of-stream marker).  These have no game payload and should not reach
+    // the JSON handler below.
+    if (sseMessage.raw.isEmpty) {
       _isProcessing.value = false;
       return;
     }
@@ -176,7 +196,6 @@ class GameContentGenerator implements ContentGenerator {
     }
 
     final raw = sseMessage.raw;
-    if (raw.isEmpty) return;
 
     try {
       final decoded = jsonDecode(raw);
@@ -237,6 +256,7 @@ class GameContentGenerator implements ContentGenerator {
           'will_continue': decoded['will_continue'] == true,
           'stop_reason': decoded['stop_reason'] as String?,
         };
+        _doneReceived = true;
         _isProcessing.value = doneData['will_continue'] == true;
         _doneController.add(doneData);
         return;
@@ -251,6 +271,41 @@ class GameContentGenerator implements ContentGenerator {
         stackTrace,
       );
     }
+  }
+
+  /// Replay nodes and a synthetic done event for SSE error recovery.
+  ///
+  /// Called by [TrpgSessionNotifier] when the SSE stream ends without a done
+  /// event but the turn was already persisted to the database.  The nodes are
+  /// fetched from the backend and replayed here so the UI recovers seamlessly.
+  void replayNodesReady({
+    required List<Map<String, dynamic>> nodes,
+    required Map<String, dynamic> doneData,
+  }) {
+    _nodesReadyController.add(nodes);
+    _doneReceived = true;
+    _isProcessing.value = doneData['will_continue'] == true;
+    _doneController.add(doneData);
+  }
+
+  /// Directly process an [SseMessage] without a live SSE connection.
+  ///
+  /// Intended for unit tests only.
+  @visibleForTesting
+  void injectSseMessage(SseMessage message) => _handleSseMessage(message);
+
+  /// Simulate the SSE stream ending (fires the `onDone` logic).
+  ///
+  /// Emits to [errorStream] if no game-level done event was received first.
+  /// Intended for unit tests only.
+  @visibleForTesting
+  void simulateStreamEnd() {
+    if (!_doneReceived) {
+      _errorController.add(
+        const ContentGeneratorError('SSE stream ended without done event'),
+      );
+    }
+    _isProcessing.value = false;
   }
 
   @override

@@ -6,7 +6,7 @@ import io
 import os
 import uuid
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from pydub import AudioSegment
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -101,7 +101,7 @@ class BgmService:
             return None
         if record.audio_path == self.PENDING_AUDIO_PATH:
             return None
-        return record.audio_path
+        return cast("str | None", record.audio_path)
 
     def is_pending(
         self,
@@ -117,7 +117,7 @@ class BgmService:
         )
         if not record:
             return False
-        return record.audio_path == self.PENDING_AUDIO_PATH
+        return bool(record.audio_path == self.PENDING_AUDIO_PATH)
 
     def get_cached_bgm_url(
         self,
@@ -440,7 +440,7 @@ class BgmService:
             mood,
             extension=generated.extension,
         )
-        uploaded_path = self._storage_client.upload_audio(
+        uploaded_path: str = self._storage_client.upload_audio(
             path=path,
             audio_bytes=generated.audio_bytes,
             content_type=generated.content_type,

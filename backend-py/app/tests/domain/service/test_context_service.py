@@ -121,9 +121,6 @@ class TestPromptCacheHelpers:
         ctx.system_prompt = "Follow rules."
         ctx.win_conditions = [{"id": "w1"}]
         ctx.fail_conditions = [{"id": "f1"}]
-        ctx.plot_essentials = {"chapter": 1}
-        ctx.short_term_summary = "You arrived."
-        ctx.confirmed_facts = {"met_guard": True}
         ctx.recent_turns = []
         ctx.active_npcs = []
         ctx.active_objectives = []
@@ -160,7 +157,7 @@ class TestPromptCacheHelpers:
         )
 
         assert "# Scenario:" not in prompt
-        assert "# Plot Essentials" in prompt
+        assert "# Plot Essentials" not in prompt
         assert "# Player Input (do)" in prompt
         assert "open the door" in prompt
 
@@ -513,9 +510,6 @@ class TestBuildContextBgmMood:
         # Mock player character
         svc._pc_gw.get_by_session = MagicMock(return_value=None)
 
-        # Mock context summary
-        svc._context_gw.get_by_session = MagicMock(return_value=None)
-
         # Mock turns with bgm_mood
         turn_row = MagicMock()
         turn_row.turn_number = 2
@@ -562,9 +556,6 @@ class TestPromptBgmSection:
         ctx.system_prompt = "Follow rules."
         ctx.win_conditions = [{"id": "w1"}]
         ctx.fail_conditions = [{"id": "f1"}]
-        ctx.plot_essentials = {"chapter": 1}
-        ctx.short_term_summary = "You arrived."
-        ctx.confirmed_facts = {"met_guard": True}
         ctx.recent_turns = []
         ctx.active_npcs = []
         ctx.active_objectives = []
@@ -768,9 +759,6 @@ class TestPromptBackgroundStateSection:
         ctx.system_prompt = "Follow rules."
         ctx.win_conditions = [{"id": "w1"}]
         ctx.fail_conditions = [{"id": "f1"}]
-        ctx.plot_essentials = {"chapter": 1}
-        ctx.short_term_summary = "You arrived."
-        ctx.confirmed_facts = {"met_guard": True}
         ctx.recent_turns = []
         ctx.active_npcs = []
         ctx.active_objectives = []

@@ -24,6 +24,7 @@ from src.domain.entity.gm_types import (
     RepairData,
     SceneNode,
     SessionEnd,
+    StatDelta,
     StateChanges,
     TurnSummary,
 )
@@ -82,22 +83,31 @@ class TestGmDecisionResponse:
             narration_text="You enter a dark cave.",
         )
         assert resp.decision_type == "narrate"
-        assert resp.choices is None
 
     def test_choice_decision(self) -> None:
-        """Choice decision should contain choices list."""
+        """Choice decision should have choices in last node."""
         resp = GmDecisionResponse(
             decision_type="choice",
             narration_text="The merchant offers you three items.",
-            choices=[
-                ChoiceOption(id="a", text="Buy the sword"),
-                ChoiceOption(id="b", text="Buy the shield"),
-                ChoiceOption(id="c", text="Leave", hint="safe option"),
+            nodes=[
+                SceneNode(type="narration", text="The merchant displays his wares."),
+                SceneNode(
+                    type="choice",
+                    text="What will you choose?",
+                    choices=[
+                        ChoiceOption(id="a", text="Buy the sword"),
+                        ChoiceOption(id="b", text="Buy the shield"),
+                        ChoiceOption(id="c", text="Leave", hint="safe option"),
+                    ],
+                ),
             ],
         )
-        assert resp.choices is not None
-        assert len(resp.choices) == 3
-        assert resp.choices[2].hint == "safe option"
+        assert resp.nodes is not None
+        last_node = resp.nodes[-1]
+        assert last_node.type == "choice"
+        assert last_node.choices is not None
+        assert len(last_node.choices) == 3
+        assert last_node.choices[2].hint == "safe option"
 
     def test_clarify_decision(self) -> None:
         """Clarify decision should contain a question."""
@@ -143,7 +153,7 @@ class TestGmDecisionResponse:
             decision_type="narrate",
             narration_text="You found a potion.",
             state_changes=StateChanges(
-                stats_delta={"hp": 10},
+                stats_delta=[StatDelta(stat="hp", delta=10)],
                 new_items=[NewItem(name="Health Potion", description="Heals 50 HP")],
                 objective_updates=[
                     ObjectiveUpdate(
@@ -154,7 +164,7 @@ class TestGmDecisionResponse:
             ),
         )
         assert resp.state_changes is not None
-        assert resp.state_changes.stats_delta == {"hp": 10}
+        assert resp.state_changes.stats_delta == [StatDelta(stat="hp", delta=10)]
         assert resp.state_changes.new_items is not None
         assert len(resp.state_changes.new_items) == 1
 
@@ -169,7 +179,14 @@ class TestGmDecisionResponse:
         resp = GmDecisionResponse(
             decision_type="choice",
             narration_text="Choose wisely.",
-            choices=[ChoiceOption(id="a", text="Option A")],
+            nodes=[
+                SceneNode(type="narration", text="The guide watches you."),
+                SceneNode(
+                    type="choice",
+                    text="What do you do?",
+                    choices=[ChoiceOption(id="a", text="Option A")],
+                ),
+            ],
             npc_dialogues=[
                 NpcDialogue(npc_name="Guide", dialogue="Pick carefully."),
             ],
@@ -192,8 +209,11 @@ class TestGmDecisionResponse:
         data = resp.model_dump_json()
         restored = GmDecisionResponse.model_validate_json(data)
         assert restored.decision_type == "choice"
-        assert restored.choices is not None
-        assert len(restored.choices) == 1
+        assert restored.nodes is not None
+        last_node = restored.nodes[-1]
+        assert last_node.type == "choice"
+        assert last_node.choices is not None
+        assert len(last_node.choices) == 1
 
     def test_session_end(self) -> None:
         """Session end should be part of state changes."""
@@ -380,9 +400,6 @@ class TestGameContext:
             system_prompt="You are a game master.",
             win_conditions=[{"defeat_boss": True}],
             fail_conditions=[{"party_wipe": True}],
-            plot_essentials={"main_quest": "Defeat the dragon"},
-            short_term_summary="The party entered the dungeon.",
-            confirmed_facts={"has_sword": True},
             recent_turns=[],
             player=PlayerSummary(
                 name="Hero",
@@ -408,9 +425,6 @@ class TestGameContext:
             system_prompt="P",
             win_conditions=[],
             fail_conditions=[],
-            plot_essentials={},
-            short_term_summary="",
-            confirmed_facts={},
             recent_turns=[],
             player=PlayerSummary(
                 name="H",
@@ -436,9 +450,6 @@ class TestGameContext:
             system_prompt="P",
             win_conditions=[],
             fail_conditions=[],
-            plot_essentials={},
-            short_term_summary="",
-            confirmed_facts={},
             recent_turns=[
                 TurnSummary(
                     turn_number=1,
@@ -514,7 +525,7 @@ class TestFlagChange:
     def test_state_changes_with_flags_json_roundtrip(self) -> None:
         """StateChanges with flag_changes should serialize correctly."""
         sc = StateChanges(
-            stats_delta={"hp": -5},
+            stats_delta=[StatDelta(stat="hp", delta=-5)],
             flag_changes=[
                 FlagChange(flag_id="key_found", value=True),
             ],
@@ -525,4 +536,4 @@ class TestFlagChange:
         assert len(restored.flag_changes) == 1
         assert restored.flag_changes[0].flag_id == "key_found"
         assert restored.flag_changes[0].value is True
-        assert restored.stats_delta == {"hp": -5}
+        assert restored.stats_delta == [StatDelta(stat="hp", delta=-5)]

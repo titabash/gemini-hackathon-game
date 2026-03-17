@@ -236,34 +236,52 @@ class GenuiBridgeService:
     ) -> dict[str, Any] | None:
         """Build surface component type and properties for A2UI."""
         dt = decision.decision_type
-        if dt == "choice" and decision.choices:
-            return {
-                "type": "choiceGroup",
-                "properties": {
-                    "choices": [c.model_dump() for c in decision.choices],
-                    "allowFreeInput": True,
-                },
-            }
-        if dt == "clarify" and decision.clarify_question:
-            return {
-                "type": "clarifyQuestion",
-                "properties": {"question": decision.clarify_question},
-            }
-        if dt == "repair" and decision.repair:
-            return {
-                "type": "repairConfirm",
-                "properties": decision.repair.model_dump(),
-            }
-        if dt == "narrate" and show_continue_button:
-            if show_continue_input_cta:
+        if dt == "choice":
+            choice_node = next(
+                (
+                    n
+                    for n in reversed(decision.nodes or [])
+                    if n.type == "choice" and n.choices
+                ),
+                None,
+            )
+            if choice_node:
                 return {
-                    "type": "continueOrInput",
-                    "properties": {},
+                    "type": "choiceGroup",
+                    "properties": {
+                        "choices": [c.model_dump() for c in choice_node.choices],
+                        "allowFreeInput": True,
+                    },
                 }
-            return {
-                "type": "continueButton",
-                "properties": {},
-            }
+            logger.warning(
+                "decision_type=choice but no choice node found in nodes",
+                node_types=[n.type for n in decision.nodes] if decision.nodes else [],
+            )
+            dt = "act"
+        if dt == "clarify":
+            if decision.clarify_question:
+                return {
+                    "type": "clarifyQuestion",
+                    "properties": {"question": decision.clarify_question},
+                }
+            logger.warning("decision_type=clarify but no clarify_question set")
+            dt = "act"
+        if dt == "repair":
+            if decision.repair:
+                return {
+                    "type": "repairConfirm",
+                    "properties": decision.repair.model_dump(),
+                }
+            logger.warning("decision_type=repair but no repair data set")
+            dt = "act"
+        if dt == "act":
+            question = decision.action_prompt or decision.narration_text
+            return {"type": "actionInput", "properties": {"question": question}}
+        if dt == "narrate" and show_continue_button:
+            surface_type = (
+                "continueOrInput" if show_continue_input_cta else "continueButton"
+            )
+            return {"type": surface_type, "properties": {}}
         return None
 
 
@@ -272,7 +290,7 @@ def _merge_state_changes(data: dict[str, Any], sc: StateChanges) -> None:
     if sc.location_change:
         data["location"] = sc.location_change.model_dump()
     if sc.stats_delta:
-        data["stats_delta"] = sc.stats_delta
+        data["stats_delta"] = {sd.stat: sd.delta for sd in sc.stats_delta}
     if sc.status_effect_adds:
         data["status_effect_adds"] = sc.status_effect_adds
     if sc.status_effect_removes:

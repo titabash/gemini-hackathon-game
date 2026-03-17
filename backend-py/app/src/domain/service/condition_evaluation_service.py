@@ -87,8 +87,9 @@ class ConditionEvaluationService:
                     triggered_fail=fc,
                 )
 
-        # Check win conditions
+        # Check win conditions (AND judgment: ALL must be achieved for victory)
         progress_list: list[WinConditionProgress] = []
+        all_win_achieved = True
         for wc in win_conditions:
             required = list(wc.get("requiredFlags", []))
             if not required:
@@ -102,6 +103,7 @@ class ConditionEvaluationService:
                         progress_ratio=0.0,
                     ),
                 )
+                all_win_achieved = False
                 continue
 
             achieved = [f for f in required if current_flags.get(f, False)]
@@ -118,15 +120,19 @@ class ConditionEvaluationService:
                 ),
             )
 
-            if is_achieved:
-                logger.info(
-                    "Win condition triggered",
-                    condition_id=wc.get("id", "unknown"),
-                )
-                return ConditionEvaluationResult(
-                    triggered_win=wc,
-                    win_progress=progress_list,
-                )
+            if not is_achieved:
+                all_win_achieved = False
+
+        # All win conditions must be achieved simultaneously for victory
+        if win_conditions and all_win_achieved:
+            logger.info(
+                "All win conditions triggered",
+                count=len(win_conditions),
+            )
+            return ConditionEvaluationResult(
+                triggered_win=win_conditions[-1],
+                win_progress=progress_list,
+            )
 
         return ConditionEvaluationResult(win_progress=progress_list)
 

@@ -1,7 +1,7 @@
 """3-layer context management for the AI GM.
 
-Builds GameContext from DB data, determines compression timing,
-and compresses accumulated context via Gemini.
+Builds GameContext from DB data and formats it as a structured prompt.
+Compression is delegated to GameMemoryService (BaseMemoryService).
 """
 
 from __future__ import annotations
@@ -9,13 +9,7 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel
-
-from domain.entity.gm_prompts import (
-    COMPRESSION_CONTEXT_TEMPLATE,
-    COMPRESSION_SYSTEM_PROMPT,
-    CONTEXT_TEMPLATE,
-)
+from domain.entity.gm_prompts import CONTEXT_TEMPLATE
 from domain.entity.gm_types import (
     BackgroundResourceSummary,
     GameContext,
@@ -24,10 +18,6 @@ from domain.entity.gm_types import (
     ObjectiveSummary,
     PlayerSummary,
     TurnSummary,
-)
-from gateway.context_summary_gateway import (
-    ContextSummaryData,
-    ContextSummaryGateway,
 )
 from gateway.item_gateway import ItemGateway
 from gateway.npc_gateway import NpcGateway
@@ -44,11 +34,7 @@ if TYPE_CHECKING:
 
     from sqlmodel import Session
 
-    from infra.gemini_client import GeminiClient
-
 logger = get_logger(__name__)
-
-COMPRESSION_INTERVAL = 5
 
 
 def extract_nodes_text(output: dict[str, object]) -> str:
@@ -87,23 +73,14 @@ _DEFAULT_PLAYER = PlayerSummary(
 )
 
 
-class _CompressionResult(BaseModel):
-    """Structured output for context compression."""
-
-    plot_essentials: dict[str, object]
-    short_term_summary: str
-    confirmed_facts: dict[str, object]
-
-
 class ContextService:
-    """Builds, formats, and compresses game context."""
+    """Builds and formats game context for the GM prompt."""
 
     def __init__(self) -> None:
         self._session_gw = SessionGateway()
         self._turn_gw = TurnGateway()
         self._npc_gw = NpcGateway()
         self._pc_gw = PlayerCharacterGateway()
-        self._context_gw = ContextSummaryGateway()
         self._objective_gw = ObjectiveGateway()
         self._item_gw = ItemGateway()
         self._scenario_gw = ScenarioGateway()
@@ -137,9 +114,6 @@ class ContextService:
             system_prompt="",
             win_conditions=scenario.win_conditions,
             fail_conditions=scenario.fail_conditions,
-            plot_essentials=self._load_plot(db, session_id),
-            short_term_summary=self._load_summary(db, session_id),
-            confirmed_facts=self._load_facts(db, session_id),
             recent_turns=self._load_turns(db, session_id),
             player=self._build_player(pc) if pc else _DEFAULT_PLAYER,
             active_npcs=self._load_npcs(db, session_id),
@@ -192,9 +166,6 @@ class ContextService:
                 system_prompt=context.system_prompt,
                 win_conditions=json.dumps(context.win_conditions),
                 fail_conditions=json.dumps(context.fail_conditions),
-                plot_essentials=json.dumps(context.plot_essentials),
-                short_term_summary=context.short_term_summary,
-                confirmed_facts=json.dumps(context.confirmed_facts),
                 recent_turns=self._format_turns(context.recent_turns),
                 player_name=context.player.name,
                 player_stats=json.dumps(context.player.stats),
@@ -258,14 +229,8 @@ class ContextService:
             context.max_turns - context.current_turn_number,
         )
         prompt = (
-            "# Plot Essentials\n"
-            f"{json.dumps(context.plot_essentials)}\n\n"
             "# Available Scene Backgrounds\n"
             f"{self._format_backgrounds(context.available_backgrounds)}\n\n"
-            "# Story So Far\n"
-            f"{context.short_term_summary}\n\n"
-            "# Confirmed Facts\n"
-            f"{json.dumps(context.confirmed_facts)}\n\n"
             "# Recent Turns\n"
             f"{self._format_turns(context.recent_turns)}\n\n"
             "# Player Character\n"
@@ -294,72 +259,6 @@ class ContextService:
             if section:
                 prompt += "\n" + section
         return prompt
-
-    def should_compress(
-        self,
-        current_turn: int,
-        last_updated_turn: int,
-    ) -> bool:
-        """Check if context compression is due."""
-        return (current_turn - last_updated_turn) >= COMPRESSION_INTERVAL
-
-    async def compress(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-        gemini: GeminiClient,
-        current_turn: int,
-    ) -> None:
-        """Compress context via Gemini structured output."""
-        ctx_rec = self._context_gw.get_by_session(db, session_id)
-        prev_plot = json.dumps(
-            ctx_rec.plot_essentials if ctx_rec else {},
-        )
-        prev_facts = json.dumps(
-            ctx_rec.confirmed_facts if ctx_rec else {},
-        )
-        turns = self._turn_gw.get_recent(db, session_id, limit=10)
-        parts: list[str] = []
-        for t in reversed(turns):
-            narr = t.output.get("narration_text", "")
-            nodes = extract_nodes_text(t.output)
-            detail = nodes if nodes else str(narr)
-            parts.append(
-                f"T{t.turn_number}: [{t.input_type}]"
-                f" {t.input_text}"
-                f" -> {t.gm_decision_type}:"
-                f" {detail}",
-            )
-        turns_text = "\n".join(parts)
-
-        prompt = COMPRESSION_CONTEXT_TEMPLATE.format(
-            previous_plot_essentials=prev_plot,
-            previous_confirmed_facts=prev_facts,
-            turns_to_compress=turns_text,
-        )
-
-        result = await gemini.generate_structured(
-            contents=prompt,
-            system_instruction=COMPRESSION_SYSTEM_PROMPT,
-            response_type=_CompressionResult,
-            temperature=0.3,
-        )
-
-        self._context_gw.upsert(
-            db,
-            session_id,
-            ContextSummaryData(
-                plot_essentials=result.plot_essentials,
-                short_term_summary=result.short_term_summary,
-                confirmed_facts=result.confirmed_facts,
-                last_updated_turn=current_turn,
-            ),
-        )
-        logger.info(
-            "Context compressed",
-            session_id=str(session_id),
-            turn=current_turn,
-        )
 
     # --- private helpers ---
 
@@ -421,30 +320,6 @@ class ContextService:
                 " fundamentally changes."
             )
         return "No BGM playing."
-
-    def _load_plot(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-    ) -> dict[str, object]:
-        ctx = self._context_gw.get_by_session(db, session_id)
-        return dict(ctx.plot_essentials) if ctx else {}
-
-    def _load_summary(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-    ) -> str:
-        ctx = self._context_gw.get_by_session(db, session_id)
-        return str(ctx.short_term_summary) if ctx else ""
-
-    def _load_facts(
-        self,
-        db: Session,
-        session_id: uuid.UUID,
-    ) -> dict[str, object]:
-        ctx = self._context_gw.get_by_session(db, session_id)
-        return dict(ctx.confirmed_facts) if ctx else {}
 
     def _load_turns(
         self,

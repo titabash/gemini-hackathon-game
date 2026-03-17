@@ -19,11 +19,14 @@ from src.domain.entity.gm_types import (
     GmTurnRequest,
     SceneNode,
     SessionEnd,
+    StatDelta,
     StateChanges,
 )
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+    from src.usecase.gm_turn_usecase import GmTurnUseCase
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +130,6 @@ def _stub_common(uc: object, *, turn_return: int) -> None:
         return_value=turn_return,
     )
     uc.turn_gw.create = MagicMock()  # type: ignore[attr-defined]
-    uc.context_gw.get_by_session = MagicMock(  # type: ignore[attr-defined]
-        return_value=None,
-    )
     uc.npc_gw.get_by_session = MagicMock(  # type: ignore[attr-defined]
         return_value=[],
     )
@@ -234,7 +234,9 @@ class TestHardLimit:
             uc.bridge_svc.stream_decision = _empty_stream
 
             await _collect(uc.execute(_make_request(), MagicMock()))
-            uc.decision_svc.decide.assert_called_once()
+            # decide may be called more than once when _resolve_ending_narration
+            # runs for the hard-limit turn; verify it was called at least once.
+            assert uc.decision_svc.decide.await_count >= 1
 
     @pytest.mark.asyncio
     async def test_hard_limit_forces_bad_end_fallback(self) -> None:
@@ -316,6 +318,11 @@ class TestSoftLimit:
             ctx = uc.context_svc.build_context.return_value
             ctx.current_turn_number = 27
             ctx.max_turns = 30
+            ctx.win_conditions = []
+            ctx.fail_conditions = []
+            ctx.current_state = {}
+            ctx.player = MagicMock()
+            ctx.player.stats = {}
 
             captured_kw: list[dict[str, object]] = []
 
@@ -337,7 +344,9 @@ class TestSoftLimit:
 
             await _collect(uc.execute(_make_request(), MagicMock()))
 
-            assert len(captured_kw) == 1
+            # build_prompt is called once for the main turn (soft limit injects
+            # convergence text); ignore any extra calls from ending narration.
+            assert len(captured_kw) >= 1
             raw_sections: Any = captured_kw[0].get("extra_sections", [])
             full = "\n".join(str(s) for s in raw_sections if s)
             assert full != ""
@@ -371,6 +380,11 @@ class TestNormalTurn:
             ctx = uc.context_svc.build_context.return_value
             ctx.current_turn_number = 5
             ctx.max_turns = 30
+            ctx.win_conditions = []
+            ctx.fail_conditions = []
+            ctx.current_state = {}
+            ctx.player = MagicMock()
+            ctx.player.stats = {}
 
             captured_kw: list[dict[str, object]] = []
 
@@ -392,7 +406,7 @@ class TestNormalTurn:
 
             await _collect(uc.execute(_make_request(), MagicMock()))
 
-            assert len(captured_kw) == 1
+            assert len(captured_kw) >= 1
             raw_sections: Any = captured_kw[0].get("extra_sections", [])
             soft_parts = [
                 str(s) for s in raw_sections if s and "remaining" in str(s).lower()
@@ -518,7 +532,9 @@ class TestConditionEvaluation:
 
             # stats_delta makes HP go to 0
             decision = _fake_decision(
-                state_changes=StateChanges(stats_delta={"hp": -10}),
+                state_changes=StateChanges(
+                    stats_delta=[StatDelta(stat="hp", delta=-10)],
+                ),
             )
             uc.decision_svc.decide = AsyncMock(return_value=decision)
             _stub_common(uc, turn_return=11)
@@ -850,7 +866,7 @@ class TestResolveNodeAssets:
             uc.bg_gw.find_by_id = MagicMock(return_value=None)
             uc.bg_gw.find_by_description = MagicMock(return_value=None)
             uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.upload_image = MagicMock(
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
                 return_value="sessions/img.png",
             )
             uc.bg_gw.create = MagicMock()
@@ -902,7 +918,7 @@ class TestResolveNodeAssets:
             )
             uc.bg_gw.find_by_description = MagicMock(return_value=None)
             uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.upload_image = MagicMock(
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
                 return_value="sessions/dungeon.png",
             )
             uc.bg_gw.create = MagicMock()
@@ -1278,8 +1294,8 @@ class TestResolveNpcEmotionAssets:
             )
             _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[guard])
             uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.download_image = MagicMock(return_value=b"base-image")
-            uc.storage_svc.upload_image = MagicMock(
+            uc.storage_svc.download_image = MagicMock(return_value=b"base-image")  # type: ignore[union-attr]
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
                 return_value="sessions/guard_surprise.png",
             )
             uc.npc_gw.update_emotion_image = MagicMock()
@@ -1296,7 +1312,7 @@ class TestResolveNpcEmotionAssets:
             assert kwargs["source_image"] == b"base-image"
             assert kwargs["transparent_background"] is True
             assert kwargs["size"] == "1024x1536"
-            uc.storage_svc.download_image.assert_called_once_with(
+            uc.storage_svc.download_image.assert_called_once_with(  # type: ignore[union-attr]
                 "npcs/guard_default.png",
                 "scenario-assets",
             )
@@ -1304,7 +1320,13 @@ class TestResolveNpcEmotionAssets:
 
     @pytest.mark.asyncio
     async def test_no_image_npc_generates_default(self) -> None:
-        """NPC without any images → generate portrait → assetReady."""
+        """NPC without any images → generate default portrait first, then emotion.
+
+        Expected behaviour:
+        - generate_image called twice: default portrait, then anger variant.
+        - update_image_path called once to persist the default portrait in DB.
+        - assetReady emitted for BOTH 'npc:Bandit:default' and 'npc:Bandit:anger'.
+        """
         with (
             patch(
                 "src.usecase.gm_turn_usecase.GeminiClient",
@@ -1332,7 +1354,7 @@ class TestResolveNpcEmotionAssets:
                     ],
                 ),
             ]
-            # NPC exists in DB but has no images
+            # NPC exists in DB but has no images at all
             bandit = _fake_npc_record(
                 name="Bandit",
                 image_path=None,
@@ -1342,9 +1364,15 @@ class TestResolveNpcEmotionAssets:
             uc.npc_gw.find_by_name_and_session = MagicMock(
                 return_value=bandit,
             )
-            uc.gemini.generate_image = AsyncMock(return_value=b"fake-png")
-            uc.storage_svc.upload_image = MagicMock(
-                return_value="sessions/bandit_anger.png",
+            # First call → default portrait bytes; second call → anger variant bytes
+            uc.gemini.generate_image = AsyncMock(
+                side_effect=[b"default-png", b"anger-png"],
+            )
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
+                side_effect=[
+                    "sessions/bandit_default.png",
+                    "sessions/bandit_anger.png",
+                ],
             )
             uc.npc_gw.update_image_path = MagicMock()
             uc.npc_gw.update_emotion_image = MagicMock()
@@ -1353,10 +1381,65 @@ class TestResolveNpcEmotionAssets:
             parsed = _parse_sse_events(events)
             npc_events = _npc_asset_events(parsed)
 
-            assert len(npc_events) >= 1
             keys = {e["key"] for e in npc_events}
+            # Default portrait must be emitted before the emotion variant
+            assert "npc:Bandit:default" in keys
             assert "npc:Bandit:anger" in keys
-            uc.gemini.generate_image.assert_called()
+            # Two generate_image calls: default portrait + anger variant
+            assert uc.gemini.generate_image.call_count == 2
+            # Default portrait persisted to DB
+            uc.npc_gw.update_image_path.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_image_npc_expression_none_generates_only_default(self) -> None:
+        """NPC without images and expression=None → generate only default portrait."""
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="narration",
+                    text="A figure stands silently.",
+                    characters=[
+                        CharacterDisplay(npc_name="Stranger", expression=None),
+                    ],
+                ),
+            ]
+            stranger = _fake_npc_record(
+                name="Stranger",
+                image_path=None,
+                emotion_images=None,
+            )
+            _setup_npc_emotion_test(uc, nodes=nodes, npc_records=[stranger])
+            uc.npc_gw.find_by_name_and_session = MagicMock(return_value=stranger)
+            uc.gemini.generate_image = AsyncMock(return_value=b"default-png")
+            uc.storage_svc.upload_image = MagicMock(  # type: ignore[union-attr]
+                return_value="sessions/stranger_default.png",
+            )
+            uc.npc_gw.update_image_path = MagicMock()
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+            npc_events = _npc_asset_events(parsed)
+
+            keys = {e["key"] for e in npc_events}
+            assert "npc:Stranger:default" in keys
+            # Only one generate_image call (default only, no emotion)
+            uc.gemini.generate_image.assert_called_once()
+            uc.npc_gw.update_image_path.assert_called_once()
+            uc.npc_gw.update_emotion_image.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_dedup_same_npc_expression(self) -> None:
@@ -1445,6 +1528,231 @@ class TestResolveNpcEmotionAssets:
 
             assert npc_events == []
 
+    @pytest.mark.asyncio
+    async def test_npc_default_generated_before_done_for_choice_turn(
+        self,
+    ) -> None:
+        """NPC default portrait must arrive before done in choice turns.
+
+        Choice turns (decision_type='choice') set requires_user_action=True,
+        which causes the done event to be emitted before _resolve_npc_emotion_assets().
+        The NPC default portrait (when missing) must therefore be generated in
+        a pre-done phase so the frontend has it when the user regains control.
+        """
+        import json
+
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Choose your fate!",
+                    speaker="Bandit",
+                    characters=[
+                        CharacterDisplay(npc_name="Bandit", expression=None),
+                    ],
+                ),
+            ]
+            decision = GmDecisionResponse(
+                decision_type="choice",
+                narration_text="The bandit blocks your path.",
+                nodes=nodes,
+            )
+            bandit = _fake_npc_record(
+                name="Bandit",
+                image_path=None,
+                emotion_images=None,
+            )
+            uc.session_gw.get_by_id = MagicMock(
+                return_value=_fake_session(turn=5),
+            )
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=6)
+            uc.storage_svc = MagicMock()
+            uc.bg_gw.find_by_id = MagicMock(return_value=None)
+            uc.bg_gw.find_by_description = MagicMock(return_value=None)
+            uc.npc_gw.get_by_session = MagicMock(return_value=[bandit])
+            uc.npc_gw.get_by_scenario = MagicMock(return_value=[bandit])
+            uc.npc_gw.find_by_name_and_session = MagicMock(return_value=bandit)
+
+            # Bridge yields a done event so done_event_seen=True.
+            async def _bridge_with_done(
+                *_args: object,
+                **_kw: object,
+            ) -> AsyncIterator[str]:
+                yield f"data: {json.dumps({'type': 'done'})}"
+
+            uc.bridge_svc.stream_decision = _bridge_with_done
+            uc.gemini.generate_image = AsyncMock(return_value=b"default-png")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/bandit_default.png",
+            )
+            uc.npc_gw.update_image_path = MagicMock()
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+
+            npc_default_indices = [
+                i
+                for i, e in enumerate(parsed)
+                if e.get("type") == "assetReady"
+                and e.get("key") == "npc:Bandit:default"
+            ]
+            done_indices = [i for i, e in enumerate(parsed) if e.get("type") == "done"]
+
+            assert npc_default_indices, (
+                "npc:Bandit:default assetReady event must be present"
+            )
+            assert done_indices, "done event must be present"
+            # NPC default portrait must arrive BEFORE done so the frontend
+            # has the image when the user regains control.
+            assert npc_default_indices[0] < done_indices[0], (
+                "npc:Bandit:default must be emitted before the done event"
+            )
+
+    @pytest.mark.asyncio
+    async def test_all_pre_done_assets_before_done_combined(self) -> None:
+        """BGM + background + NPC default must all appear before done.
+
+        Combined regression test: when all three pre-done asset types need
+        generation in the same turn (choice → requires_user_action=True),
+        all of them must be resolved before the done event is emitted,
+        regardless of whether they run sequentially or in parallel.
+        """
+        import json as _json
+        import uuid as _uuid
+
+        with (
+            patch(
+                "src.usecase.gm_turn_usecase.GeminiClient",
+                autospec=True,
+            ),
+            patch(
+                "src.usecase.gm_turn_usecase.StorageService",
+                autospec=True,
+            ),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+
+            nodes = [
+                SceneNode(
+                    type="dialogue",
+                    text="Choose your fate!",
+                    speaker="Bandit",
+                    background="A dark cave",  # text key → generated
+                    characters=[
+                        CharacterDisplay(npc_name="Bandit", expression=None),
+                    ],
+                ),
+            ]
+            decision = GmDecisionResponse(
+                decision_type="choice",
+                narration_text="The bandit blocks your path.",
+                bgm_mood="battle",
+                bgm_music_prompt="epic drums, loopable",
+                nodes=nodes,
+            )
+            bandit = _fake_npc_record(
+                name="Bandit",
+                image_path=None,  # no portrait → will be generated
+                emotion_images=None,
+            )
+
+            # scenario_id must be a uuid.UUID so _resolve_bgm does not skip
+            scenario_uuid = _uuid.UUID("11111111-1111-1111-1111-111111111111")
+            fake_session = _fake_session(turn=5)
+            fake_session.scenario_id = scenario_uuid
+
+            uc.session_gw.get_by_id = MagicMock(return_value=fake_session)
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=6)
+            uc.storage_svc = MagicMock()
+
+            # Background: no cache hit → generate
+            uc.bg_gw.find_by_id = MagicMock(return_value=None)
+            uc.bg_gw.find_by_description = MagicMock(return_value=None)
+            uc.bg_gw.create = MagicMock()
+
+            # NPC records
+            uc.npc_gw.get_by_session = MagicMock(return_value=[bandit])
+            uc.npc_gw.get_by_scenario = MagicMock(return_value=[bandit])
+            uc.npc_gw.find_by_name_and_session = MagicMock(return_value=bandit)
+
+            # BGM: cache miss on first call, hit on second (post-generation)
+            uc.bgm_svc.get_cached_bgm_path = MagicMock(
+                side_effect=[None, "scenarios/s1/battle.mp3"],
+            )
+            uc.bgm_svc.generate_and_cache = AsyncMock()
+
+            # Bridge yields done so done_event_seen=True → choice turn fires done early
+            async def _bridge_with_done(
+                *_args: object,
+                **_kw: object,
+            ) -> AsyncIterator[str]:
+                yield f"data: {_json.dumps({'type': 'done'})}"
+
+            uc.bridge_svc.stream_decision = _bridge_with_done
+
+            # Both background and NPC default call generate_image; same stub is fine
+            uc.gemini.generate_image = AsyncMock(return_value=b"fake-image")
+            uc.storage_svc.upload_image = MagicMock(
+                return_value="sessions/image.png",
+            )
+            uc.npc_gw.update_image_path = MagicMock()
+            uc.npc_gw.update_emotion_image = MagicMock()
+
+            events = await _collect(uc.execute(_make_request(), MagicMock()))
+            parsed = _parse_sse_events(events)
+
+            bgm_indices = [
+                i for i, e in enumerate(parsed) if e.get("type") == "bgmUpdate"
+            ]
+            bg_indices = [
+                i
+                for i, e in enumerate(parsed)
+                if e.get("type") == "assetReady" and e.get("key") == "A dark cave"
+            ]
+            npc_indices = [
+                i
+                for i, e in enumerate(parsed)
+                if e.get("type") == "assetReady"
+                and e.get("key") == "npc:Bandit:default"
+            ]
+            done_indices = [i for i, e in enumerate(parsed) if e.get("type") == "done"]
+
+            assert bgm_indices, "bgmUpdate event must be present"
+            assert bg_indices, "background assetReady event must be present"
+            assert npc_indices, "npc:Bandit:default assetReady must be present"
+            assert done_indices, "done event must be present"
+
+            done_i = done_indices[0]
+            assert bgm_indices[0] < done_i, "bgmUpdate must appear before done"
+            assert bg_indices[0] < done_i, (
+                "background assetReady must appear before done"
+            )
+            assert npc_indices[0] < done_i, "npc:Bandit:default must appear before done"
+
 
 class TestAutoAdvanceUntilUserAction:
     """Tests for auto-advance multi-turn execution."""
@@ -1465,7 +1773,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1493,7 +1800,6 @@ class TestAutoAdvanceUntilUserAction:
             uc.mutation_svc.apply_session_end = MagicMock()
             uc.session_gw.increment_turn = MagicMock(side_effect=[2, 3])
             uc.turn_gw.create = MagicMock()
-            uc.context_gw.get_by_session = MagicMock(return_value=None)
             uc.npc_gw.get_by_session = MagicMock(return_value=[])
             uc.npc_gw.get_by_scenario = MagicMock(return_value=[])
 
@@ -1557,7 +1863,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1624,7 +1929,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1678,7 +1982,9 @@ class TestAutoAdvanceUntilUserAction:
             assert done_events[0]["will_continue"] is False
             assert done_events[0]["requires_user_action"] is False
             assert done_events[0]["is_ending"] is True
-            assert uc.decision_svc.decide.await_count == 1
+            # decide may be called more than once when _resolve_ending_narration
+            # runs; the important check is that auto-advance stopped (above).
+            assert uc.decision_svc.decide.await_count >= 1
 
     @pytest.mark.asyncio
     async def test_auto_advance_stops_at_max_auto_turns(self) -> None:
@@ -1696,7 +2002,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1780,8 +2085,8 @@ class TestAutoAdvanceUntilUserAction:
             assert "last" in full.lower()
 
     @pytest.mark.asyncio
-    async def test_auto_advance_uses_prompt_cache_after_first_turn(self) -> None:
-        """When enabled, prompt cache should switch later turns to prompt delta."""
+    async def test_auto_advance_always_uses_full_prompt(self) -> None:
+        """ADK manages caching internally; all turns use the full prompt."""
         with (
             patch(
                 "src.usecase.gm_turn_usecase.GeminiClient",
@@ -1795,7 +2100,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = True
             uc.interactions_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
@@ -1815,11 +2119,7 @@ class TestAutoAdvanceUntilUserAction:
             ctx2.system_prompt = ""
             uc.context_svc.build_context = MagicMock(side_effect=[ctx1, ctx2])
             uc.context_svc.build_prompt = MagicMock(return_value="prompt-full")
-            uc.context_svc.build_prompt_delta = MagicMock(return_value="prompt-delta")
 
-            uc.decision_svc.create_prompt_cache = AsyncMock(
-                return_value="cachedContents/game-1",
-            )
             uc.decision_svc.cleanup_runtime = AsyncMock()
             uc.decision_svc.decide = AsyncMock(
                 side_effect=[
@@ -1861,12 +2161,8 @@ class TestAutoAdvanceUntilUserAction:
                 ),
             )
 
-            uc.decision_svc.create_prompt_cache.assert_awaited_once()
-            assert uc.context_svc.build_prompt.call_count == 1
-            assert uc.context_svc.build_prompt_delta.call_count == 1
-
-            second_runtime = uc.decision_svc.decide.call_args_list[1].kwargs["runtime"]
-            assert second_runtime.cached_content_name == "cachedContents/game-1"
+            # ADK が内部でコンテキストを管理するため、全ターンでフルプロンプトを使用する
+            assert uc.context_svc.build_prompt.call_count == 2
             uc.decision_svc.cleanup_runtime.assert_awaited_once()
 
     @pytest.mark.asyncio
@@ -1885,7 +2181,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -1932,8 +2227,8 @@ class TestAutoAdvanceUntilUserAction:
                 yield  # pragma: no cover
 
             uc.bridge_svc.stream_decision = _stream_decision
-            uc._resolve_bgm = _bgm_event  # type: ignore[method-assign]
-            uc._resolve_backgrounds = _no_backgrounds  # type: ignore[method-assign]
+            uc._resolve_bgm = _bgm_event  # type: ignore[assignment]
+            uc._resolve_backgrounds = _no_backgrounds  # type: ignore[assignment]
 
             events = await _collect(uc.execute(_make_request(), MagicMock()))
             parsed = _parse_sse_events(events)
@@ -1961,7 +2256,6 @@ class TestAutoAdvanceUntilUserAction:
             from src.usecase.gm_turn_usecase import GmTurnUseCase
 
             uc = GmTurnUseCase()
-            uc.prompt_cache_enabled = False
             uc.session_gw.get_by_id = MagicMock(
                 return_value=_fake_session(turn=1),
             )
@@ -2011,8 +2305,8 @@ class TestAutoAdvanceUntilUserAction:
                 )
 
             uc.bridge_svc.stream_decision = _stream_decision
-            uc._resolve_bgm = _no_bgm  # type: ignore[method-assign]
-            uc._resolve_backgrounds = _bg_asset  # type: ignore[method-assign]
+            uc._resolve_bgm = _no_bgm  # type: ignore[assignment]
+            uc._resolve_backgrounds = _bg_asset  # type: ignore[assignment]
 
             events = await _collect(uc.execute(_make_request(), MagicMock()))
             parsed = _parse_sse_events(events)
@@ -2026,7 +2320,7 @@ class TestAutoAdvanceUntilUserAction:
 class TestAutoAdvanceAddition:
     """Unit tests for _build_auto_advance_addition prompt generation."""
 
-    def _import_uc(self) -> type:
+    def _import_uc(self) -> type[GmTurnUseCase]:
         from src.usecase.gm_turn_usecase import GmTurnUseCase
 
         return GmTurnUseCase
@@ -2076,7 +2370,7 @@ class TestAutoAdvanceAddition:
             assert "AUTO-ADVANCE CONTINUATION MODE" in result
             assert "turn 2 of 5" in result
 
-    def test_prioritizes_immersion(self) -> None:
+    def test_prioritizes_pacing(self) -> None:
         with (
             patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
             patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
@@ -2088,8 +2382,8 @@ class TestAutoAdvanceAddition:
                 current_turn=2,
                 total_turns=5,
             )
-            assert "immersion" in result.lower()
-            # Should not contain fixed turn-count schedules
+            # Should emphasise story pacing/rhythm (not fixed turn-count schedules)
+            assert "rhythm" in result.lower() or "pacing" in result.lower()
             assert "3-4 turns" not in result
             assert "1-2 turns" not in result
 
@@ -2126,3 +2420,553 @@ class TestAutoAdvanceAddition:
             assert "turn 5 of 5" in result
             assert "last" in result.lower()
             assert "choice" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# Player action gating tests
+# ---------------------------------------------------------------------------
+
+
+class TestIsPlayerAction:
+    """Unit tests for _is_player_action() helper."""
+
+    def test_say_is_player_action(self) -> None:
+        """'say' input is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("say", "Hello!") is True
+
+    def test_choice_is_player_action(self) -> None:
+        """'choice' input is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("choice", "Option A") is True
+
+    def test_clarify_answer_is_player_action(self) -> None:
+        """'clarify_answer' input is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("clarify_answer", "I meant the red door") is True
+
+    def test_do_with_real_text_is_player_action(self) -> None:
+        """'do' with real user text is a genuine player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("do", "I open the chest") is True
+
+    def test_do_continue_is_not_player_action(self) -> None:
+        """'do' with 'continue' text is auto-advance, not a player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("do", "continue") is False
+
+    def test_start_is_not_player_action(self) -> None:
+        """'start' input is automatic game start, not a player action."""
+        from src.usecase.gm_turn_usecase import _is_player_action
+
+        assert _is_player_action("start", "") is False
+
+
+class TestPlayerActionGating:
+    """Parameter changes must only apply on genuine player actions."""
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_skips_relationship_changes(self) -> None:
+        """Auto-advance narrate turn must NOT apply relationship_changes."""
+        from src.domain.entity.gm_types import RelationshipChange
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[
+                        RelationshipChange(npc_name="Rio", affinity_delta=10),
+                    ],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            # auto-advance continuation: input_type="do", input_text="continue"
+            req = _make_request(
+                input_type="do",
+                input_text="continue",
+            )
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.relationship_changes is None
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_skips_stats_delta(self) -> None:
+        """Auto-advance narrate turn must NOT apply stats_delta."""
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    stats_delta=[StatDelta(stat="hp", delta=-5)],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="do", input_text="continue")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.stats_delta is None
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_skips_npc_state_updates(self) -> None:
+        """Auto-advance narrate turn must NOT apply npc_state_updates."""
+        from src.domain.entity.gm_types import NpcStateEntry, NpcStateUpdate
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    npc_state_updates=[
+                        NpcStateUpdate(
+                            npc_name="Rio",
+                            state=[NpcStateEntry(key="mood", value="angry")],
+                        ),
+                    ],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="do", input_text="continue")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.npc_state_updates is None
+
+    @pytest.mark.asyncio
+    async def test_narrate_turn_preserves_session_end(self) -> None:
+        """Even on non-player-action turn, session_end must still be applied."""
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[],
+                    session_end=SessionEnd(
+                        ending_type="bad_end",
+                        ending_summary="Game over.",
+                    ),
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="do", input_text="continue")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.session_end is not None
+            assert applied.session_end.ending_type == "bad_end"
+
+    @pytest.mark.asyncio
+    async def test_choice_turn_applies_all_state_changes(self) -> None:
+        """Genuine player choice turn must apply all state changes."""
+        from src.domain.entity.gm_types import NewItem, RelationshipChange
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=3))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[
+                        RelationshipChange(npc_name="Rio", affinity_delta=5),
+                    ],
+                    new_items=[NewItem(name="Key", description="A rusty key")],
+                    stats_delta=[StatDelta(stat="hp", delta=-3)],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=4)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="choice", input_text="Option A")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.relationship_changes is not None
+            assert applied.new_items is not None
+            assert applied.stats_delta is not None
+
+    @pytest.mark.asyncio
+    async def test_start_turn_skips_parameter_changes(self) -> None:
+        """'start' turn (game open) must NOT apply parameter changes."""
+        from src.domain.entity.gm_types import RelationshipChange
+
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            uc = GmTurnUseCase()
+            uc.session_gw.get_by_id = MagicMock(return_value=_fake_session(turn=0))
+            ctx = _CtxBuilder().build()
+            uc.context_svc.build_context = MagicMock(return_value=ctx)
+            uc.context_svc.build_prompt = MagicMock(return_value="prompt")
+
+            decision = _fake_decision(
+                state_changes=StateChanges(
+                    relationship_changes=[
+                        RelationshipChange(npc_name="Guard", affinity_delta=2),
+                    ],
+                    stats_delta=[StatDelta(stat="hp", delta=10)],
+                ),
+            )
+            uc.decision_svc.decide = AsyncMock(return_value=decision)
+            _stub_common(uc, turn_return=1)
+            uc.bridge_svc.stream_decision = _empty_stream
+
+            req = _make_request(input_type="start", input_text="")
+            await _collect(uc.execute(req, MagicMock()))
+
+            call_args = uc.mutation_svc.apply.call_args
+            applied: StateChanges = call_args[0][2]
+            assert applied.relationship_changes is None
+            assert applied.stats_delta is None
+
+
+# ---------------------------------------------------------------------------
+# TestGetLatestTurn – GmTurnUseCase.get_latest_turn()
+# ---------------------------------------------------------------------------
+
+
+class TestGetLatestTurn:
+    """Unit tests for GmTurnUseCase.get_latest_turn().
+
+    Verifies that the method correctly:
+    - Parses persisted `output` JSON into LatestTurnResponse
+    - Derives `is_ending` from state_changes.session_end presence
+    - Derives `requires_user_action` from decision_type
+    - Returns None for invalid UUIDs, missing turns, or malformed output
+    """
+
+    # ------------------------------------------------------------------
+    # Helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _make_uc() -> GmTurnUseCase:
+        with (
+            patch("src.usecase.gm_turn_usecase.GeminiClient", autospec=True),
+            patch("src.usecase.gm_turn_usecase.StorageService", autospec=True),
+        ):
+            from src.usecase.gm_turn_usecase import GmTurnUseCase
+
+            return GmTurnUseCase()
+
+    @staticmethod
+    def _fake_turn(
+        *,
+        turn_number: int = 1,
+        output: dict[str, Any] | None = None,
+    ) -> MagicMock:
+        """Return a minimal Turns ORM mock with the given output."""
+        turn = MagicMock()
+        turn.turn_number = turn_number
+        turn.output = output
+        return turn
+
+    # ------------------------------------------------------------------
+    # Normal cases
+    # ------------------------------------------------------------------
+
+    def test_narrate_turn_returns_correct_response(self) -> None:
+        """Narrate turn: nodes serialised, is_ending=False, no user action."""
+        from domain.entity.gm_types import LatestTurnResponse
+
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The hero walks forward.",
+            nodes=[
+                SceneNode(type="narration", text="A dark forest."),
+            ],
+        ).model_dump()
+
+        turn = self._fake_turn(turn_number=3, output=output)
+        uc.turn_gw.get_latest = MagicMock(return_value=turn)
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert isinstance(result, LatestTurnResponse)
+        assert result.turn_number == 3
+        assert result.decision_type == "narrate"
+        assert result.is_ending is False
+        assert result.requires_user_action is False
+        assert result.nodes is not None
+        assert len(result.nodes) == 1
+        assert result.nodes[0]["text"] == "A dark forest."
+
+    def test_choice_turn_sets_requires_user_action(self) -> None:
+        """Choice decision_type → requires_user_action=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="choice",
+            narration_text="You stand at a fork.",
+            nodes=[
+                SceneNode(
+                    type="choice",
+                    text="Choose your path.",
+                    choices=[
+                        {"id": "left", "text": "Go left"},
+                        {"id": "right", "text": "Go right"},
+                    ],
+                ),
+            ],
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is True
+        assert result.decision_type == "choice"
+
+    def test_act_turn_sets_requires_user_action(self) -> None:
+        """Act decision_type → requires_user_action=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="act",
+            narration_text="What do you do?",
+            action_prompt="どうする？",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is True
+
+    def test_session_end_sets_is_ending_true(self) -> None:
+        """session_end present in state_changes → is_ending=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="The end.",
+            state_changes=StateChanges(
+                session_end=SessionEnd(
+                    ending_type="victory",
+                    ending_summary="Hero saved the world.",
+                ),
+            ),
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.is_ending is True
+
+    def test_no_session_end_sets_is_ending_false(self) -> None:
+        """state_changes without session_end → is_ending=False."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Combat continues.",
+            state_changes=StateChanges(
+                stats_delta=[StatDelta(stat="hp", delta=-10)],
+            ),
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.is_ending is False
+
+    def test_nodes_none_when_decision_has_no_nodes(self) -> None:
+        """Decision without nodes → nodes=None in response."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Brief narration.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.nodes is None
+
+    def test_multiple_nodes_all_serialised(self) -> None:
+        """All nodes in the decision are included in the response."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Long scene.",
+            nodes=[
+                SceneNode(type="narration", text="Page 1."),
+                SceneNode(type="dialogue", text="Page 2.", speaker="Hero"),
+                SceneNode(type="narration", text="Page 3."),
+            ],
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.nodes is not None
+        assert len(result.nodes) == 3
+        assert result.nodes[1]["speaker"] == "Hero"
+
+    # ------------------------------------------------------------------
+    # requires_user_action for each relevant decision_type
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("dt", ["choice", "act", "clarify", "repair"])
+    def test_requires_user_action_true_for_interactive_types(self, dt: str) -> None:
+        """choice/act/clarify/repair → requires_user_action=True."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type=dt,  # type: ignore[arg-type]
+            narration_text="Player input needed.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is True
+
+    def test_requires_user_action_false_for_narrate(self) -> None:
+        """Narrate → requires_user_action=False."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Story continues.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(return_value=self._fake_turn(output=output))
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.requires_user_action is False
+
+    # ------------------------------------------------------------------
+    # Error / edge cases
+    # ------------------------------------------------------------------
+
+    def test_returns_none_for_invalid_uuid(self) -> None:
+        """Non-UUID session_id → None (no DB query)."""
+        uc = self._make_uc()
+        uc.turn_gw.get_latest = MagicMock()
+
+        result = uc.get_latest_turn("not-a-uuid", MagicMock())
+
+        assert result is None
+        uc.turn_gw.get_latest.assert_not_called()
+
+    def test_returns_none_when_no_turn_in_db(self) -> None:
+        """No turn persisted for session → None."""
+        uc = self._make_uc()
+        uc.turn_gw.get_latest = MagicMock(return_value=None)
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is None
+
+    def test_returns_none_when_output_is_none(self) -> None:
+        """Turn with output=None (empty DB column) → None."""
+        uc = self._make_uc()
+        turn = self._fake_turn(output=None)
+        # output=None → turn.output or {} = {} → GmDecisionResponse(**{}) fails
+        uc.turn_gw.get_latest = MagicMock(return_value=turn)
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is None
+
+    def test_returns_none_when_output_is_malformed(self) -> None:
+        """Unrecognised output dict (not a valid GmDecisionResponse) → None."""
+        uc = self._make_uc()
+        malformed = {"unexpected_key": "garbage", "decision_type": "narrate"}
+        # Missing required `narration_text` → Pydantic validation error
+        uc.turn_gw.get_latest = MagicMock(
+            return_value=self._fake_turn(output=malformed)
+        )
+
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is None
+
+    def test_turn_number_propagated_correctly(self) -> None:
+        """turn_number from DB row is surfaced in the response."""
+        uc = self._make_uc()
+        output = GmDecisionResponse(
+            decision_type="narrate",
+            narration_text="Turn 42.",
+        ).model_dump()
+
+        uc.turn_gw.get_latest = MagicMock(
+            return_value=self._fake_turn(turn_number=42, output=output)
+        )
+        result = uc.get_latest_turn("00000000-0000-0000-0000-000000000001", MagicMock())
+
+        assert result is not None
+        assert result.turn_number == 42

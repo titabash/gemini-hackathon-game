@@ -17,7 +17,36 @@
 - **Backend Python**: FastAPI, Clean Architecture, Ruff + MyPy
 - **Database**: Drizzle ORM (TypeScript), PostgreSQL, Supabase
 - **Edge Functions**: Deno, Supabase Edge Functions
+- **Game Engine**: Flame 1.35.1, flame_riverpod 5.5.2
+- **Generative UI**: genui 0.7.0 (A2UI Protocol, SSE)
+- **GM Agent**: Google ADK (output_schema=GmDecisionResponse)
 - **モノレポ**: Melos
+
+## CRITICAL: ADK & TrpgSession パターン
+
+### Google ADK 選択肢アクセス（ADK 導入後）
+
+```python
+# ✅ decision.nodes の choice ノードを参照
+choice_node = next(
+    (n for n in reversed(decision.nodes) if n.type == "choice" and n.choices),
+    None,
+)
+# ❌ 禁止: decision.choices は ADK 後は存在しない
+```
+
+### TrpgSession Surface 優先順位（絶対厳守）
+
+```dart
+// hasSurface=true は isProcessing=true より必ず優先
+static NovelDisplayMode resolvePostPagingMode({...}) {
+  if (hasSurface) return NovelDisplayMode.surface;  // ← 最優先
+  if (isProcessing) return NovelDisplayMode.processing;
+  return NovelDisplayMode.input;
+}
+```
+
+詳細: `.cursor/rules/game-adk-patterns.mdc`
 
 ## 必須ポリシー
 

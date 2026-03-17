@@ -10,6 +10,7 @@ class DrizzleMigrations(SQLModel, table=True):
     __tablename__ = '__drizzle_migrations'
     __table_args__ = (
         PrimaryKeyConstraint('id', name='__drizzle_migrations_pkey'),
+        {'schema': 'public'}
     )
 
     id: int = Field(sa_column=Column('id', Integer, primary_key=True))
@@ -20,7 +21,8 @@ class DrizzleMigrations(SQLModel, table=True):
 class Users(SQLModel, table=True):
     __table_args__ = (
         PrimaryKeyConstraint('id', name='users_pkey'),
-        UniqueConstraint('account_name', name='users_account_name_unique')
+        UniqueConstraint('account_name', name='users_account_name_unique'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True))
@@ -36,8 +38,9 @@ class Users(SQLModel, table=True):
 
 class Scenarios(SQLModel, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='SET NULL', name='scenarios_created_by_users_id_fk'),
-        PrimaryKeyConstraint('id', name='scenarios_pkey')
+        ForeignKeyConstraint(['created_by'], ['public.users.id'], ondelete='SET NULL', name='scenarios_created_by_users_id_fk'),
+        PrimaryKeyConstraint('id', name='scenarios_pkey'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -62,9 +65,10 @@ class Scenarios(SQLModel, table=True):
 
 class Bgm(SQLModel, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='CASCADE', name='bgm_scenario_id_scenarios_id_fk'),
+        ForeignKeyConstraint(['scenario_id'], ['public.scenarios.id'], ondelete='CASCADE', name='bgm_scenario_id_scenarios_id_fk'),
         PrimaryKeyConstraint('id', name='bgm_pkey'),
-        UniqueConstraint('scenario_id', 'mood', name='bgm_scenario_id_mood_key')
+        UniqueConstraint('scenario_id', 'mood', name='bgm_scenario_id_mood_key'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -80,9 +84,10 @@ class Bgm(SQLModel, table=True):
 
 class Sessions(SQLModel, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='RESTRICT', name='sessions_scenario_id_scenarios_id_fk'),
-        ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE', name='sessions_user_id_users_id_fk'),
-        PrimaryKeyConstraint('id', name='sessions_pkey')
+        ForeignKeyConstraint(['scenario_id'], ['public.scenarios.id'], ondelete='RESTRICT', name='sessions_scenario_id_scenarios_id_fk'),
+        ForeignKeyConstraint(['user_id'], ['public.users.id'], ondelete='CASCADE', name='sessions_user_id_users_id_fk'),
+        PrimaryKeyConstraint('id', name='sessions_pkey'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -112,9 +117,10 @@ class Sessions(SQLModel, table=True):
 class ContextSummaries(SQLModel, table=True):
     __tablename__ = 'context_summaries'
     __table_args__ = (
-        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='context_summaries_session_id_sessions_id_fk'),
+        ForeignKeyConstraint(['session_id'], ['public.sessions.id'], ondelete='CASCADE', name='context_summaries_session_id_sessions_id_fk'),
         PrimaryKeyConstraint('id', name='context_summaries_pkey'),
-        UniqueConstraint('session_id', name='context_summaries_session_id_unique')
+        UniqueConstraint('session_id', name='context_summaries_session_id_unique'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -131,8 +137,9 @@ class ContextSummaries(SQLModel, table=True):
 
 class Items(SQLModel, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='items_session_id_sessions_id_fk'),
-        PrimaryKeyConstraint('id', name='items_pkey')
+        ForeignKeyConstraint(['session_id'], ['public.sessions.id'], ondelete='CASCADE', name='items_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='items_pkey'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -152,9 +159,10 @@ class Items(SQLModel, table=True):
 class Npcs(SQLModel, table=True):
     __table_args__ = (
         CheckConstraint('scenario_id IS NOT NULL OR session_id IS NOT NULL', name='npcs_at_least_one_parent'),
-        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='CASCADE', name='npcs_scenario_id_scenarios_id_fk'),
-        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='npcs_session_id_sessions_id_fk'),
-        PrimaryKeyConstraint('id', name='npcs_pkey')
+        ForeignKeyConstraint(['scenario_id'], ['public.scenarios.id'], ondelete='CASCADE', name='npcs_scenario_id_scenarios_id_fk'),
+        ForeignKeyConstraint(['session_id'], ['public.sessions.id'], ondelete='CASCADE', name='npcs_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='npcs_pkey'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -178,8 +186,9 @@ class Npcs(SQLModel, table=True):
 
 class Objectives(SQLModel, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='objectives_session_id_sessions_id_fk'),
-        PrimaryKeyConstraint('id', name='objectives_pkey')
+        ForeignKeyConstraint(['session_id'], ['public.sessions.id'], ondelete='CASCADE', name='objectives_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='objectives_pkey'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -197,9 +206,10 @@ class Objectives(SQLModel, table=True):
 class PlayerCharacters(SQLModel, table=True):
     __tablename__ = 'player_characters'
     __table_args__ = (
-        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='player_characters_session_id_sessions_id_fk'),
+        ForeignKeyConstraint(['session_id'], ['public.sessions.id'], ondelete='CASCADE', name='player_characters_session_id_sessions_id_fk'),
         PrimaryKeyConstraint('id', name='player_characters_pkey'),
-        UniqueConstraint('session_id', name='player_characters_session_id_unique')
+        UniqueConstraint('session_id', name='player_characters_session_id_unique'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -220,9 +230,10 @@ class SceneBackgrounds(SQLModel, table=True):
     __tablename__ = 'scene_backgrounds'
     __table_args__ = (
         CheckConstraint('scenario_id IS NOT NULL OR session_id IS NOT NULL', name='at_least_one_parent'),
-        ForeignKeyConstraint(['scenario_id'], ['scenarios.id'], ondelete='CASCADE', name='scene_backgrounds_scenario_id_scenarios_id_fk'),
-        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='scene_backgrounds_session_id_sessions_id_fk'),
-        PrimaryKeyConstraint('id', name='scene_backgrounds_pkey')
+        ForeignKeyConstraint(['scenario_id'], ['public.scenarios.id'], ondelete='CASCADE', name='scene_backgrounds_scenario_id_scenarios_id_fk'),
+        ForeignKeyConstraint(['session_id'], ['public.sessions.id'], ondelete='CASCADE', name='scene_backgrounds_session_id_sessions_id_fk'),
+        PrimaryKeyConstraint('id', name='scene_backgrounds_pkey'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -239,9 +250,10 @@ class SceneBackgrounds(SQLModel, table=True):
 
 class Turns(SQLModel, table=True):
     __table_args__ = (
-        ForeignKeyConstraint(['session_id'], ['sessions.id'], ondelete='CASCADE', name='turns_session_id_sessions_id_fk'),
+        ForeignKeyConstraint(['session_id'], ['public.sessions.id'], ondelete='CASCADE', name='turns_session_id_sessions_id_fk'),
         PrimaryKeyConstraint('id', name='turns_pkey'),
-        UniqueConstraint('session_id', 'turn_number', name='turns_session_id_turn_number_key')
+        UniqueConstraint('session_id', 'turn_number', name='turns_session_id_turn_number_key'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))
@@ -259,9 +271,10 @@ class Turns(SQLModel, table=True):
 class NpcRelationships(SQLModel, table=True):
     __tablename__ = 'npc_relationships'
     __table_args__ = (
-        ForeignKeyConstraint(['npc_id'], ['npcs.id'], ondelete='CASCADE', name='npc_relationships_npc_id_npcs_id_fk'),
+        ForeignKeyConstraint(['npc_id'], ['public.npcs.id'], ondelete='CASCADE', name='npc_relationships_npc_id_npcs_id_fk'),
         PrimaryKeyConstraint('id', name='npc_relationships_pkey'),
-        UniqueConstraint('npc_id', name='npc_relationships_npc_id_unique')
+        UniqueConstraint('npc_id', name='npc_relationships_npc_id_unique'),
+        {'schema': 'public'}
     )
 
     id: uuid.UUID = Field(sa_column=Column('id', Uuid, primary_key=True, server_default=text('gen_random_uuid()')))

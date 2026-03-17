@@ -13,8 +13,10 @@ from src.domain.entity.gm_types import (
     FlagChange,
     ItemUpdate,
     NpcLocationChange,
+    NpcStateEntry,
     NpcStateUpdate,
     SessionEnd,
+    StatDelta,
     StateChanges,
 )
 from src.domain.service.state_mutation_service import StateMutationService
@@ -137,7 +139,7 @@ class TestApplyStats:
         pc.stats = {"hp": 100, "san": 50}
         svc.pc_gw.get_by_session.return_value = pc
 
-        changes = StateChanges(stats_delta={"hp": -10})
+        changes = StateChanges(stats_delta=[StatDelta(stat="hp", delta=-10)])
         svc.apply(db, session_id, changes)
 
         svc.pc_gw.update_stats.assert_called_once()
@@ -155,7 +157,12 @@ class TestApplyStats:
         pc.stats = {"hp": 100, "san": 50}
         svc.pc_gw.get_by_session.return_value = pc
 
-        changes = StateChanges(stats_delta={"hp": -10, "san": -5})
+        changes = StateChanges(
+            stats_delta=[
+                StatDelta(stat="hp", delta=-10),
+                StatDelta(stat="san", delta=-5),
+            ],
+        )
         svc.apply(db, session_id, changes)
 
         svc.pc_gw.update_stats.assert_called_once()
@@ -173,7 +180,7 @@ class TestApplyStats:
         pc.stats = {"hp": 100}
         svc.pc_gw.get_by_session.return_value = pc
 
-        changes = StateChanges(stats_delta={"mp": 30})
+        changes = StateChanges(stats_delta=[StatDelta(stat="mp", delta=30)])
         svc.apply(db, session_id, changes)
 
         svc.pc_gw.update_stats.assert_called_once()
@@ -213,7 +220,7 @@ class TestApplyNpcStates:
             npc_state_updates=[
                 NpcStateUpdate(
                     npc_name="Guard",
-                    state={"mood": "angry"},
+                    state=[NpcStateEntry(key="mood", value="angry")],
                 ),
             ],
         )
@@ -233,7 +240,7 @@ class TestApplyNpcStates:
             npc_state_updates=[
                 NpcStateUpdate(
                     npc_name="Ghost",
-                    state={"visible": True},
+                    state=[NpcStateEntry(key="visible", value=True)],
                 ),
             ],
         )
@@ -257,10 +264,13 @@ class TestApplyNpcStates:
 
         changes = StateChanges(
             npc_state_updates=[
-                NpcStateUpdate(npc_name="Guard", state={"alert": True}),
+                NpcStateUpdate(
+                    npc_name="Guard",
+                    state=[NpcStateEntry(key="alert", value=True)],
+                ),
                 NpcStateUpdate(
                     npc_name="Merchant",
-                    state={"shop_open": False},
+                    state=[NpcStateEntry(key="shop_open", value=False)],
                 ),
             ],
         )

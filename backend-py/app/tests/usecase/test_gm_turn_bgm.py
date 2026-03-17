@@ -77,8 +77,6 @@ async def test_emits_bgm_update_when_cached() -> None:
         uc._resolve_backgrounds = _empty_stream
         uc._resolve_npc_emotion_assets = _empty_stream
         uc._resolve_npc_images = MagicMock(return_value={})
-        uc.context_gw.get_by_session = MagicMock(return_value=None)
-        uc.context_svc.should_compress = MagicMock(return_value=False)
         uc.bgm_svc.get_cached_bgm_path = MagicMock(
             return_value="scenarios/a/battle.mp3"
         )
@@ -118,8 +116,6 @@ async def test_emits_bgm_update_when_generated_on_cache_miss() -> None:
         uc._resolve_backgrounds = _empty_stream
         uc._resolve_npc_emotion_assets = _empty_stream
         uc._resolve_npc_images = MagicMock(return_value={})
-        uc.context_gw.get_by_session = MagicMock(return_value=None)
-        uc.context_svc.should_compress = MagicMock(return_value=False)
         uc.bgm_svc.get_cached_bgm_path = MagicMock(
             side_effect=[
                 None,
@@ -170,8 +166,6 @@ async def test_skips_bgm_when_cache_lookup_raises() -> None:
         uc._resolve_backgrounds = _empty_stream
         uc._resolve_npc_emotion_assets = _empty_stream
         uc._resolve_npc_images = MagicMock(return_value={})
-        uc.context_gw.get_by_session = MagicMock(return_value=None)
-        uc.context_svc.should_compress = MagicMock(return_value=False)
         uc.bgm_svc.get_cached_bgm_path = MagicMock(side_effect=RuntimeError("boom"))
         uc.bgm_svc.generate_and_cache = AsyncMock()
 
@@ -215,8 +209,6 @@ async def test_bgm_update_is_emitted_before_done_event() -> None:
         uc._resolve_backgrounds = _empty_stream
         uc._resolve_npc_emotion_assets = _empty_stream
         uc._resolve_npc_images = MagicMock(return_value={})
-        uc.context_gw.get_by_session = MagicMock(return_value=None)
-        uc.context_svc.should_compress = MagicMock(return_value=False)
         uc.bgm_svc.get_cached_bgm_path = MagicMock(
             side_effect=[None, "scenarios/any/mysterious.mp3"]
         )

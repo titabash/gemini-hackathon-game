@@ -1,0 +1,122 @@
+---
+description: "Google ADK GM agent, TrpgSession surface priority, and genui game-surface patterns"
+alwaysApply: true
+globs: ["backend-py/**/*.py", "frontend/apps/web/lib/features/trpg/**/*.dart"]
+---
+
+# Game Engine & ADK Patterns
+
+## CRITICAL: Google ADK GM Agent
+
+GMエージェントは **Google ADK** を使用（LangChain 不使用）。実装: `backend-py/app/src/infra/adk_gm_client.py`
+
+### GmDecisionResponse スキーマ（ADK 導入後）
+
+```python
+class GmDecisionResponse(BaseModel):
+    decision_type: Literal["narrate", "choice", "clarify", "repair"]
+    nodes: list[SceneNode] | None = None  # ← ADK 後の主要フィールド
+
+class SceneNode(BaseModel):
+    type: Literal["narration", "dialogue", "choice"]
+    choices: list[ChoiceOption] | None = None  # type="choice" のノードのみ
+```
+
+### CRITICAL: 選択肢アクセスパターン
+
+```python
+# ✅ ADK 後の正しい方法
+choice_node = next(
+    (n for n in reversed(decision.nodes) if n.type == "choice" and n.choices),
+    None,
+)
+
+# ❌ 禁止: decision.choices は ADK 導入後は存在しない
+choices = decision.choices  # AttributeError になる
+```
+
+### ADK セットアップ必須事項
+
+```python
+agent = LlmAgent(
+    name="gm_agent",
+    model=Gemini(model="gemini-3-flash-preview"),
+    instruction=GM_SYSTEM_PROMPT,
+    output_schema=GmDecisionResponse,
+    # use_interactions_api=True は絶対に指定しない（構造化出力が壊れる）
+)
+runner = Runner(
+    agent=agent,
+    session_service=DatabaseSessionService(url, connect_args={"server_settings": {"search_path": "adk"}}),
+    auto_create_session=True,
+)
+```
+
+## CRITICAL: TrpgSession Surface 優先順位
+
+`frontend/apps/web/lib/features/trpg/model/trpg_session_provider.dart`
+
+### resolvePostPagingMode の優先順位
+
+```dart
+static NovelDisplayMode resolvePostPagingMode({
+  required bool isProcessing,
+  required bool hasSurface,
+}) {
+  // hasSurface=true は isProcessing=true より必ず優先される
+  if (hasSurface) return NovelDisplayMode.surface;  // ← 最優先
+  if (isProcessing) return NovelDisplayMode.processing;
+  return NovelDisplayMode.input;
+}
+```
+
+**なぜ**: auto-advance シナリオで `isProcessing=true` のまま choice turn が完了する場合がある。
+`hasSurface=true` はバックエンドが選択肢 surface を送信済みを意味するため、処理状態より優先して表示すべき。
+
+### バグ症状の見分け方（ログ）
+
+```
+# 問題のあるパターン
+_onSurfaceUpdate: SurfaceAdded(game-surface)  ← surface は作成されている
+onPagingComplete: resolved → NovelDisplayMode.processing, isProcessing=true, hasSurface=true
+↑ hasSurface=true なのに processing → 選択肢UIが表示されない
+```
+
+### onPagingComplete の willAutoContinue チェック
+
+```dart
+if (_willAutoContinue) {
+  if (_hasSurface) {
+    // choice surface がある場合は auto-continue より優先してsurfaceを表示
+    _displayModeNotifier.value = NovelDisplayMode.surface;
+    return;
+  }
+  _displayModeNotifier.value = NovelDisplayMode.processing;
+  return;
+}
+```
+
+## genui game-surface パターン
+
+### Surface ID 一覧
+
+| surfaceId | 用途 |
+|-----------|------|
+| `game-surface` | choiceGroup / continueButton / clarifyQuestion / repairConfirm |
+| `game-narration` | narrativePanel |
+| `game-npcs` | npcGallery |
+
+### SSE イベント順序（1ターン分）
+
+```
+nodesReady → stateUpdate → game-npcs A2UI → game-narration A2UI → game-surface A2UI → done
+```
+
+### surfaceUpdate + beginRendering は必ずセット
+
+```dart
+// surfaceUpdate だけでは表示されない。beginRendering とセットで送る
+proc.handleMessage(A2uiMessage.fromJson({'surfaceUpdate': {...}}));
+proc.handleMessage(A2uiMessage.fromJson({'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'}}));
+_hasSurface = true;  // フラグを手動で立てる
+```

@@ -36,9 +36,14 @@ class GamePage extends HookConsumerWidget {
 
     if (!context.mounted || shouldClose != true) return;
 
+    final scenarioId = ref.read(trpgSessionProvider).scenarioId;
     await ref.read(trpgSessionProvider).reset();
     if (!context.mounted) return;
-    context.goNamed('home');
+    if (scenarioId != null) {
+      context.goNamed('gameMenu', pathParameters: {'id': scenarioId});
+    } else {
+      context.goNamed('home');
+    }
   }
 
   @override

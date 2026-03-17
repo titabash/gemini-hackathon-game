@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:core_api/core_api.dart';
 import 'package:core_auth/core_auth.dart';
 import 'package:core_genui/core_genui.dart';
 import 'package:core_utils/core_utils.dart';
@@ -76,9 +77,23 @@ class _TurnStreamEvent {
 /// Uses [GameContentGenerator] for SSE communication and
 /// [A2uiMessageProcessor] for genui surface management.
 class TrpgSessionNotifier {
-  TrpgSessionNotifier(this._ref);
+  TrpgSessionNotifier(this._ref) {
+    // Cache provider references for use in dispose().
+    // Riverpod 3.x forbids _ref.read() inside onDispose lifecycle callbacks
+    // (debug assertion: _debugCallbackStack == 0), so we capture instances
+    // here at construction time where _ref.read() is always safe.
+    _bgmPlayer = _ref.read(bgmPlayerProvider);
+    _processor = _ref.read(gameProcessorProvider);
+  }
 
   final Ref _ref;
+
+  /// Cached [BgmPlayerNotifier] instance – must not call [_ref.read] inside
+  /// Riverpod lifecycle callbacks such as [dispose].
+  late final BgmPlayerNotifier _bgmPlayer;
+
+  /// Cached [A2uiMessageProcessor] instance – same rationale as [_bgmPlayer].
+  late final A2uiMessageProcessor _processor;
 
   final _messagesNotifier = ValueNotifier<List<TrpgMessage>>([]);
   final _isProcessingNotifier = ValueNotifier<bool>(false);
@@ -111,6 +126,9 @@ class TrpgSessionNotifier {
 
   /// Whether the current turn uses node-based playback (read-only).
   bool get useNodePlayer => _useNodePlayer;
+
+  /// The scenario ID for the current session (null before init or after reset).
+  String? get scenarioId => _scenarioId;
 
   /// Text buffer for accumulating streamed text within a turn.
   final _textBuffer = StringBuffer();
@@ -159,7 +177,7 @@ class TrpgSessionNotifier {
       _pendingChangesNotifier;
 
   /// The [A2uiMessageProcessor] that manages genui surfaces.
-  A2uiMessageProcessor get processor => _ref.read(gameProcessorProvider);
+  A2uiMessageProcessor get processor => _processor;
 
   /// Initialise (or re-initialise) for a new session.
   Future<void> initSession(String sessionId) async {
@@ -237,7 +255,7 @@ class TrpgSessionNotifier {
     try {
       final supabase = _ref.read(supabaseClientProvider);
 
-      // Parallel queries for all turns, backgrounds, and NPCs
+      // Parallel queries for all turns, backgrounds, NPCs, and items
       final results = await Future.wait([
         // All turns ordered chronologically
         supabase
@@ -261,10 +279,40 @@ class TrpgSessionNotifier {
               'session_id.eq.$sessionId'
               '${scenarioId != null ? ',scenario_id.eq.$scenarioId' : ''}',
             ),
+        // Persisted inventory items for this session
+        supabase
+            .from('items')
+            .select(
+              'name, description, type, quantity, is_equipped, image_path',
+            )
+            .eq('session_id', sessionId),
       ]);
 
       final allTurnRows = (results[0] as List<dynamic>)
           .cast<Map<String, dynamic>>();
+
+      // Restore persisted inventory items into visual state
+      final itemRows = (results[3] as List<dynamic>)
+          .cast<Map<String, dynamic>>();
+      if (itemRows.isNotEmpty) {
+        final items = itemRows.map((m) {
+          final rawPath = m['image_path'] as String?;
+          return InventoryItem(
+            name: m['name'] as String? ?? '',
+            description: m['description'] as String? ?? '',
+            itemType: m['type'] as String? ?? '',
+            quantity: (m['quantity'] as num?)?.toInt() ?? 1,
+            isEquipped: m['is_equipped'] as bool? ?? false,
+            imagePath: (rawPath != null && rawPath.isNotEmpty)
+                ? _resolveStorageUrl(rawPath)
+                : null,
+          );
+        }).toList();
+        _visualStateNotifier.value = _visualStateNotifier.value.copyWith(
+          items: items,
+        );
+      }
+
       if (allTurnRows.isEmpty) {
         _displayModeNotifier.value = NovelDisplayMode.input;
         return;
@@ -412,30 +460,46 @@ class TrpgSessionNotifier {
   /// Restore choice surface from turn output if applicable.
   void _restoreChoiceSurface(Map<String, dynamic> output) {
     final decisionType = output['decision_type'] as String?;
-    final choices = output['choices'] as List<dynamic>?;
-    if (decisionType == 'choice' && choices != null && choices.isNotEmpty) {
-      final proc = _ref.read(gameProcessorProvider);
-      proc.handleMessage(
-        A2uiMessage.fromJson({
-          'surfaceUpdate': {
-            'surfaceId': 'game-surface',
-            'components': [
-              {
-                'id': 'root',
-                'component': {
-                  'choiceGroup': {'choices': choices, 'allowFreeInput': true},
-                },
-              },
-            ],
-          },
-        }),
-      );
-      proc.handleMessage(
-        A2uiMessage.fromJson({
-          'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'},
-        }),
-      );
+    if (decisionType != 'choice') return;
+    // Choices are stored in nodes[-1].choices (node-based architecture).
+    final rawNodes = output['nodes'] as List<dynamic>?;
+    final lastNode = rawNodes?.isNotEmpty == true
+        ? rawNodes!.last as Map<String, dynamic>?
+        : null;
+    final choices = lastNode?['type'] == 'choice'
+        ? lastNode!['choices'] as List<dynamic>?
+        : null;
+    if (choices != null && choices.isNotEmpty) {
+      _ensureChoiceSurface(choices.cast<Map<String, dynamic>>());
     }
+  }
+
+  /// Builds a choiceGroup surface on game-surface using the provided choices.
+  /// Used as a fallback when the A2UI event was not received (restore scenarios).
+  void _ensureChoiceSurface(List<Map<String, dynamic>> choices) {
+    if (choices.isEmpty) return;
+    final proc = _ref.read(gameProcessorProvider);
+    proc.handleMessage(
+      A2uiMessage.fromJson({
+        'surfaceUpdate': {
+          'surfaceId': 'game-surface',
+          'components': [
+            {
+              'id': 'root',
+              'component': {
+                'choiceGroup': {'choices': choices, 'allowFreeInput': true},
+              },
+            },
+          ],
+        },
+      }),
+    );
+    proc.handleMessage(
+      A2uiMessage.fromJson({
+        'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'},
+      }),
+    );
+    _hasSurface = true;
   }
 
   Future<void> _restoreBgmFromLastTurn(
@@ -591,9 +655,8 @@ class TrpgSessionNotifier {
 
   /// Remove all active genui surfaces from the processor.
   void _clearProcessorSurfaces() {
-    final proc = _ref.read(gameProcessorProvider);
-    for (final surfaceId in proc.surfaces.keys.toList()) {
-      proc.handleMessage(SurfaceDeletion(surfaceId: surfaceId));
+    for (final surfaceId in _processor.surfaces.keys.toList()) {
+      _processor.handleMessage(SurfaceDeletion(surfaceId: surfaceId));
     }
   }
 
@@ -605,8 +668,11 @@ class TrpgSessionNotifier {
     required bool isProcessing,
     required bool hasSurface,
   }) {
-    if (isProcessing) return NovelDisplayMode.processing;
+    // hasSurface=true は isProcessing より優先する。
+    // choiceGroupなど表示すべきsurfaceが既に準備されている場合、
+    // バックエンドの処理状態に関わらず即座にsurfaceを表示すべき。
     if (hasSurface) return NovelDisplayMode.surface;
+    if (isProcessing) return NovelDisplayMode.processing;
     return NovelDisplayMode.input;
   }
 
@@ -617,6 +683,15 @@ class TrpgSessionNotifier {
       return;
     }
     if (_willAutoContinue) {
+      if (_hasSurface) {
+        // choiceGroupなど表示すべきsurfaceがある場合、auto-continueより優先してsurfaceを表示
+        Logger.debug(
+          'onPagingComplete: willAutoContinue but hasSurface, showing surface',
+        );
+        _bufferIncomingTurnEvents = false;
+        _displayModeNotifier.value = NovelDisplayMode.surface;
+        return;
+      }
       Logger.debug('onPagingComplete: willAutoContinue, showing processing');
       _bufferIncomingTurnEvents = false;
       _displayModeNotifier.value = NovelDisplayMode.processing;
@@ -651,6 +726,18 @@ class TrpgSessionNotifier {
       if (advanced) {
         _applyNodeVisualState(nodePlayer.currentNode.value);
         _saveCurrentNodeIndex(nodePlayer.currentIndex);
+        // choiceノードに達した時点で自動的にページング完了（surfaceに切り替え）
+        if (nodePlayer.currentNode.value?.type == 'choice') {
+          // _hasSurface が false の場合（復旧シナリオやA2UI未受信時）、
+          // choiceノードのデータから直接サーフェスを構築する
+          if (!_hasSurface) {
+            final choices = nodePlayer.currentNode.value!.choices;
+            if (choices != null && choices.isNotEmpty) {
+              _ensureChoiceSurface(choices);
+            }
+          }
+          onPagingComplete();
+        }
       } else {
         onPagingComplete();
       }
@@ -992,12 +1079,87 @@ class TrpgSessionNotifier {
 
   void _onError(ContentGeneratorError error) {
     Logger.error('GM error: ${error.error}');
-    _isProcessingNotifier.value = false;
-    _isAwaitingUserActionNotifier.value = false;
     _willAutoContinue = false;
     _bufferIncomingTurnEvents = false;
     _bufferedTurnEvents.clear();
+
+    // Case A: SSE stream ended without a done event — nodes are guaranteed to
+    // be in the DB (persist runs before streaming).  Fetch and replay silently.
+    final isSseEndedWithoutDone = error.error.toString().contains(
+      'SSE stream ended without done event',
+    );
+    if (isSseEndedWithoutDone && _sessionId != null) {
+      _attemptSseRecovery();
+      return;
+    }
+
+    // Case B: Any other error — reset to input mode.
+    _isProcessingNotifier.value = false;
+    _isAwaitingUserActionNotifier.value = false;
     _displayModeNotifier.value = NovelDisplayMode.input;
+  }
+
+  /// Fetches the latest turn from the backend and replays its nodes.
+  ///
+  /// Called when the SSE stream ends without a done event.  Because
+  /// [_persist_turn] always runs before streaming starts, the latest turn is
+  /// guaranteed to be in the DB.
+  void _attemptSseRecovery() {
+    final sessionId = _sessionId;
+    // Defensive guard: _onError already verifies _sessionId != null before
+    // calling this method, so sessionId should never be null here.  The check
+    // is retained to make the method safe if called from other call sites.
+    if (sessionId == null) {
+      _isProcessingNotifier.value = false;
+      _isAwaitingUserActionNotifier.value = false;
+      _displayModeNotifier.value = NovelDisplayMode.input;
+      return;
+    }
+    final dio = _ref.read(backendDioProvider);
+    final generator = _ref.read(gameContentGeneratorProvider);
+    dio
+        .get<Map<String, dynamic>>(
+          '/api/gm/turn/latest',
+          queryParameters: {'session_id': sessionId},
+        )
+        .then((response) {
+          final data = response.data;
+          if (data == null) {
+            _fallbackToInputMode();
+            return;
+          }
+          final rawNodes = data['nodes'];
+          final nodes = rawNodes is List
+              ? rawNodes.cast<Map<String, dynamic>>()
+              : <Map<String, dynamic>>[];
+          final doneData = <String, dynamic>{
+            'turn_number': data['turn_number'],
+            'requires_user_action': data['requires_user_action'] == true,
+            'is_ending': data['is_ending'] == true,
+            'will_continue': false,
+            'stop_reason': data['is_ending'] == true ? 'ending' : 'completed',
+          };
+          Logger.info(
+            'SSE recovery: replaying ${nodes.length} nodes from DB '
+            '(turn ${data['turn_number']})',
+          );
+          generator.replayNodesReady(nodes: nodes, doneData: doneData);
+        })
+        .catchError((Object e) {
+          Logger.warning('SSE recovery failed, falling back to continue: $e');
+          // Case B fallback: request continuation generation.
+          _fallbackToContinue(sessionId);
+        });
+  }
+
+  void _fallbackToInputMode() {
+    _isProcessingNotifier.value = false;
+    _isAwaitingUserActionNotifier.value = false;
+    _displayModeNotifier.value = NovelDisplayMode.input;
+  }
+
+  void _fallbackToContinue(String sessionId) {
+    sendTurn(sessionId: sessionId, inputType: 'do', inputText: 'continue');
   }
 
   void _onSurfaceUpdate(GenUiUpdate update) {
@@ -1195,11 +1357,15 @@ class TrpgSessionNotifier {
             quantity: qty,
           ),
         );
+        final rawPath = m['image_path'] as String?;
         return InventoryItem(
           name: itemName,
           description: desc,
           itemType: m['item_type'] as String? ?? '',
           quantity: qty,
+          imagePath: (rawPath != null && rawPath.isNotEmpty)
+              ? _resolveStorageUrl(rawPath)
+              : null,
         );
       }).toList();
       state = state.copyWith(items: [...state.items, ...parsed]);
@@ -1538,7 +1704,17 @@ class TrpgSessionNotifier {
     _pendingChangesNotifier.dispose();
     textPager.dispose();
     nodePlayer.dispose();
-    await _ref.read(bgmPlayerProvider).stop();
+    await _bgmPlayer.stop();
+  }
+
+  /// Set [_sessionId] and activate stream subscriptions without touching DB.
+  ///
+  /// Intended for unit tests only — skips Supabase queries and the initial
+  /// `sendTurn` call that [initSession] would trigger.
+  @visibleForTesting
+  void subscribeForTest(String sessionId) {
+    _sessionId = sessionId;
+    _setupSubscriptions();
   }
 }
 

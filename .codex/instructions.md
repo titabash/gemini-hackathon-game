@@ -414,6 +414,71 @@ git status
 - [ ] インデックスが適切に設定されている
 - [ ] N+1問題が発生していない
 
+## CRITICAL: Google ADK GM Agent パターン
+
+GMエージェントは LangChain ではなく **Google ADK** を使用（`backend-py/app/src/infra/adk_gm_client.py`）。
+
+### 選択肢アクセス（ADK 導入後の重要な変更）
+
+```python
+# ✅ ADK 後の正しい方法
+choice_node = next(
+    (n for n in reversed(decision.nodes) if n.type == "choice" and n.choices),
+    None,
+)
+
+# ❌ 禁止: ADK 導入後は decision.choices は存在しない
+choices = decision.choices  # AttributeError になる
+```
+
+`decision_type="choice"` の場合、選択肢は `decision.nodes` の中の `type="choice"` ノードの `.choices` に格納される。
+
+### ADK セットアップ必須事項
+
+```python
+agent = LlmAgent(
+    name="gm_agent",
+    model=Gemini(model="gemini-3-flash-preview"),
+    instruction=GM_SYSTEM_PROMPT,
+    output_schema=GmDecisionResponse,  # Pydantic 直接指定
+    # use_interactions_api=True は絶対に指定しない（構造化出力が壊れる）
+)
+```
+
+ADK セッションテーブルは `adk` PostgreSQL スキーマに隔離する：
+```python
+connect_args={"server_settings": {"search_path": "adk"}}
+```
+
+## CRITICAL: TrpgSession Surface 優先順位
+
+`frontend/apps/web/lib/features/trpg/model/trpg_session_provider.dart`
+
+### resolvePostPagingMode ルール（絶対厳守）
+
+```dart
+// hasSurface=true は isProcessing=true より必ず優先される
+static NovelDisplayMode resolvePostPagingMode({
+  required bool isProcessing,
+  required bool hasSurface,
+}) {
+  if (hasSurface) return NovelDisplayMode.surface;  // ← 最優先
+  if (isProcessing) return NovelDisplayMode.processing;
+  return NovelDisplayMode.input;
+}
+```
+
+これが逆順（isProcessing 先）だと auto-advance シナリオで choice UI が永遠に表示されないバグが発生する。
+
+## CRITICAL: genui game-surface パターン
+
+```
+# SSE イベント順序（1ターン分）
+nodesReady → stateUpdate → game-npcs (A2UI) → game-narration (A2UI) → game-surface (A2UI) → done
+```
+
+`surfaceUpdate` + `beginRendering` は**必ずセット**で送る（片方だけでは surface が表示されない）。
+
 ## 参考リソース
 
 - プロジェクトCLAUDE.md: `/Users/tknr/Development/flutter-boilerplate/CLAUDE.md`
