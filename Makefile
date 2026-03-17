@@ -5,7 +5,7 @@ ENV=local
 # 初期化コマンド
 # プロジェクトの初期セットアップを実行します
 # - 必要なツールの確認
-# - asdfによる言語バージョン管理
+# - miseによる言語バージョン管理
 # - Supabaseのセットアップ（local環境のみ起動）
 # - 環境変数ファイルの準備
 # - 依存関係のインストール（Drizzle, Flutter, Patrol CLI）
@@ -14,8 +14,8 @@ ENV=local
 init:
 	# 必要なツールがインストールされているかチェック
 	sh ./bin/check_install.sh
-	# asdfをインストール
-	asdf install
+	# miseで言語バージョンをインストール
+	mise install
 	# dotenvxをインストール
 	npm install -g @dotenvx/dotenvx;
 	# Bunのインストール確認（Drizzle用）

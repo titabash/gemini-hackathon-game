@@ -135,7 +135,7 @@ This boilerplate integrates all the essential elements needed for modern full-st
 ### Required Tools
 
 - [Docker](https://www.docker.com/) - Container runtime
-- [asdf](https://asdf-vm.com/) - Version management tool (manages Flutter, Node.js, Python versions)
+- [mise](https://mise.jdx.dev/) - Version management tool (manages Flutter, Node.js, Python versions)
 - [Flutter](https://flutter.dev/) 3.35.6-stable - Flutter framework
 - [Node.js](https://nodejs.org/) 24.10.0 - JavaScript runtime
 - [Python](https://www.python.org/) 3.13.9 - Python runtime
@@ -160,7 +160,7 @@ make init
 This command will:
 
 - Check for and install necessary tools
-- Set up language versions with asdf
+- Set up language versions with mise
 - Log in to and initialize Supabase
 - Install dependencies (Drizzle, Flutter packages, Patrol CLI)
 - Run initial database migrations
