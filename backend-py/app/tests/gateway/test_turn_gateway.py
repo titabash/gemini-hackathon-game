@@ -72,3 +72,36 @@ class TestTurnGateway:
         recent = gw.get_recent(db_session, seed_session.id)
 
         assert recent == []
+
+    def test_get_latest_returns_most_recent_turn(
+        self, db_session: Session, seed_session: Sessions
+    ) -> None:
+        """Verify get_latest returns the highest turn_number turn."""
+        gw = TurnGateway()
+        for i in range(1, 4):
+            turn = Turns(
+                id=uuid.uuid4(),
+                session_id=seed_session.id,
+                turn_number=i,
+                input_type="do",
+                input_text=f"Action {i}",
+                gm_decision_type="narrate",
+                output={"text": f"Response {i}"},
+                created_at=_now(),
+            )
+            gw.create(db_session, turn)
+
+        latest = gw.get_latest(db_session, seed_session.id)
+
+        assert latest is not None
+        assert latest.turn_number == 3
+
+    def test_get_latest_returns_none_for_empty_session(
+        self, db_session: Session, seed_session: Sessions
+    ) -> None:
+        """Verify get_latest returns None when no turns exist."""
+        gw = TurnGateway()
+
+        latest = gw.get_latest(db_session, seed_session.id)
+
+        assert latest is None

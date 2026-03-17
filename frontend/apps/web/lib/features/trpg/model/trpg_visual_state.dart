@@ -110,6 +110,7 @@ class InventoryItem {
     this.itemType = '',
     this.quantity = 1,
     this.isEquipped = false,
+    this.imagePath,
   });
 
   final String name;
@@ -118,12 +119,16 @@ class InventoryItem {
   final int quantity;
   final bool isEquipped;
 
+  /// Resolved public URL for the item thumbnail image.
+  final String? imagePath;
+
   InventoryItem copyWith({
     String? name,
     String? description,
     String? itemType,
     int? quantity,
     bool? isEquipped,
+    String? Function()? imagePath,
   }) {
     return InventoryItem(
       name: name ?? this.name,
@@ -131,6 +136,7 @@ class InventoryItem {
       itemType: itemType ?? this.itemType,
       quantity: quantity ?? this.quantity,
       isEquipped: isEquipped ?? this.isEquipped,
+      imagePath: imagePath != null ? imagePath() : this.imagePath,
     );
   }
 }

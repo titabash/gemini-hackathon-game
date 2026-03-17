@@ -36,3 +36,13 @@ class TurnGateway:
             .limit(limit)
         )
         return list(session.exec(statement).all())
+
+    def get_latest(self, session: Session, session_id: uuid.UUID) -> Turns | None:
+        """Get the most recent turn for a session."""
+        statement = (
+            select(Turns)
+            .where(Turns.session_id == session_id)
+            .order_by(Turns.turn_number.desc())
+            .limit(1)
+        )
+        return session.exec(statement).first()

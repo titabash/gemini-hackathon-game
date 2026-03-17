@@ -105,11 +105,25 @@ class FlagChange(BaseModel):
     value: bool
 
 
+class StatDelta(BaseModel):
+    """Single player stat delta (Gemini API does not support additionalProperties)."""
+
+    stat: str
+    delta: int
+
+
+class NpcStateEntry(BaseModel):
+    """Single NPC state key-value entry (avoids additionalProperties in schema)."""
+
+    key: str
+    value: str | int | float | bool | None = None
+
+
 class NpcStateUpdate(BaseModel):
     """NPC internal state mutation requested by GM decision."""
 
     npc_name: str
-    state: dict[str, object]
+    state: list[NpcStateEntry]
 
 
 class ItemUpdate(BaseModel):
@@ -131,7 +145,7 @@ class NpcLocationChange(BaseModel):
 class StateChanges(BaseModel):
     """Aggregated state mutations from a GM decision."""
 
-    stats_delta: dict[str, int] | None = None
+    stats_delta: list[StatDelta] | None = None
     new_items: list[NewItem] | None = None
     removed_items: list[str] | None = None
     item_updates: list[ItemUpdate] | None = None
@@ -182,7 +196,7 @@ class SceneNode(BaseModel):
 class GmDecisionResponse(BaseModel):
     """Gemini構造化出力スキーマ。1回の呼出で全情報を返す."""
 
-    decision_type: Literal["narrate", "choice", "clarify", "repair"]
+    decision_type: Literal["narrate", "choice", "act", "clarify", "repair"]
     narration_text: str
 
     nodes: list[SceneNode] | None = None
@@ -192,7 +206,7 @@ class GmDecisionResponse(BaseModel):
     bgm_mood: str | None = None
     bgm_music_prompt: str | None = None
 
-    choices: list[ChoiceOption] | None = None
+    action_prompt: str | None = None
     clarify_question: str | None = None
     repair: RepairData | None = None
 
@@ -200,6 +214,19 @@ class GmDecisionResponse(BaseModel):
     npc_intents: list[NpcIntent] | None = None
 
     state_changes: StateChanges | None = None
+
+
+# --- SSE Recovery ---
+
+
+class LatestTurnResponse(BaseModel):
+    """Response for GET /api/gm/turn/latest used for SSE error recovery."""
+
+    turn_number: int
+    decision_type: str
+    nodes: list[dict[str, Any]] | None
+    is_ending: bool
+    requires_user_action: bool
 
 
 # --- Game Context (prompt construction) ---
@@ -270,9 +297,6 @@ class GameContext(BaseModel):
     system_prompt: str
     win_conditions: list[dict[str, Any]]
     fail_conditions: list[dict[str, Any]]
-    plot_essentials: dict[str, Any]
-    short_term_summary: str
-    confirmed_facts: dict[str, Any]
     recent_turns: list[TurnSummary]
     player: PlayerSummary
     active_npcs: list[NpcSummary]

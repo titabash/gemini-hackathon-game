@@ -282,6 +282,9 @@ response = client.chat.completions.create(...)
 以下の場合のみ直接SDKの使用を許可：
 - LangChainが未対応の最新API機能
 - LangChainラッパーにバグがある場合
+- **Google ADK**: `output_schema=` で Pydantic 直接指定が必要な場合（`langchain-google-genai` は `response_json_schema` 未対応のため）
+  - 実装例: `backend-py/app/src/infra/adk_gm_client.py`
+  - 詳細: `.claude/skills/google-adk/SKILL.md`
 - パフォーマンスクリティカルで軽量実装が必要な場合
 
 **例外を適用する場合は、コードコメントで理由を明記すること。**

@@ -26,7 +26,7 @@ services:
     command: >
       /bin/bash -c "
         uv sync --group dev &&
-        uv run sqlacodegen \"$$DIRECT_URL\" --generator sqlmodels --options nojoined --outfile src/domain/entity/models.py &&
+        uv run sqlacodegen \"$$DIRECT_URL\" --generator sqlmodels --options nojoined --schemas public --outfile src/domain/entity/models.py &&
         uv run uvicorn app:app --proxy-headers --reload --host 0.0.0.0
       "
   # backend_app_py_release:

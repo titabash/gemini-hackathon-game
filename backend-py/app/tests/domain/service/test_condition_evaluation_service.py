@@ -326,11 +326,11 @@ class TestEvaluate:
         assert result.triggered_fail is None
         assert result.win_progress == []
 
-    def test_multiple_win_conditions_first_wins(
+    def test_multiple_win_conditions_all_required(
         self,
         svc: ConditionEvaluationService,
     ) -> None:
-        """First satisfied win condition is returned."""
+        """ALL win conditions must be achieved for victory (AND judgment)."""
         win_conditions: list[dict[str, Any]] = [
             {
                 "id": "w1",
@@ -343,15 +343,25 @@ class TestEvaluate:
                 "requiredFlags": ["b"],
             },
         ]
-        result = svc.evaluate(
+        # Only one condition satisfied → no victory
+        result_partial = svc.evaluate(
             win_conditions=win_conditions,
             fail_conditions=[],
             current_flags={"b": True},
             player_stats={"hp": 100},
             current_turn=5,
         )
-        assert result.triggered_win is not None
-        assert result.triggered_win["id"] == "w2"
+        assert result_partial.triggered_win is None
+
+        # All conditions satisfied → victory
+        result_all = svc.evaluate(
+            win_conditions=win_conditions,
+            fail_conditions=[],
+            current_flags={"a": True, "b": True},
+            player_stats={"hp": 100},
+            current_turn=5,
+        )
+        assert result_all.triggered_win is not None
 
     def test_fail_condition_without_condition_key(
         self,

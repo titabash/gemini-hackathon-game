@@ -26,11 +26,27 @@ class InventoryPanelWidget extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 1),
           child: Row(
             children: [
-              Icon(
-                _iconForType(item.itemType),
-                color: Colors.white54,
-                size: 12,
-              ),
+              if (item.imagePath != null)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(2),
+                  child: Image.network(
+                    item.imagePath!,
+                    width: 14,
+                    height: 14,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, err, st) => Icon(
+                      _iconForType(item.itemType),
+                      color: Colors.white54,
+                      size: 12,
+                    ),
+                  ),
+                )
+              else
+                Icon(
+                  _iconForType(item.itemType),
+                  color: Colors.white54,
+                  size: 12,
+                ),
               const SizedBox(width: 4),
               Expanded(
                 child: Text(

@@ -1,13 +1,8 @@
 """原則Docstringの記述は必須とする."""
 
-import warnings
-
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-
-# pydub ライブラリの無効エスケープシーケンス警告を抑制 (upstream バグ)
-warnings.filterwarnings("ignore", category=SyntaxWarning, module="pydub")
 
 from controller import router
 

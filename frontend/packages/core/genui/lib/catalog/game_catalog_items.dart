@@ -33,6 +33,7 @@ class GameCatalogItems {
       _processingIndicatorItem(),
       _npcGalleryItem(resolveImageUrl: resolveImageUrl),
       _choiceGroupItem(),
+      _actionInputItem(),
       _clarifyQuestionItem(),
       _repairConfirmItem(),
       _continueOrInputItem(),
@@ -193,6 +194,48 @@ class GameCatalogItems {
                   },
                 );
               }),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // -- actionInput -----------------------------------------------------------
+
+  static CatalogItem _actionInputItem() {
+    return CatalogItem(
+      name: 'actionInput',
+      dataSchema: S.object(properties: {'question': S.string()}),
+      widgetBuilder: (ctx) {
+        final data = ctx.data;
+        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
+        final question = data['question'] as String? ?? '';
+
+        return VnOverlayContainer(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                question,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _VnTextInput(
+                hint: t.trpg.inputHint,
+                onSubmit: (text) => ctx.dispatchEvent(
+                  UserActionEvent(
+                    name: 'textInput',
+                    sourceComponentId: ctx.id,
+                    context: {'inputType': 'do', 'inputText': text},
+                  ),
+                ),
+              ),
             ],
           ),
         );

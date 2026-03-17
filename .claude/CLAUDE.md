@@ -58,7 +58,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     ├── polar/            # Polar.sh決済統合
     ├── onesignal/        # OneSignal通知統合
     ├── flame/            # Flame ゲームエンジン + flame_riverpod
-    └── genui/            # genui Generative UI SDK
+    ├── genui/            # genui Generative UI SDK（game-surface パターン含む）
+    ├── google-adk/       # Google ADK GM エージェント実装
+    └── trpg-session/     # TrpgSession アーキテクチャ（NodePlayer・surface優先順位）
 ```
 
 ## Domain Documentation
@@ -97,6 +99,7 @@ Full-stack application boilerplate with Flutter multi-platform frontend and back
 | **Database**           | PostgreSQL, Drizzle ORM, pgvector                    |
 | **Game Engine**        | Flame 1.35.1, flame_riverpod 5.5.2                  |
 | **Generative UI**      | genui 0.7.0 (A2UI Protocol, SSE)                     |
+| **GM Agent**           | Google ADK (output_schema=GmDecisionResponse)        |
 | **Auth**               | Supabase Flutter Client                              |
 
 **MANDATORY**: すべてのユーザー向けテキストは多言語対応（i18n）必須。詳細は `.claude/skills/i18n/` を参照。
@@ -106,6 +109,15 @@ Full-stack application boilerplate with Flutter multi-platform frontend and back
 **MANDATORY**: 単体テストでは**外部SDK（pipモジュール）を丸ごとMockしない**。本物のSDKを使い、I/O層（HTTP/DB）のみ差し替えることで、**TypeError・ValueError・RuntimeError を単体テスト時点で検知**し、型安全で堅牢な状態を維持する。詳細は `.claude/rules/backend-py.md` および `.claude/skills/python-testing/` を参照。
 
 **MANDATORY**: コードは常にクリーンな状態を維持。後方互換コード・重複コード・未使用コードは残さない（明示的な指示がある場合を除く）。詳細は `.claude/rules/clean-code.md` を参照。
+
+**CRITICAL - ADK 導入後の GmDecisionResponse スキーマ**:
+- 選択肢は `decision.choices` に**ない**。`decision.nodes` の `type="choice"` ノードの `.choices` に格納される
+- 詳細は `.claude/skills/google-adk/SKILL.md` を参照
+
+**CRITICAL - TrpgSession surface 優先順位**:
+- `resolvePostPagingMode` では `hasSurface=true` が `isProcessing=true` より**必ず優先**される
+- auto-advance シナリオで `isProcessing=true` でも choice surface は表示しなければならない
+- 詳細は `.claude/skills/trpg-session/SKILL.md` を参照
 
 ### Package Management
 
