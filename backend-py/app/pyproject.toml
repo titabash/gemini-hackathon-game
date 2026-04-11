@@ -162,7 +162,7 @@ dependencies = [
     "cartesia",
     "pydub",
     # Google Gemini (直接SDK使用: Gemini構造化出力がLangChainラッパー未対応のため)
-    "google-genai>=1.64.0",
+    "google-genai>=1.72.0",
     # Google ADK (Geminiネイティブエージェントフレームワーク: response_json_schema対応)
     "google-adk>=1.26.0",
     # Logging
