@@ -32,6 +32,10 @@ dependencies:
   core_game:
   core_genui:
 
+  # A2UI SDK (direct dep for TRPG game surfaces)
+  a2ui_core: ^0.6.0
+  a2ui_flutter: ^0.2.0
+
   # Game engine (direct dep for TRPG feature components)
   flame: ^1.35.1
 

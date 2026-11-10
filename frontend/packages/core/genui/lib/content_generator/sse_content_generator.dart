@@ -1,37 +1,27 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:a2ui_core/a2ui_core.dart';
 import 'package:core_api/core_api.dart';
 import 'package:core_utils/core_utils.dart';
 import 'package:flutter/foundation.dart';
-import 'package:genui/genui.dart';
 
+import '../models/genui_message.dart';
 import 'content_generator_config.dart';
+import 'content_generator_error.dart';
 
-/// Extracts text content from a [ChatMessage].
-String _extractText(ChatMessage message) {
-  return switch (message) {
-    UserMessage(:final text) => text,
-    AiTextMessage(:final text) => text,
-    UserUiInteractionMessage(:final text) => text,
-    InternalMessage(:final text) => text,
-    AiUiMessage() => '',
-    ToolResponseMessage() => '',
-  };
-}
-
-/// A [ContentGenerator] that connects to a Python FastAPI backend via SSE.
+/// A content generator that connects to a Python FastAPI backend via SSE.
 ///
 /// Uses [SseClientFactory] from core_api to establish the connection and
-/// streams A2UI protocol messages back to the genui SDK.
-class SseContentGenerator implements ContentGenerator {
+/// streams A2UI protocol messages back to the caller.
+class SseContentGenerator {
   SseContentGenerator({required this.config, required this.sseClientFactory});
 
   final ContentGeneratorConfig config;
   final SseClientFactory sseClientFactory;
 
-  final StreamController<A2uiMessage> _a2uiController =
-      StreamController<A2uiMessage>.broadcast();
+  final StreamController<AgentToRendererMessage> _a2uiController =
+      StreamController<AgentToRendererMessage>.broadcast();
   final StreamController<ContentGeneratorError> _errorController =
       StreamController<ContentGeneratorError>.broadcast();
   final StreamController<String> _textController =
@@ -40,23 +30,25 @@ class SseContentGenerator implements ContentGenerator {
 
   SseConnection? _activeConnection;
 
-  @override
-  Stream<A2uiMessage> get a2uiMessageStream => _a2uiController.stream;
+  /// A stream of A2UI messages received from the backend.
+  Stream<AgentToRendererMessage> get a2uiMessageStream =>
+      _a2uiController.stream;
 
-  @override
+  /// A stream of errors from the backend or the SSE connection.
   Stream<ContentGeneratorError> get errorStream => _errorController.stream;
 
-  @override
+  /// A stream of text responses from the backend.
   Stream<String> get textResponseStream => _textController.stream;
 
-  @override
+  /// Whether a request is currently being processed.
   ValueListenable<bool> get isProcessing => _isProcessing;
 
-  @override
+  /// Sends [message] to the backend, with the previous conversation [history]
+  /// and the renderer's A2UI [clientCapabilities] JSON.
   Future<void> sendRequest(
-    ChatMessage message, {
-    Iterable<ChatMessage>? history,
-    A2UiClientCapabilities? clientCapabilities,
+    String message, {
+    Iterable<GenuiMessage>? history,
+    Map<String, Object?>? clientCapabilities,
   }) async {
     _isProcessing.value = true;
 
@@ -64,18 +56,18 @@ class SseContentGenerator implements ContentGenerator {
       _activeConnection?.close();
 
       final payload = <String, dynamic>{
-        'message': _extractText(message),
+        'message': message,
         if (history != null)
           'history': history
               .map(
                 (m) => {
-                  'role': m is UserMessage ? 'user' : 'model',
-                  'text': _extractText(m),
+                  'role': m is GenuiMessageUser ? 'user' : 'model',
+                  'text': m.text,
                 },
               )
               .toList(),
         if (clientCapabilities != null)
-          'client_capabilities': clientCapabilities.toJson(),
+          'client_capabilities': clientCapabilities,
       };
 
       final headers = <String, String>{
@@ -142,7 +134,7 @@ class SseContentGenerator implements ContentGenerator {
       }
 
       // Parse as A2UI message
-      final a2uiMessage = A2uiMessage.fromJson(decoded);
+      final a2uiMessage = AgentToRendererMessage.fromJson(decoded);
       _a2uiController.add(a2uiMessage);
     } catch (error, stackTrace) {
       Logger.debug(
@@ -154,7 +146,7 @@ class SseContentGenerator implements ContentGenerator {
     }
   }
 
-  @override
+  /// Closes the connection and the streams.
   void dispose() {
     _activeConnection?.close();
     _a2uiController.close();

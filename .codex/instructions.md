@@ -470,14 +470,14 @@ static NovelDisplayMode resolvePostPagingMode({
 
 これが逆順（isProcessing 先）だと auto-advance シナリオで choice UI が永遠に表示されないバグが発生する。
 
-## CRITICAL: genui game-surface パターン
+## CRITICAL: A2UI game-surface パターン
 
 ```
 # SSE イベント順序（1ターン分）
 nodesReady → stateUpdate → game-npcs (A2UI) → game-narration (A2UI) → game-surface (A2UI) → done
 ```
 
-`surfaceUpdate` + `beginRendering` は**必ずセット**で送る（片方だけでは surface が表示されない）。
+A2UI v0.9 の `createSurface` と `updateComponents` は**必ずセット**で送る（`catalogId` は `GameCatalogItems.catalogId`）。surface は一度しか作成できないため、ターンの最初に `deleteSurface` してから作り直す。
 
 ## 参考リソース
 

@@ -28,6 +28,7 @@ from src.domain.entity.gm_types import (
     StateChanges,
 )
 from src.domain.service.genui_bridge_service import (
+    GAME_CATALOG_ID,
     GenuiBridgeService,
     NpcImageMap,
     _a2ui_delete,
@@ -48,17 +49,17 @@ def _classify_event(payload: dict[str, Any]) -> str:
     """Return a short label for an SSE event payload."""
     if "deleteSurface" in payload:
         return "delete"
-    if "surfaceUpdate" in payload:
-        return "surfaceUpdate"
-    if "beginRendering" in payload:
-        return "beginRendering"
+    if "createSurface" in payload:
+        return "createSurface"
+    if "updateComponents" in payload:
+        return "updateComponents"
     return str(payload.get("type", "unknown"))
 
 
 def _parse_raw_events(raw_events: list[str]) -> list[dict[str, Any]]:
     """Split raw SSE yields (which may contain multiple data lines) into dicts.
 
-    ``_a2ui_surface`` concatenates surfaceUpdate + beginRendering into
+    ``_a2ui_surface`` concatenates createSurface + updateComponents into
     one string, so a single yield can contain multiple ``data:`` lines.
     """
     parsed: list[dict[str, Any]] = []
@@ -68,6 +69,25 @@ def _parse_raw_events(raw_events: list[str]) -> list[dict[str, Any]]:
             if stripped.startswith("data: "):
                 parsed.append(json.loads(stripped.removeprefix("data: ")))
     return parsed
+
+
+def _root_components(
+    events: list[dict[str, Any]],
+    surface_id: str,
+) -> list[dict[str, Any]]:
+    """Return the root component of each updateComponents for *surface_id*.
+
+    Each is returned as ``{"typeName": {...properties}}``, keyed by the
+    A2UI v0.9 ``component`` name, so tests can read ``comp["npcGallery"]``.
+    """
+    roots: list[dict[str, Any]] = []
+    for e in events:
+        uc = e.get("updateComponents")
+        if uc and uc.get("surfaceId") == surface_id:
+            comp = uc["components"][0]
+            props = {k: v for k, v in comp.items() if k not in ("id", "component")}
+            roots.append({comp["component"]: props})
+    return roots
 
 
 async def _collect_stream(
@@ -116,37 +136,42 @@ class TestA2uiDelete:
         """Event should contain the deleteSurface key with surfaceId."""
         result = _a2ui_delete("game-narration")
         parsed = json.loads(result.removeprefix("data: ").strip())
-        assert parsed == {"deleteSurface": {"surfaceId": "game-narration"}}
+        assert parsed == {
+            "version": "v0.9",
+            "deleteSurface": {"surfaceId": "game-narration"},
+        }
 
 
 class TestA2uiSurface:
     """Tests for _a2ui_surface() helper."""
 
     def test_produces_two_events(self) -> None:
-        """Should emit surfaceUpdate + beginRendering (2 SSE events)."""
+        """Should emit createSurface + updateComponents (2 SSE events)."""
         result = _a2ui_surface("game-surface", "choiceGroup", {"choices": []})
         events = [e for e in result.split("\n\n") if e.strip()]
         assert len(events) == 2
 
-    def test_surface_update_structure(self) -> None:
+    def test_create_surface_structure(self) -> None:
+        """Create event should name the surface and the game catalog."""
+        result = _a2ui_surface("s1", "test", {})
+        events = _parse_sse_events(result)
+        create = events[0]
+        assert create == {
+            "version": "v0.9",
+            "createSurface": {"surfaceId": "s1", "catalogId": GAME_CATALOG_ID},
+        }
+
+    def test_update_components_structure(self) -> None:
         """Update event should contain components with correct structure."""
         result = _a2ui_surface("s1", "novelTextBox", {"text": "Hello"})
         events = _parse_sse_events(result)
-        surface_update = events[0]
-        assert "surfaceUpdate" in surface_update
-        su = surface_update["surfaceUpdate"]
-        assert su["surfaceId"] == "s1"
-        assert len(su["components"]) == 1
-        comp = su["components"][0]
-        assert comp["id"] == "root"
-        assert comp["component"] == {"novelTextBox": {"text": "Hello"}}
-
-    def test_begin_rendering_structure(self) -> None:
-        """Rendering event should reference the surface and root."""
-        result = _a2ui_surface("s1", "test", {})
-        events = _parse_sse_events(result)
-        begin = events[1]
-        assert begin == {"beginRendering": {"surfaceId": "s1", "root": "root"}}
+        update = events[1]
+        assert update["version"] == "v0.9"
+        uc = update["updateComponents"]
+        assert uc["surfaceId"] == "s1"
+        assert len(uc["components"]) == 1
+        comp = uc["components"][0]
+        assert comp == {"id": "root", "component": "novelTextBox", "text": "Hello"}
 
 
 # ---------------------------------------------------------------------------
@@ -775,21 +800,16 @@ class TestStreamDecision:
         parsed = _parse_raw_events(raw_events)
         event_types = [_classify_event(p) for p in parsed]
 
-        # game-narration and game-surface are deleted; game-npcs is NOT
-        # deleted (overwritten in-place to avoid ValueNotifier disposal).
-        assert event_types[:2] == ["delete", "delete"]
+        # All three surfaces are deleted first, since an A2UI v0.9 surface
+        # is created once.
+        assert event_types[:3] == ["delete", "delete", "delete"]
         assert "text" in event_types
-        assert "surfaceUpdate" in event_types
+        assert "updateComponents" in event_types
         assert event_types[-1] == "done"
 
     @pytest.mark.asyncio
     async def test_npc_gallery_emitted_even_when_empty(self) -> None:
-        """NPC gallery surface must be emitted even with no NPCs.
-
-        The GenUiSurface widget for game-npcs is always in the widget
-        tree, so the surface must be updated in-place (not deleted and
-        recreated) to avoid breaking the ValueNotifier reference.
-        """
+        """NPC gallery surface must be emitted even with no NPCs."""
         decision = GmDecisionResponse(
             decision_type="narrate",
             narration_text="No NPCs here.",
@@ -800,18 +820,14 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision)
         parsed = _parse_raw_events(raw_events)
 
-        npc_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
-        ]
+        npc_surfaces = _root_components(parsed, "game-npcs")
         assert len(npc_surfaces) == 1
-        npcs = npc_surfaces[0]["components"][0]["component"]["npcGallery"]["npcs"]
+        npcs = npc_surfaces[0]["npcGallery"]["npcs"]
         assert npcs == []
 
     @pytest.mark.asyncio
-    async def test_no_delete_surface_for_game_npcs(self) -> None:
-        """DeleteSurface must NOT be emitted for game-npcs."""
+    async def test_delete_surface_for_all_game_surfaces(self) -> None:
+        """DeleteSurface must be emitted for every game surface."""
         decision = GmDecisionResponse(
             decision_type="narrate",
             narration_text="test",
@@ -828,7 +844,7 @@ class TestStreamDecision:
         deleted_ids = [
             p["deleteSurface"]["surfaceId"] for p in parsed if "deleteSurface" in p
         ]
-        assert "game-npcs" not in deleted_ids
+        assert "game-npcs" in deleted_ids
         assert "game-narration" in deleted_ids
         assert "game-surface" in deleted_ids
 
@@ -848,13 +864,9 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision)
         parsed = _parse_raw_events(raw_events)
 
-        narration_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-narration"
-        ]
+        narration_surfaces = _root_components(parsed, "game-narration")
         assert len(narration_surfaces) == 1
-        comp = narration_surfaces[0]["components"][0]["component"]
+        comp = narration_surfaces[0]
         assert "narrativePanel" in comp
         sections = comp["narrativePanel"]["sections"]
         assert len(sections) == 2
@@ -885,9 +897,9 @@ class TestStreamDecision:
         parsed = _parse_raw_events(raw_events)
 
         surface_ids = [
-            p.get("surfaceUpdate", {}).get("surfaceId")
+            p.get("updateComponents", {}).get("surfaceId")
             for p in parsed
-            if "surfaceUpdate" in p
+            if "updateComponents" in p
         ]
         assert "game-surface" in surface_ids
 
@@ -995,13 +1007,9 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision)
         parsed = _parse_raw_events(raw_events)
 
-        npc_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
-        ]
+        npc_surfaces = _root_components(parsed, "game-npcs")
         assert len(npc_surfaces) == 1
-        comp = npc_surfaces[0]["components"][0]["component"]
+        comp = npc_surfaces[0]
         assert "npcGallery" in comp
         npcs = comp["npcGallery"]["npcs"]
         assert len(npcs) == 1
@@ -1026,13 +1034,9 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision)
         parsed = _parse_raw_events(raw_events)
 
-        npc_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
-        ]
+        npc_surfaces = _root_components(parsed, "game-npcs")
         assert len(npc_surfaces) == 1
-        props = npc_surfaces[0]["components"][0]["component"]["npcGallery"]
+        props = npc_surfaces[0]["npcGallery"]
         assert "speakers" in props
         assert props["speakers"] == ["Alice"]
 
@@ -1053,12 +1057,8 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision)
         parsed = _parse_raw_events(raw_events)
 
-        npc_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
-        ]
-        props = npc_surfaces[0]["components"][0]["component"]["npcGallery"]
+        npc_surfaces = _root_components(parsed, "game-npcs")
+        props = npc_surfaces[0]["npcGallery"]
         assert sorted(props["speakers"]) == ["Alice", "Bob"]
 
     @pytest.mark.asyncio
@@ -1077,12 +1077,8 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision)
         parsed = _parse_raw_events(raw_events)
 
-        npc_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
-        ]
-        props = npc_surfaces[0]["components"][0]["component"]["npcGallery"]
+        npc_surfaces = _root_components(parsed, "game-npcs")
+        props = npc_surfaces[0]["npcGallery"]
         assert props["speakers"] == []
 
     @pytest.mark.asyncio
@@ -1102,12 +1098,8 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision)
         parsed = _parse_raw_events(raw_events)
 
-        npc_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
-        ]
-        npcs = npc_surfaces[0]["components"][0]["component"]["npcGallery"]["npcs"]
+        npc_surfaces = _root_components(parsed, "game-npcs")
+        npcs = npc_surfaces[0]["npcGallery"]["npcs"]
         assert len(npcs) <= 3
 
     @pytest.mark.asyncio
@@ -1127,12 +1119,8 @@ class TestStreamDecision:
         raw_events = await _collect_stream(svc, decision, npc_images=images)
         parsed = _parse_raw_events(raw_events)
 
-        npc_surfaces = [
-            p["surfaceUpdate"]
-            for p in parsed
-            if p.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
-        ]
-        npcs = npc_surfaces[0]["components"][0]["component"]["npcGallery"]["npcs"]
+        npc_surfaces = _root_components(parsed, "game-npcs")
+        npcs = npc_surfaces[0]["npcGallery"]["npcs"]
         assert npcs[0]["imagePath"] == "scenario-assets/npcs/wizard.png"
 
     @pytest.mark.asyncio
@@ -1510,15 +1498,15 @@ def _extract_surface_component(
     events: list[dict[str, Any]],
     surface_id: str,
 ) -> dict[str, Any]:
-    """Find surfaceUpdate for given surfaceId and return the root component dict.
+    """Find updateComponents for given surfaceId and return the root component.
 
-    Returns the dict ``{"typeName": {...properties}}`` from the first
-    component's ``component`` key.
+    Returns the dict ``{"typeName": {...properties}}``, keyed by the first
+    component's A2UI v0.9 ``component`` name.
     """
     for e in events:
-        su = e.get("surfaceUpdate")
-        if su and su.get("surfaceId") == surface_id:
-            components = su.get("components", [])
+        uc = e.get("updateComponents")
+        if uc and uc.get("surfaceId") == surface_id:
+            components = uc.get("components", [])
             assert len(components) == 1, (
                 f"Expected 1 component in {surface_id}, got {len(components)}"
             )
@@ -1526,21 +1514,9 @@ def _extract_surface_component(
             assert comp["id"] == "root", (
                 f"Component id must be 'root', got {comp['id']!r}"
             )
-            return comp["component"]  # type: ignore[return-value]
-    msg = f"No surfaceUpdate for surfaceId={surface_id!r} in events"
-    raise AssertionError(msg)
-
-
-def _extract_begin_rendering(
-    events: list[dict[str, Any]],
-    surface_id: str,
-) -> dict[str, Any]:
-    """Find beginRendering event for given surfaceId."""
-    for e in events:
-        br = e.get("beginRendering")
-        if br and br.get("surfaceId") == surface_id:
-            return br  # type: ignore[return-value]
-    msg = f"No beginRendering for surfaceId={surface_id!r} in events"
+            props = {k: v for k, v in comp.items() if k not in ("id", "component")}
+            return {comp["component"]: props}
+    msg = f"No updateComponents for surfaceId={surface_id!r} in events"
     raise AssertionError(msg)
 
 
@@ -1560,27 +1536,30 @@ class TestCatalogFormatContract:
     # A2UI envelope structure
     # ------------------------------------------------------------------
 
-    def test_a2ui_envelope_surfaceupdate_schema(self) -> None:
-        """SurfaceUpdate must have surfaceId and single root component."""
+    def test_a2ui_envelope_update_components_schema(self) -> None:
+        """UpdateComponents must have surfaceId and single root component."""
         result = _a2ui_surface("game-test", "testWidget", {"key": "val"})
         events = _parse_sse_events(result)
-        su = events[0]["surfaceUpdate"]
-        assert su["surfaceId"] == "game-test"
-        components = su["components"]
+        assert events[1]["version"] == "v0.9"
+        uc = events[1]["updateComponents"]
+        assert uc["surfaceId"] == "game-test"
+        components = uc["components"]
         assert isinstance(components, list)
         assert len(components) == 1
         comp = components[0]
-        assert set(comp.keys()) == {"id", "component"}
+        assert set(comp.keys()) == {"id", "component", "key"}
         assert comp["id"] == "root"
-        assert comp["component"] == {"testWidget": {"key": "val"}}
+        assert comp["component"] == "testWidget"
+        assert comp["key"] == "val"
 
-    def test_a2ui_envelope_begin_rendering_schema(self) -> None:
-        """BeginRendering must reference surfaceId and root id."""
+    def test_a2ui_envelope_create_surface_schema(self) -> None:
+        """CreateSurface must reference surfaceId and the game catalog."""
         result = _a2ui_surface("game-test", "testWidget", {})
         events = _parse_sse_events(result)
-        br = events[1]["beginRendering"]
-        assert br["surfaceId"] == "game-test"
-        assert br["root"] == "root"
+        assert events[0]["version"] == "v0.9"
+        cs = events[0]["createSurface"]
+        assert cs["surfaceId"] == "game-test"
+        assert cs["catalogId"] == GAME_CATALOG_ID
 
     # ------------------------------------------------------------------
     # npcGallery component
@@ -2060,12 +2039,12 @@ class TestCatalogFormatContract:
         """Event order for node-based (narrate) decision must match protocol.
 
         Expected sequence:
-          delete(game-narration), delete(game-surface),
+          delete(game-npcs), delete(game-narration), delete(game-surface),
           nodesReady,
           stateUpdate (if any),
-          surfaceUpdate(game-npcs), beginRendering(game-npcs),
-          surfaceUpdate(game-narration), beginRendering(game-narration),
-          [surfaceUpdate(game-surface), beginRendering(game-surface),] (optional)
+          createSurface(game-npcs), updateComponents(game-npcs),
+          createSurface(game-narration), updateComponents(game-narration),
+          [createSurface(game-surface), updateComponents(game-surface),] (optional)
           done
         """
         svc = GenuiBridgeService()
@@ -2084,25 +2063,25 @@ class TestCatalogFormatContract:
         events = _parse_raw_events(raw)
 
         labels = [_classify_event(e) for e in events]
-        # delete x2 must come first
-        assert labels[0] == "delete"
-        assert labels[1] == "delete"
-        assert events[0]["deleteSurface"]["surfaceId"] == "game-narration"
-        assert events[1]["deleteSurface"]["surfaceId"] == "game-surface"
+        # delete x3 must come first
+        assert labels[:3] == ["delete", "delete", "delete"]
+        assert events[0]["deleteSurface"]["surfaceId"] == "game-npcs"
+        assert events[1]["deleteSurface"]["surfaceId"] == "game-narration"
+        assert events[2]["deleteSurface"]["surfaceId"] == "game-surface"
         # nodesReady follows immediately after deletes
-        assert labels[2] == "nodesReady"
+        assert labels[3] == "nodesReady"
         # done must be last
         assert labels[-1] == "done"
         # game-npcs surface must appear before game-narration surface
         npcs_idx = next(
             i
             for i, e in enumerate(events)
-            if e.get("surfaceUpdate", {}).get("surfaceId") == "game-npcs"
+            if e.get("updateComponents", {}).get("surfaceId") == "game-npcs"
         )
         narration_idx = next(
             i
             for i, e in enumerate(events)
-            if e.get("surfaceUpdate", {}).get("surfaceId") == "game-narration"
+            if e.get("updateComponents", {}).get("surfaceId") == "game-narration"
         )
         assert npcs_idx < narration_idx
 
@@ -2125,7 +2104,9 @@ class TestCatalogFormatContract:
         events = _parse_raw_events(raw)
 
         surface_updates = [
-            e["surfaceUpdate"]["surfaceId"] for e in events if "surfaceUpdate" in e
+            e["updateComponents"]["surfaceId"]
+            for e in events
+            if "updateComponents" in e
         ]
         # Must have all three surface updates in correct order
         assert surface_updates.index("game-npcs") < surface_updates.index(
@@ -2159,8 +2140,8 @@ class TestCatalogFormatContract:
         assert nodes_ready["nodes"][1]["type"] == "dialogue"
 
     @pytest.mark.asyncio
-    async def test_begin_rendering_follows_surface_update(self) -> None:
-        """BeginRendering for each surface must immediately follow its surfaceUpdate."""
+    async def test_update_components_follows_create_surface(self) -> None:
+        """UpdateComponents for each surface must immediately follow its creation."""
         svc = GenuiBridgeService()
         decision = GmDecisionResponse(
             decision_type="narrate",
@@ -2170,15 +2151,15 @@ class TestCatalogFormatContract:
         events = _parse_raw_events(raw)
 
         for i, event in enumerate(events):
-            if "surfaceUpdate" in event:
-                surface_id = event["surfaceUpdate"]["surfaceId"]
-                # Next event must be beginRendering for the same surfaceId
+            if "createSurface" in event:
+                surface_id = event["createSurface"]["surfaceId"]
+                # Next event must be updateComponents for the same surfaceId
                 assert i + 1 < len(events), (
-                    f"surfaceUpdate({surface_id}) has no following event"
+                    f"createSurface({surface_id}) has no following event"
                 )
                 next_event = events[i + 1]
-                assert "beginRendering" in next_event, (
-                    f"Expected beginRendering after surfaceUpdate({surface_id}), "
+                assert "updateComponents" in next_event, (
+                    f"Expected updateComponents after createSurface({surface_id}), "
                     f"got {next_event}"
                 )
-                assert next_event["beginRendering"]["surfaceId"] == surface_id
+                assert next_event["updateComponents"]["surfaceId"] == surface_id

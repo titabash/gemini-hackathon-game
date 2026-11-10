@@ -58,7 +58,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     ├── polar/            # Polar.sh決済統合
     ├── onesignal/        # OneSignal通知統合
     ├── flame/            # Flame ゲームエンジン + flame_riverpod
-    ├── genui/            # genui Generative UI SDK（game-surface パターン含む）
+    ├── genui/            # A2UI SDK（a2ui_core / a2ui_flutter、game-surface パターン含む）
     ├── google-adk/       # Google ADK GM エージェント実装
     └── trpg-session/     # TrpgSession アーキテクチャ（NodePlayer・surface優先順位）
 ```
@@ -98,7 +98,7 @@ Full-stack application boilerplate with Flutter multi-platform frontend and back
 | **Backend**            | FastAPI (Python), Supabase Edge Functions (Deno)     |
 | **Database**           | PostgreSQL, Drizzle ORM, pgvector                    |
 | **Game Engine**        | Flame 1.35.1, flame_riverpod 5.5.2                  |
-| **Generative UI**      | genui 0.7.0 (A2UI Protocol, SSE)                     |
+| **Generative UI**      | a2ui_core 0.6 + a2ui_flutter 0.2 (A2UI v0.9, SSE)    |
 | **GM Agent**           | Google ADK (output_schema=GmDecisionResponse)        |
 | **Auth**               | Supabase Flutter Client                              |
 
@@ -141,7 +141,7 @@ frontend/
 │   │   ├── auth/         # Authentication
 │   │   ├── i18n/         # Internationalization (slang)
 │   │   ├── game/         # Flame game engine (FlameGame + Riverpod)
-│   │   ├── genui/        # genui Generative UI SDK (SSE + A2UI)
+│   │   ├── genui/        # A2UI SDK integration (SSE + A2UI v0.9)
 │   │   ├── polar/        # Polar.sh payment integration
 │   │   ├── notification/ # OneSignal push notifications
 │   │   └── utils/        # Utilities (Logger, constants)

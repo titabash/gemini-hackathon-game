@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:a2ui_core/a2ui_core.dart';
 import 'package:core_api/core_api.dart';
 import 'package:core_utils/core_utils.dart';
 import 'package:flutter/foundation.dart';
-import 'package:genui/genui.dart';
+
+import 'content_generator_error.dart';
 
 /// GM turn endpoint URL derived from BACKEND_URL.
 const _backendUrl = String.fromEnvironment(
@@ -14,15 +16,15 @@ const _backendUrl = String.fromEnvironment(
 const _gmServerUrl = '$_backendUrl/api/gm/turn';
 const _maxAutoTurnsPerRequest = 5;
 
-/// A [ContentGenerator] for the TRPG game that handles both A2UI messages
+/// A content generator for the TRPG game that handles both A2UI messages
 /// and game-specific SSE events (text, stateUpdate, imageUpdate, nodesReady).
-class GameContentGenerator implements ContentGenerator {
+class GameContentGenerator {
   GameContentGenerator({required this.sseClientFactory});
 
   final SseClientFactory sseClientFactory;
 
-  final StreamController<A2uiMessage> _a2uiController =
-      StreamController<A2uiMessage>.broadcast();
+  final StreamController<AgentToRendererMessage> _a2uiController =
+      StreamController<AgentToRendererMessage>.broadcast();
   final StreamController<ContentGeneratorError> _errorController =
       StreamController<ContentGeneratorError>.broadcast();
   final StreamController<String> _textController =
@@ -51,16 +53,17 @@ class GameContentGenerator implements ContentGenerator {
   /// `onDone` callback) to detect premature stream termination.
   bool _doneReceived = false;
 
-  @override
-  Stream<A2uiMessage> get a2uiMessageStream => _a2uiController.stream;
+  /// Stream of A2UI messages (createSurface, updateComponents, deleteSurface).
+  Stream<AgentToRendererMessage> get a2uiMessageStream =>
+      _a2uiController.stream;
 
-  @override
+  /// Stream of SSE and turn errors.
   Stream<ContentGeneratorError> get errorStream => _errorController.stream;
 
-  @override
+  /// Stream of streamed narration text.
   Stream<String> get textResponseStream => _textController.stream;
 
-  @override
+  /// Whether a GM turn is currently being processed.
   ValueListenable<bool> get isProcessing => _isProcessing;
 
   /// Stream of game state updates (location, HP, NPC visual data, scene).
@@ -156,24 +159,11 @@ class GameContentGenerator implements ContentGenerator {
     }
   }
 
-  /// [ContentGenerator.sendRequest] delegates to [sendTurn].
+  /// Delegates to [sendTurn] without a session ID.
   ///
-  /// Note: This is a compatibility shim for the genui interface. In practice,
+  /// Note: This mirrors [SseContentGenerator.sendRequest]. In practice,
   /// callers should use [sendTurn] directly to provide a session ID.
-  @override
-  Future<void> sendRequest(
-    ChatMessage message, {
-    Iterable<ChatMessage>? history,
-    A2UiClientCapabilities? clientCapabilities,
-  }) async {
-    final text = switch (message) {
-      UserMessage(:final text) => text,
-      AiTextMessage(:final text) => text,
-      UserUiInteractionMessage(:final text) => text,
-      InternalMessage(:final text) => text,
-      AiUiMessage() => '',
-      ToolResponseMessage() => '',
-    };
+  Future<void> sendRequest(String text) async {
     if (text.isEmpty) return;
     await sendTurn(sessionId: '', inputType: 'do', inputText: text);
   }
@@ -261,8 +251,9 @@ class GameContentGenerator implements ContentGenerator {
         _doneController.add(doneData);
         return;
       }
-      // A2UI protocol messages (surfaceUpdate, beginRendering, deleteSurface)
-      final a2uiMessage = A2uiMessage.fromJson(decoded);
+      // A2UI protocol messages (createSurface, updateComponents,
+      // deleteSurface)
+      final a2uiMessage = AgentToRendererMessage.fromJson(decoded);
       _a2uiController.add(a2uiMessage);
     } catch (error, stackTrace) {
       Logger.warning(
@@ -308,7 +299,7 @@ class GameContentGenerator implements ContentGenerator {
     _isProcessing.value = false;
   }
 
-  @override
+  /// Cancels the active turn and closes the streams.
   void dispose() {
     cancelActiveTurn();
     _a2uiController.close();

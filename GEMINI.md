@@ -13,7 +13,7 @@
 | Data Models | Freezed (immutable, json_serializable) |
 | i18n | slang (type-safe, en/ja) |
 | Game Engine | Flame 1.35.1, flame_riverpod 5.5.2 |
-| Generative UI | genui 0.7.0 (A2UI Protocol, SSE) |
+| Generative UI | a2ui_core 0.6 + a2ui_flutter 0.2 (A2UI v0.9, SSE) |
 | GM Agent | Google ADK (output_schema=GmDecisionResponse) |
 | Backend | FastAPI (Python), Supabase Edge Functions (Deno) |
 | Database | PostgreSQL, Drizzle ORM, Supabase |
@@ -97,7 +97,7 @@ static NovelDisplayMode resolvePostPagingMode({
 
 この優先順位が逆だと、auto-advance 中の choice UI が永遠に表示されないバグが発生する。
 
-## CRITICAL: genui game-surface パターン
+## CRITICAL: A2UI game-surface パターン
 
 ```
 # SSE イベント順序（1ターン分）
@@ -110,7 +110,7 @@ nodesReady → stateUpdate → game-npcs → game-narration → game-surface →
 | `game-narration` | narrativePanel |
 | `game-npcs` | npcGallery |
 
-**`surfaceUpdate` + `beginRendering` は必ずセットで送ること。**
+A2UI v0.9 の `createSurface` と `updateComponents` は**必ずセット**で送る（`catalogId` は `GameCatalogItems.catalogId`）。surface は一度しか作成できないため、ターンの最初に `deleteSurface` してから作り直す。
 
 ## アーキテクチャ原則
 
@@ -132,7 +132,7 @@ lib/
 ### Riverpod Provider ルール
 
 - `riverpod_generator` を使用（`@riverpod` アノテーション）
-- genui 型（`GenUiConversation` 等）は riverpod_generator 非対応 → 手動 Provider 定義
+- A2UI の型（`MessageProcessor`, `GenuiConversation` 等）を返す Provider は手動定義（`gameProcessorProvider`, `genuiConversationProvider`）
 
 ### データモデル（Freezed）
 

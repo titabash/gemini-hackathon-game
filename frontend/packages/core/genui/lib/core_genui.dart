@@ -1,16 +1,20 @@
-// core_genui - GenUI SDK integration with custom SSE ContentGenerator
+// core_genui - A2UI SDK integration with custom SSE ContentGenerator
 //
 // Provides a ContentGenerator backed by SSE to a Python FastAPI backend,
 // conversation management, and a chat surface widget.
 
 // Content Generator
 export 'content_generator/content_generator_config.dart';
+export 'content_generator/content_generator_error.dart';
 export 'content_generator/game_content_generator.dart';
 export 'content_generator/sse_content_generator.dart';
 
 // Catalog
 export 'catalog/app_catalog_items.dart';
 export 'catalog/game_catalog_items.dart';
+
+// Conversation
+export 'conversation/genui_conversation.dart';
 
 // Models
 export 'models/conversation_state.dart';
@@ -23,3 +27,4 @@ export 'providers/surface_provider.dart';
 
 // Widgets
 export 'widgets/genui_chat_surface.dart';
+export 'widgets/genui_surface_view.dart';
