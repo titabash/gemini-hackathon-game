@@ -1,202 +1,152 @@
-# genui SDK (v0.7.0) - Flutter Generative UI
+# A2UI SDK (a2ui_core 0.6 / a2ui_flutter 0.2) - Flutter Generative UI
 
 ## Overview
 
-genui は Flutter 公式の Generative UI SDK（Alpha）。LLM が A2UI プロトコルで Flutter Widget を動的生成する。
+`core_genui` パッケージは A2UI の Dart SDK で Generative UI を描画する。バックエンドが A2UI v0.9 のメッセージを SSE で送り、Flutter 側が Widget に変換する。
 
-- **パッケージ**: `frontend/packages/core/genui/`
-- **依存**: `genui: ^0.7.0`（pub.dev / labs.flutter.dev）
-- **バックエンド**: `backend-py/app/src/controller/genui_controller.py`（SSE エンドポイント）
+- **パッケージ**: `frontend/packages/core/genui/`（パッケージ名 `core_genui`）
+- **依存**: `a2ui_core: ^0.6.0`（メッセージ・`MessageProcessor`・データモデル）、`a2ui_flutter: ^0.2.0`（`A2uiSurface`・`ComponentImplementation`・basic catalog）
+- **プロトコル**: A2UI v0.9（`createSurface` / `updateComponents` / `updateDataModel` / `deleteSurface`、各メッセージに `"version": "v0.9"`）
+- **バックエンド**: `backend-py/app/src/controller/genui_controller.py`（チャット SSE）、`backend-py/app/src/domain/service/genui_bridge_service.py`（ゲーム SSE）
+
+以前は Flutter の `genui` 0.7（A2UI v0.8 の `surfaceUpdate` / `beginRendering`）を使っていた。
 
 ## Architecture
 
 ```
-User Input → SseContentGenerator.sendRequest()
+User Input → GenuiConversation.sendRequest(text)
+  → SseContentGenerator.sendRequest()
   → POST /api/genui/chat (Python FastAPI)
-  → LLM が A2UI JSON を生成
   → SSE でストリーム返却
-  → SseContentGenerator が A2uiMessage.fromJson() でパース
-  → GenUiConversation が A2uiMessageProcessor に転送
-  → GenUiSurface が Flutter Widget をレンダリング
+  → SseContentGenerator が AgentToRendererMessage.fromJson() でパース
+  → GenuiConversation が MessageProcessor.processMessages() に転送
+  → GenuiSurfaceView / A2uiSurface が Flutter Widget をレンダリング
 ```
 
-## CRITICAL: genui の型は riverpod_generator 非対応
+## Provider の方針
 
-genui の型（`GenUiConversation`, `A2uiMessageProcessor` 等）は riverpod_generator の
-コード生成と互換性がない（`InvalidTypeException` が発生する）。
-
-**対処法**: genui 関連の Provider は **手動定義** する（`@riverpod` アノテーション不使用）。
+A2UI の型（`MessageProcessor<ComponentImplementation>`, `GenuiConversation` 等）を返す Provider は **手動定義** している（`@riverpod` アノテーション不使用）。
 
 ```dart
-// ✅ 手動 Provider（genui の型を返す場合）
-final genuiConversationProvider = Provider<GenUiConversation>((ref) { ... });
+// 手動 Provider
+final genuiConversationProvider = Provider<GenuiConversation>((ref) { ... });
 
-// ✅ riverpod_generator OK（genui の型を返さない場合）
+// riverpod_generator
 @Riverpod(keepAlive: true)
-ContentGenerator contentGenerator(Ref ref) { ... }  // interface は OK
+SseContentGenerator contentGenerator(Ref ref) { ... }
 ```
 
-## Core Classes（実際の API）
+## Core Classes
 
-### ContentGenerator（abstract interface）
+### SseContentGenerator / GameContentGenerator
 
-`package:genui/genui.dart` からエクスポート。カスタム実装が必要。
+SSE でバックエンドと通信するクラス（`core_genui/lib/content_generator/`）。共通のストリーム:
 
 ```dart
-abstract interface class ContentGenerator {
-  Stream<A2uiMessage> get a2uiMessageStream;
-  Stream<String> get textResponseStream;
-  Stream<ContentGeneratorError> get errorStream;
-  ValueListenable<bool> get isProcessing;
+Stream<AgentToRendererMessage> get a2uiMessageStream;  // A2UI メッセージ
+Stream<String> get textResponseStream;                  // テキスト応答
+Stream<ContentGeneratorError> get errorStream;          // エラー（core_genui の型）
+ValueListenable<bool> get isProcessing;
 
-  Future<void> sendRequest(
-    ChatMessage message, {
-    Iterable<ChatMessage>? history,
-    A2UiClientCapabilities? clientCapabilities,
-  });
+// SseContentGenerator
+Future<void> sendRequest(
+  String message, {
+  Iterable<GenuiMessage>? history,
+  Map<String, Object?>? clientCapabilities,
+});
 
-  void dispose();
-}
+// GameContentGenerator（ゲーム用。sessionId を渡す）
+Future<void> sendTurn({required String sessionId, required String inputType, required String inputText, String? authToken});
 ```
 
-**本プロジェクトの実装**: `SseContentGenerator`（`core_genui/lib/content_generator/sse_content_generator.dart`）
+`GameContentGenerator` はさらに `gameStateStream`, `nodesReadyStream`, `doneStream` などゲーム固有のストリームを持つ。
 
-### GenUiConversation
+### GenuiConversation
 
-会話ループのファサード。`ContentGenerator` と `A2uiMessageProcessor` を結合。
+会話ループ（`core_genui/lib/conversation/genui_conversation.dart`）。`SseContentGenerator` と `MessageProcessor` を結合し、ユーザー操作（action）をリクエストとして送り返す。
 
 ```dart
-final conversation = GenUiConversation(
-  contentGenerator: contentGenerator,      // 必須
-  a2uiMessageProcessor: processor,         // 必須
-  onSurfaceAdded: (update) { ... },        // オプション
-  onSurfaceUpdated: (update) { ... },      // オプション
-  onSurfaceDeleted: (update) { ... },      // オプション
-  onTextResponse: (text) { ... },          // オプション
-  onError: (error) { ... },               // オプション
+final conversation = GenuiConversation(
+  contentGenerator: contentGenerator,
+  processor: processor,
 );
 
-// 主要 API
-conversation.sendRequest(UserMessage.text('Hello'));
-conversation.host;           // GenUiHost（GenUiSurface に渡す）
-conversation.conversation;   // ValueListenable<List<ChatMessage>>
+conversation.sendRequest('Hello');
+conversation.processor;      // MessageProcessor（GenuiSurfaceView に渡す）
+conversation.conversation;   // ValueListenable<List<GenuiMessage>>
 conversation.isProcessing;   // ValueListenable<bool>
 conversation.dispose();
 ```
 
-### A2uiMessageProcessor
+### MessageProcessor（a2ui_core）
 
-UI サーフェスの状態管理。`GenUiHost` インターフェースを実装。
+surface の状態管理。
 
 ```dart
-final processor = A2uiMessageProcessor(catalogs: [catalog]);
+final processor = MessageProcessor<ComponentImplementation>(
+  catalogs: [catalog],
+  validationConfig: ValidationConfig.relaxed,
+  reportErrorsOnly: true, // 不正なメッセージは throw せず model.onError に通知
+);
 
-// 主要 API
-processor.surfaceUpdates;     // Stream<GenUiUpdate>（SurfaceAdded/Updated/Removed）
-processor.surfaces;           // Map<String, ValueNotifier<UiDefinition?>>
-processor.catalogs;           // Iterable<Catalog>
-processor.handleMessage(msg); // A2uiMessage を処理
+processor.processMessages(messageOrJson);  // AgentToRendererMessage / JSON Map / List
+processor.model.getSurface('game-surface'); // SurfaceModel?（未作成なら null）
+processor.model.onSurfaceCreated.subscribe((surface) { ... });
+processor.model.onSurfaceDeleted.subscribe((surfaceId) { ... });
+processor.model.onAction.subscribe((A2uiRendererAction action) { ... });
+processor.model.onError.subscribe((A2uiRendererError error) { ... });
 processor.dispose();
 ```
 
-### GenUiSurface（Widget）
+`subscribe` は `Subscription` を返す。dispose 時に `unsubscribe()` する。
 
-A2UI 定義から Flutter Widget を動的に構築する。
+### GenuiSurfaceView / A2uiSurface（Widget）
+
+`A2uiSurface(surface: surfaceModel)` は作成済みの `SurfaceModel` を描画する。surfaceId で追従したい場合は `GenuiSurfaceView` を使う（surface が無い間は `defaultBuilder`）。
 
 ```dart
-GenUiSurface(
-  host: conversation.host,    // GenUiHost（必須）
-  surfaceId: 'surface-123',   // String（必須）
-  defaultBuilder: (context) => const Text('Loading...'),  // オプション
+GenuiSurfaceView(
+  processor: session.processor,
+  surfaceId: 'game-surface',
+  defaultBuilder: (context) => const SizedBox.shrink(),  // オプション
 )
 ```
 
-### ChatMessage（sealed class）
+### GenuiMessage（Freezed union）
 
-会話メッセージの型階層。**`ChatMessage` 自体に `.text` getter はない**。
+会話履歴の型（`user` / `assistant` / `system`、すべて `.text` を持つ）。`SseContentGenerator` は `user` を `role: 'user'`、それ以外を `role: 'model'` として送る。
 
-| サブクラス | 用途 | `.text` getter |
-|---|---|---|
-| `UserMessage` | ユーザーメッセージ | あり |
-| `AiTextMessage` | AI テキスト応答 | あり |
-| `UserUiInteractionMessage` | UI 操作メッセージ | あり |
-| `InternalMessage` | 内部メッセージ | あり |
-| `AiUiMessage` | AI が生成した UI | なし（`definition`, `surfaceId`） |
-| `ToolResponseMessage` | ツール結果 | なし（`results`） |
+### CatalogImplementation / ComponentImplementation
 
-**テキスト抽出にはパターンマッチが必要**:
+利用可能な UI コンポーネントを定義する。
 
 ```dart
-String extractText(ChatMessage message) {
-  return switch (message) {
-    UserMessage(:final text) => text,
-    AiTextMessage(:final text) => text,
-    UserUiInteractionMessage(:final text) => text,
-    InternalMessage(:final text) => text,
-    AiUiMessage() => '',
-    ToolResponseMessage() => '',
-  };
-}
+import 'package:a2ui_flutter/a2ui_flutter.dart';
+import 'package:a2ui_flutter/v0_9/basic_catalog.dart' as v0_9;
+
+// basic catalog（Text, Column, Button など A2UI v0.9 の標準コンポーネント）
+final catalog = v0_9.basicCatalog();
+
+// カスタムコンポーネントを追加（catalogId はバックエンドが createSurface で送る ID）
+final extended = catalog.derive(
+  catalogId: 'https://example.com/my_catalog.json',
+  addComponents: [myComponent],
+);
 ```
 
-**メッセージ作成**:
+### AgentToRendererMessage（a2ui_core）
 
-```dart
-UserMessage.text('Hello');           // テキストメッセージ
-UserMessage([TextPart('Hello'), ImagePart.fromUrl(uri, mimeType: 'image/png')]);  // マルチモーダル
-```
+SSE で受信する A2UI メッセージ。
 
-### Catalog / CatalogItem
-
-利用可能な UI コンポーネントを定義。
-
-```dart
-// コアカタログ（標準 Widget セット）
-final catalog = CoreCatalogItems.asCatalog();
-
-// カスタム項目を追加
-final extendedCatalog = catalog.copyWith([
-  CatalogItem(
-    name: 'MyCustomWidget',
-    dataSchema: S.object(properties: { ... }),
-    widgetBuilder: (context) => MyCustomWidget(...),
-  ),
-]);
-
-// 利用可能なコアWidget:
-// button, card, checkBox, column, dateTimeInput, divider,
-// icon, image, list, modal, multipleChoice, row, slider,
-// tabs, text, textField, video, audioPlayer
-```
-
-### A2uiMessage（sealed class）
-
-SSE で受信する A2UI プロトコルメッセージ。
-
-| サブクラス | 用途 |
+| クラス | 用途 |
 |---|---|
-| `SurfaceUpdate` | コンポーネント追加/更新 |
-| `BeginRendering` | レンダリング開始（root 指定） |
-| `DataModelUpdate` | データモデル更新 |
-| `SurfaceDeletion` | サーフェス削除 |
+| `CreateSurfaceMessage` | surface 作成（`catalogId` 必須） |
+| `UpdateComponentsMessage` | コンポーネント追加/更新 |
+| `UpdateDataModelMessage` | データモデル更新 |
+| `DeleteSurfaceMessage` | surface 削除 |
 
 ```dart
-final msg = A2uiMessage.fromJson(jsonMap);
-```
-
-### GenUiUpdate（sealed class）
-
-サーフェス変更イベント。`A2uiMessageProcessor.surfaceUpdates` から emit。
-
-```dart
-switch (update) {
-  case SurfaceAdded(:final surfaceId, :final definition):
-    // 新しいサーフェスが追加された
-  case SurfaceUpdated(:final surfaceId, :final definition):
-    // 既存サーフェスが更新された
-  case SurfaceRemoved(:final surfaceId):
-    // サーフェスが削除された
-}
+final msg = AgentToRendererMessage.fromJson(jsonMap);
 ```
 
 ## Project Files
@@ -210,27 +160,34 @@ frontend/packages/core/genui/
 │   ├── core_genui.dart                              # Barrel export
 │   ├── content_generator/
 │   │   ├── content_generator_config.dart            # Freezed 設定モデル
-│   │   └── sse_content_generator.dart               # ContentGenerator 実装（SSE）
+│   │   ├── content_generator_error.dart             # errorStream のエラー型
+│   │   ├── game_content_generator.dart              # ゲーム用 SSE クライアント
+│   │   └── sse_content_generator.dart               # チャット用 SSE クライアント
 │   ├── catalog/
-│   │   └── app_catalog_items.dart                   # CoreCatalog + カスタム
+│   │   ├── app_catalog_items.dart                   # basic catalog + カスタム
+│   │   └── game_catalog_items.dart                  # ゲーム用 VN コンポーネント
+│   ├── conversation/
+│   │   └── genui_conversation.dart                  # 会話ループ
 │   ├── models/
 │   │   ├── conversation_state.dart                  # 会話状態（Freezed union）
-│   │   └── genui_message.dart                       # メッセージラッパー（Freezed union）
+│   │   └── genui_message.dart                       # メッセージ（Freezed union）
 │   ├── providers/
-│   │   ├── content_generator_provider.dart          # ContentGenerator Provider（@riverpod OK）
-│   │   ├── conversation_provider.dart               # GenUiConversation Provider（手動）
+│   │   ├── content_generator_provider.dart          # SseContentGenerator Provider（@riverpod）
+│   │   ├── conversation_provider.dart               # GenuiConversation Provider（手動）
 │   │   └── surface_provider.dart                    # Surface IDs Provider（手動）
 │   └── widgets/
-│       └── genui_chat_surface.dart                  # チャット UI Widget
+│       ├── genui_chat_surface.dart                  # チャット UI Widget
+│       └── genui_surface_view.dart                  # surfaceId で追従する surface Widget
 ```
 
 ### Python バックエンド
 
 ```
 backend-py/app/src/
-├── controller/genui_controller.py   # POST /api/genui/chat (SSE)
-├── usecase/genui_usecase.py         # LLM 呼び出し + A2UI メッセージ生成
-└── domain/entity/genui.py           # Pydantic モデル
+├── controller/genui_controller.py         # POST /api/genui/chat (SSE)
+├── usecase/genui_usecase.py               # LLM 呼び出し（テキストのみ）
+├── domain/service/genui_bridge_service.py # GM 判断 → A2UI v0.9 メッセージ
+└── domain/entity/genui.py                 # Pydantic モデル
 ```
 
 ## Usage Patterns
@@ -239,7 +196,6 @@ backend-py/app/src/
 
 ```dart
 import 'package:core_genui/core_genui.dart';
-import 'package:genui/genui.dart';
 
 class MyChatPage extends ConsumerWidget {
   @override
@@ -248,18 +204,14 @@ class MyChatPage extends ConsumerWidget {
 
     return Column(
       children: [
-        // サーフェス表示
         Expanded(
-          child: GenUiSurface(
-            host: conversation.host,
+          child: GenuiSurfaceView(
+            processor: conversation.processor,
             surfaceId: 'main-surface',
           ),
         ),
-        // メッセージ送信
         ElevatedButton(
-          onPressed: () {
-            conversation.sendRequest(UserMessage.text('Create a form'));
-          },
+          onPressed: () => conversation.sendRequest('Create a form'),
           child: const Text('Send'),
         ),
       ],
@@ -268,73 +220,69 @@ class MyChatPage extends ConsumerWidget {
 }
 ```
 
-### カスタム CatalogItem の追加
+### カスタムコンポーネントの追加
+
+`builder` は解決済みのプロパティ（`props`）を受け取る。ユーザー操作は `node.context?.dispatchAction` で送り、`processor.model.onAction` に届く。
 
 ```dart
-import 'package:genui/genui.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
 import 'package:json_schema_builder/json_schema_builder.dart';
 
-final customItem = CatalogItem(
+final customItem = ComponentImplementation(
   name: 'GameScore',
-  dataSchema: S.object(
+  schema: S.object(
     properties: {
       'score': S.integer(description: 'The player score'),
       'playerName': S.string(description: 'The player name'),
     },
     required: ['score', 'playerName'],
   ),
-  widgetBuilder: (CatalogItemContext ctx) {
-    final data = ctx.data as Map<String, dynamic>;
+  builder: (context, node, props, buildChild) {
     return Card(
-      child: Text('${data['playerName']}: ${data['score']}'),
+      child: Text('${props.string('playerName')}: ${props.number('score')}'),
     );
   },
 );
 
-// AppCatalogItems に追加
 final catalog = AppCatalogItems.asCatalog(additionalItems: [customItem]);
 ```
 
-### テスト（FakeContentGenerator）
+`schema` はメッセージ処理時に検証される。型が合わないプロパティを含む `updateComponents` は拒否され、`processor.model.onError` に通知される。
+
+### テスト
+
+`MessageProcessor` に JSON を渡し、`GenuiSurfaceView` を `MaterialApp` の下で pump する（例: `frontend/packages/core/genui/test/catalog/game_catalog_items_test.dart`）。
 
 ```dart
-import 'package:genui/test.dart';
-
-final fakeGenerator = FakeContentGenerator();
-
-// メッセージ送信のテスト
-fakeGenerator.sendRequest(UserMessage.text('Hello'));
-expect(fakeGenerator.sendRequestCallCount, 1);
-expect(fakeGenerator.lastMessage, isA<UserMessage>());
-
-// A2UI メッセージの注入
-fakeGenerator.addA2uiMessage(
-  SurfaceUpdate(surfaceId: 'test', components: [...]),
+final processor = MessageProcessor<ComponentImplementation>(
+  catalogs: [GameCatalogItems.asCatalog()],
+  validationConfig: ValidationConfig.strict,
 );
-
-// テキスト応答の注入
-fakeGenerator.addTextResponse('Hello from AI');
+processor.processMessages([
+  {'version': 'v0.9', 'createSurface': {'surfaceId': 's', 'catalogId': GameCatalogItems.catalogId}},
+  {'version': 'v0.9', 'updateComponents': {'surfaceId': 's', 'components': [
+    {'id': 'root', 'component': 'continueButton'},
+  ]}},
+]);
 ```
 
 ## SSE Protocol (Backend → Frontend)
-
-バックエンドは以下の形式で SSE メッセージを送信:
 
 ```
 # テキスト応答
 data: {"type": "text", "content": "Hello!"}
 
-# A2UI メッセージ（サーフェス更新）
-data: {"surfaceUpdate": {"surfaceId": "s1", "components": [...]}}
+# A2UI: surface 作成
+data: {"version": "v0.9", "createSurface": {"surfaceId": "s1", "catalogId": "<catalog id>"}}
 
-# A2UI メッセージ（レンダリング開始）
-data: {"beginRendering": {"surfaceId": "s1", "root": "root"}}
+# A2UI: コンポーネント更新（root コンポーネントのプロパティはトップレベル）
+data: {"version": "v0.9", "updateComponents": {"surfaceId": "s1", "components": [{"id": "root", "component": "choiceGroup", "choices": [...]}]}}
 
-# A2UI メッセージ（サーフェス削除）
-data: {"deleteSurface": {"surfaceId": "s1"}}
+# A2UI: surface 削除
+data: {"version": "v0.9", "deleteSurface": {"surfaceId": "s1"}}
 
 # 完了
-data: [DONE]
+data: {"type": "done"}
 ```
 
 ## Environment Variables
@@ -357,20 +305,24 @@ TRPGゲームでは `game-surface` という固定の surfaceId を使って選�
 | `game-narration` | narrativePanel（ナレーションテキスト） |
 | `game-npcs` | npcGallery（NPCキャラクター表示） |
 
+すべて `GameCatalogItems.catalogId` のカタログで作成する。バックエンドの `GAME_CATALOG_ID`（`genui_bridge_service.py`）と一致させること。
+
 ### SSE イベント順序（1ターン分）
 
 ```
 # バックエンドから送信される順序
+deleteSurface (game-npcs, game-narration, game-surface) ← 前ターンの surface を削除
 nodesReady         ← NodePlayer にノードをロード（SceneNode 配列）
 stateUpdate        ← Flame キャンバス更新データ
-surfaceUpdate + beginRendering (game-npcs)       ← NPC ギャラリー
-surfaceUpdate + beginRendering (game-narration)  ← ナレーションパネル
-surfaceUpdate + beginRendering (game-surface)    ← 選択肢/ボタン（これが重要）
+createSurface + updateComponents (game-npcs)       ← NPC ギャラリー
+createSurface + updateComponents (game-narration)  ← ナレーションパネル
+createSurface + updateComponents (game-surface)    ← 選択肢/ボタン（これが重要）
 done               ← ターン完了
 ```
 
-`game-surface` の `surfaceUpdate + beginRendering` を受信したタイミングで、
-Flutter 側の `_hasSurface = true` になる。
+A2UI v0.9 では同じ surfaceId の `createSurface` を二度送るとエラーになる。そのため各ターンの最初に `deleteSurface` する。フロントエンドの `_processA2ui`（`trpg_session_provider.dart`）も、既存の surface への `createSurface` を置き換えとして扱う。
+
+`game-surface` の `createSurface` を処理したタイミングで、Flutter 側の `_hasSurface = true` になる。
 
 ### _hasSurface と表示モードの連動（CRITICAL）
 
@@ -397,45 +349,26 @@ static NovelDisplayMode resolvePostPagingMode({
 ### 手動で game-surface を構築するパターン
 
 SSE の A2UI イベントが届かない場合（セッション復元、フォールバック）は、
-`A2uiMessageProcessor.handleMessage()` で直接メッセージを注入できる：
+メッセージを直接 processor に渡せる（`_ensureChoiceSurface`）:
 
 ```dart
-final proc = _ref.read(gameProcessorProvider);
+final version = A2uiProtocolVersion.v0_9.jsonValue;
 
-// 1. surfaceUpdate で surface を定義
-proc.handleMessage(A2uiMessage.fromJson({
-  'surfaceUpdate': {
-    'surfaceId': 'game-surface',
-    'components': [{
-      'id': 'root',
-      'component': {
-        'choiceGroup': {'choices': choices, 'allowFreeInput': true},
-      },
-    }],
-  },
-}));
+// 1. createSurface で surface を作成
+_processA2ui(CreateSurfaceMessage(
+  version: version,
+  surfaceId: 'game-surface',
+  catalogId: GameCatalogItems.catalogId,
+));
 
-// 2. beginRendering で表示を開始（必ずセットで送る）
-proc.handleMessage(A2uiMessage.fromJson({
-  'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'},
-}));
+// 2. updateComponents で root を定義（必ずセットで送る）
+_processA2ui(UpdateComponentsMessage(
+  version: version,
+  surfaceId: 'game-surface',
+  components: [
+    {'id': 'root', 'component': 'choiceGroup', 'choices': choices, 'allowFreeInput': true},
+  ],
+));
 ```
 
-`surfaceUpdate` だけでは surface は表示されない。**必ず `beginRendering` とセット**で送る。
-
-## Prompt Utilities
-
-```dart
-import 'package:genui/genui.dart';
-
-// 基本チャットプロンプト
-final prompt = GenUiPromptFragments.basicChat;
-
-// Tool 定義をカタログから生成
-final declaration = catalogToFunctionDeclaration(
-  catalog, 'surfaceUpdate', 'Updates a UI surface',
-);
-
-// Tool call をパース
-final parsed = parseToolCall(toolCall, 'surfaceUpdate');
-```
+`createSurface` だけでは何も表示されない。**必ず root を含む `updateComponents` とセット**で送る。

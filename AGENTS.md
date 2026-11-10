@@ -507,7 +507,7 @@ static NovelDisplayMode resolvePostPagingMode({...}) {
 **理由**: auto-advance シナリオで `isProcessing=true` のまま choice が完了する場合がある。
 `hasSurface=true` はバックエンドが選択肢 surface を送信済みを意味するため、処理状態より優先して表示すべき。
 
-## CRITICAL: genui game-surface パターン
+## CRITICAL: A2UI game-surface パターン
 
 | surfaceId | 用途 |
 |-----------|------|
@@ -515,7 +515,7 @@ static NovelDisplayMode resolvePostPagingMode({...}) {
 | `game-narration` | narrativePanel |
 | `game-npcs` | npcGallery |
 
-`surfaceUpdate` だけでは surface は表示されない。**`beginRendering` とセット**で送ること。
+A2UI v0.9 の `createSurface` と `updateComponents` は**必ずセット**で送る（`catalogId` は `GameCatalogItems.catalogId`）。surface は一度しか作成できないため、ターンの最初に `deleteSurface` してから作り直す。
 
 ## ベストプラクティスまとめ
 

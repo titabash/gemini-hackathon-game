@@ -2,10 +2,11 @@
 
 import 'dart:async';
 
+import 'package:a2ui_core/a2ui_core.dart';
 import 'package:core_api/core_api.dart';
+import 'package:core_genui/content_generator/content_generator_error.dart';
 import 'package:core_genui/content_generator/game_content_generator.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:genui/genui.dart';
 
 /// Tests for [GameContentGenerator] SSE message handling.
 ///
@@ -246,6 +247,30 @@ void main() {
 
         final data = await completer.future.timeout(const Duration(seconds: 1));
         expect(data['location'], 'Town');
+
+        await sub.cancel();
+      });
+
+      test('a2uiMessageStream emits for an A2UI v0.9 message', () async {
+        final completer = Completer<AgentToRendererMessage>();
+        final sub = generator.a2uiMessageStream.listen(completer.complete);
+
+        generator.injectSseMessage(
+          SseMessage.fromRaw(
+            '{"version":"v0.9","createSurface":'
+            '{"surfaceId":"game-surface","catalogId":"c"}}',
+          ),
+        );
+
+        final message = await completer.future.timeout(
+          const Duration(seconds: 1),
+        );
+        expect(
+          message,
+          isA<CreateSurfaceMessage>()
+              .having((m) => m.surfaceId, 'surfaceId', 'game-surface')
+              .having((m) => m.catalogId, 'catalogId', 'c'),
+        );
 
         await sub.cancel();
       });

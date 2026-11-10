@@ -1,7 +1,8 @@
 """Convert GM decisions to SSE events with drip-feed streaming.
 
-Emits A2UI protocol messages (surfaceUpdate + beginRendering) for genui SDK
-integration, alongside game-specific events (text, stateUpdate, imageUpdate).
+Emits A2UI v0.9 protocol messages (createSurface + updateComponents) for the
+Flutter A2UI renderer, alongside game-specific events (text, stateUpdate,
+imageUpdate).
 """
 
 from __future__ import annotations
@@ -23,6 +24,14 @@ logger = get_logger(__name__)
 # Type alias for NPC images: name -> (default_path, emotion_images_map)
 NpcImageMap = dict[str, tuple[str | None, dict[str, str]]]
 
+A2UI_VERSION = "v0.9"
+
+# Must match GameCatalogItems.catalogId in
+# frontend/packages/core/genui/lib/catalog/game_catalog_items.dart.
+GAME_CATALOG_ID = (
+    "https://github.com/titabash/gemini-hackathon-game/catalogs/game_catalog.json"
+)
+
 
 def _sse(payload: dict[str, Any]) -> str:
     """Format a dict as an SSE data line."""
@@ -31,7 +40,7 @@ def _sse(payload: dict[str, Any]) -> str:
 
 def _a2ui_delete(surface_id: str) -> str:
     """Emit a deleteSurface A2UI event."""
-    return _sse({"deleteSurface": {"surfaceId": surface_id}})
+    return _sse({"version": A2UI_VERSION, "deleteSurface": {"surfaceId": surface_id}})
 
 
 def _a2ui_surface(
@@ -39,30 +48,36 @@ def _a2ui_surface(
     component_type: str,
     properties: dict[str, Any],
 ) -> str:
-    """Emit surfaceUpdate + beginRendering for a single-component surface.
+    """Emit createSurface + updateComponents for a single-component surface.
 
-    Component format follows A2UI spec:
-    ``{"id": "root", "component": {"typeName": {properties}}}``
+    Component format follows the A2UI v0.9 spec:
+    ``{"id": "root", "component": "typeName", **properties}``
     """
+    create = _sse(
+        {
+            "version": A2UI_VERSION,
+            "createSurface": {
+                "surfaceId": surface_id,
+                "catalogId": GAME_CATALOG_ID,
+            },
+        }
+    )
     update = _sse(
         {
-            "surfaceUpdate": {
+            "version": A2UI_VERSION,
+            "updateComponents": {
                 "surfaceId": surface_id,
                 "components": [
                     {
                         "id": "root",
-                        "component": {component_type: properties},
+                        "component": component_type,
+                        **properties,
                     },
                 ],
             },
         }
     )
-    begin = _sse(
-        {
-            "beginRendering": {"surfaceId": surface_id, "root": "root"},
-        }
-    )
-    return update + begin
+    return create + update
 
 
 class GenuiBridgeService:
@@ -90,7 +105,8 @@ class GenuiBridgeService:
         """
         has_nodes = bool(decision.nodes)
 
-        # 1. Clear previous surfaces
+        # 1. Clear previous surfaces (A2UI v0.9 creates each surface once)
+        yield _a2ui_delete("game-npcs")
         yield _a2ui_delete("game-narration")
         yield _a2ui_delete("game-surface")
 

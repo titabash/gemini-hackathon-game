@@ -66,7 +66,7 @@ connect_args = {"server_settings": {"search_path": "adk"}}
 DatabaseSessionService(asyncpg_url, connect_args=connect_args)
 ```
 
-## genui game-surface パターン（CRITICAL）
+## A2UI game-surface パターン（CRITICAL）
 
 ### Surface ID 一覧
 
@@ -76,14 +76,14 @@ DatabaseSessionService(asyncpg_url, connect_args=connect_args)
 | `game-narration` | narrativePanel |
 | `game-npcs` | npcGallery |
 
-### surfaceUpdate + beginRendering は必ずセットで送る
+### createSurface + updateComponents は必ずセットで送る
 
 ```
 # バックエンド SSE 送信順序
 nodesReady → stateUpdate → game-npcs (A2UI) → game-narration (A2UI) → game-surface (A2UI) → done
 ```
 
-`surfaceUpdate` だけでは surface は表示されない。**`beginRendering` とセット**で送ること。
+A2UI v0.9 の `createSurface` と `updateComponents` は**必ずセット**で送る（`catalogId` は `GameCatalogItems.catalogId`）。surface は一度しか作成できないため、ターンの最初に `deleteSurface` してから作り直す。
 
 ## TrpgSession Surface 優先順位（CRITICAL）
 
@@ -110,7 +110,7 @@ static NovelDisplayMode resolvePostPagingMode({
 
 ```
 # ログで確認できる症状
-_onSurfaceUpdate: SurfaceAdded(game-surface)  ← surface は作成されている
+_onSurfaceCreated(game-surface)               ← surface は作成されている
 onPagingComplete: resolved → NovelDisplayMode.processing, isProcessing=true, hasSurface=true
 ← hasSurface=true なのに processing → 選択肢UIが表示されない
 ```

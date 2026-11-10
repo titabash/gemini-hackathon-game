@@ -1,69 +1,94 @@
 // ignore_for_file: avoid_dynamic_calls
 
+import 'dart:async';
+
+import 'package:a2ui_core/a2ui_core.dart' show ComponentNode;
+import 'package:a2ui_flutter/a2ui_flutter.dart';
+import 'package:a2ui_flutter/v0_9/basic_catalog.dart' as v0_9;
 import 'package:core_i18n/generated/strings.g.dart';
 import 'package:core_utils/core_utils.dart';
 import 'package:flutter/material.dart';
-import 'package:genui/genui.dart';
 import 'package:json_schema_builder/json_schema_builder.dart';
 import 'package:shared_ui/vn/vn.dart';
 
 /// Game-specific catalog items for VN-style TRPG UI.
 ///
 /// These items render as VN-style widgets using the shared_ui VN components.
-/// User interactions are dispatched as [UserActionEvent] via genui's
-/// event system.
+/// User interactions are dispatched as A2UI actions through the surface,
+/// and reach the processor's `model.onAction`.
 class GameCatalogItems {
   const GameCatalogItems._();
 
-  /// Returns a [Catalog] with core + game-specific items.
+  /// The catalog ID the GM backend sends in `createSurface`.
   ///
-  /// Starts from [CoreCatalogItems] (which provides the standard catalog with
-  /// ID `a2ui.org:standard_catalog_0_8_0`) and extends it with game-specific
-  /// VN widgets.
+  /// Must match `GAME_CATALOG_ID` in
+  /// `backend-py/app/src/domain/service/genui_bridge_service.py`.
+  static const catalogId =
+      'https://github.com/titabash/gemini-hackathon-game/catalogs/game_catalog.json';
+
+  /// Returns a [CatalogImplementation] with basic + game-specific items.
+  ///
+  /// Starts from the A2UI v0.9 basic catalog and extends it with
+  /// game-specific VN widgets under [catalogId].
   /// [resolveImageUrl] converts a raw storage path (e.g.
   /// `scenario-assets/npcs/wizard.png`) into a full URL via
   /// `supabase.storage.from(bucket).getPublicUrl(objectPath)`.
-  static Catalog asCatalog({
+  static CatalogImplementation asCatalog({
     String Function(String storagePath)? resolveImageUrl,
   }) {
-    final coreCatalog = CoreCatalogItems.asCatalog();
-    return coreCatalog.copyWith([
-      _novelTextBoxItem(),
-      _narrativePanelItem(),
-      _processingIndicatorItem(),
-      _npcGalleryItem(resolveImageUrl: resolveImageUrl),
-      _choiceGroupItem(),
-      _actionInputItem(),
-      _clarifyQuestionItem(),
-      _repairConfirmItem(),
-      _continueOrInputItem(),
-      _continueButtonItem(),
-      _textInputItem(),
-    ]);
+    return v0_9.basicCatalog().derive(
+      catalogId: catalogId,
+      addComponents: [
+        _novelTextBoxItem(),
+        _narrativePanelItem(),
+        _processingIndicatorItem(),
+        _npcGalleryItem(resolveImageUrl: resolveImageUrl),
+        _choiceGroupItem(),
+        _actionInputItem(),
+        _clarifyQuestionItem(),
+        _repairConfirmItem(),
+        _continueOrInputItem(),
+        _continueButtonItem(),
+        _textInputItem(),
+      ],
+    );
   }
+
+  /// Sends a user action from [node], as genui's `dispatchEvent` did.
+  static void _dispatch(
+    ComponentNode<ComponentImplementation> node,
+    String name, [
+    Map<String, Object?> context = const {},
+  ]) {
+    unawaited(
+      node.context?.dispatchAction({
+        'event': {'name': name, 'context': context},
+      }),
+    );
+  }
+
+  /// The map entries of a list property.
+  static Iterable<Map<Object?, Object?>> _maps(List<Object?> list) =>
+      list.whereType<Map<Object?, Object?>>();
 
   // -- novelTextBox ----------------------------------------------------------
 
-  static CatalogItem _novelTextBoxItem() {
-    return CatalogItem(
+  static ComponentImplementation _novelTextBoxItem() {
+    return ComponentImplementation(
       name: 'novelTextBox',
-      dataSchema: S.object(
+      schema: S.object(
         properties: {
           'text': S.string(),
           'speaker': S.string(),
           'showNextIndicator': S.boolean(),
         },
       ),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
+      builder: (context, node, props, buildChild) {
         return VnTextBox(
-          text: data['text'] as String? ?? '',
-          speaker: data['speaker'] as String?,
-          showNextIndicator: data['showNextIndicator'] as bool? ?? false,
-          onAdvance: () => ctx.dispatchEvent(
-            UserActionEvent(name: 'advance', sourceComponentId: ctx.id),
-          ),
+          text: props.string('text') ?? '',
+          speaker: props.string('speaker'),
+          showNextIndicator: props.boolean('showNextIndicator') ?? false,
+          onAdvance: () => _dispatch(node, 'advance'),
         );
       },
     );
@@ -71,27 +96,23 @@ class GameCatalogItems {
 
   // -- narrativePanel --------------------------------------------------------
 
-  static CatalogItem _narrativePanelItem() {
-    return CatalogItem(
+  static ComponentImplementation _narrativePanelItem() {
+    return ComponentImplementation(
       name: 'narrativePanel',
-      dataSchema: S.object(
+      schema: S.object(
         properties: {'sections': S.list(items: S.object(properties: {}))},
       ),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final sections = (data['sections'] as List<dynamic>?) ?? [];
+      builder: (context, node, props, buildChild) {
+        final sections = props.list('sections');
         return VnNarrativePanel(
-          sections: sections.cast<Map<String, dynamic>>().map((s) {
+          sections: _maps(sections).map((s) {
             return VnNarrativeSection(
               type: s['type'] as String? ?? 'narration',
               speaker: s['speaker'] as String?,
               text: s['text'] as String? ?? '',
             );
           }).toList(),
-          onAdvance: () => ctx.dispatchEvent(
-            UserActionEvent(name: 'advance', sourceComponentId: ctx.id),
-          ),
+          onAdvance: () => _dispatch(node, 'advance'),
         );
       },
     );
@@ -99,11 +120,11 @@ class GameCatalogItems {
 
   // -- processingIndicator ---------------------------------------------------
 
-  static CatalogItem _processingIndicatorItem() {
-    return CatalogItem(
+  static ComponentImplementation _processingIndicatorItem() {
+    return ComponentImplementation(
       name: 'processingIndicator',
-      dataSchema: S.object(properties: {}),
-      widgetBuilder: (ctx) {
+      schema: S.object(properties: {}),
+      builder: (context, node, props, buildChild) {
         return const VnTextBox(text: '', isProcessing: true, onAdvance: _noop);
       },
     );
@@ -111,25 +132,22 @@ class GameCatalogItems {
 
   // -- npcGallery ------------------------------------------------------------
 
-  static CatalogItem _npcGalleryItem({
+  static ComponentImplementation _npcGalleryItem({
     String Function(String storagePath)? resolveImageUrl,
   }) {
-    return CatalogItem(
+    return ComponentImplementation(
       name: 'npcGallery',
-      dataSchema: S.object(
+      schema: S.object(
         properties: {
           'npcs': S.list(items: S.object(properties: {})),
           'speakers': S.list(items: S.string()),
         },
       ),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final npcs = (data['npcs'] as List<dynamic>?) ?? [];
-        final speakers =
-            (data['speakers'] as List<dynamic>?)?.cast<String>() ?? [];
+      builder: (context, node, props, buildChild) {
+        final npcs = props.list('npcs');
+        final speakers = props.list('speakers').whereType<String>().toList();
         return VnNpcGallery(
-          npcs: npcs.cast<Map<String, dynamic>>().map((n) {
+          npcs: _maps(npcs).map((n) {
             final rawPath = n['imagePath'] as String?;
             final imageUrl = rawPath != null && resolveImageUrl != null
                 ? resolveImageUrl(rawPath)
@@ -148,19 +166,17 @@ class GameCatalogItems {
 
   // -- choiceGroup -----------------------------------------------------------
 
-  static CatalogItem _choiceGroupItem() {
-    return CatalogItem(
+  static ComponentImplementation _choiceGroupItem() {
+    return ComponentImplementation(
       name: 'choiceGroup',
-      dataSchema: S.object(
+      schema: S.object(
         properties: {
           'choices': S.list(items: S.object(properties: {})),
           'allowFreeInput': S.boolean(),
         },
       ),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final choices = (data['choices'] as List<dynamic>?) ?? [];
+      builder: (context, node, props, buildChild) {
+        final choices = props.list('choices');
 
         return VnOverlayContainer(
           child: Column(
@@ -172,8 +188,7 @@ class GameCatalogItems {
                 style: const TextStyle(color: Colors.white70, fontSize: 13),
               ),
               const SizedBox(height: 8),
-              ...choices.map((choice) {
-                final c = choice as Map<String, dynamic>;
+              ..._maps(choices).map((c) {
                 final text = c['text'] as String? ?? '';
                 final hint = c['hint'] as String?;
                 return VnChoiceButton(
@@ -182,15 +197,12 @@ class GameCatalogItems {
                   onPressed: () {
                     Logger.info(
                       'choiceGroup: onPressed fired, '
-                      'text=$text, componentId=${ctx.id}',
+                      'text=$text, componentId=${node.componentId}',
                     );
-                    ctx.dispatchEvent(
-                      UserActionEvent(
-                        name: 'choice',
-                        sourceComponentId: ctx.id,
-                        context: {'inputType': 'choice', 'inputText': text},
-                      ),
-                    );
+                    _dispatch(node, 'choice', {
+                      'inputType': 'choice',
+                      'inputText': text,
+                    });
                   },
                 );
               }),
@@ -203,14 +215,12 @@ class GameCatalogItems {
 
   // -- actionInput -----------------------------------------------------------
 
-  static CatalogItem _actionInputItem() {
-    return CatalogItem(
+  static ComponentImplementation _actionInputItem() {
+    return ComponentImplementation(
       name: 'actionInput',
-      dataSchema: S.object(properties: {'question': S.string()}),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final question = data['question'] as String? ?? '';
+      schema: S.object(properties: {'question': S.string()}),
+      builder: (context, node, props, buildChild) {
+        final question = props.string('question') ?? '';
 
         return VnOverlayContainer(
           child: Column(
@@ -228,13 +238,10 @@ class GameCatalogItems {
               const SizedBox(height: 12),
               _VnTextInput(
                 hint: t.trpg.inputHint,
-                onSubmit: (text) => ctx.dispatchEvent(
-                  UserActionEvent(
-                    name: 'textInput',
-                    sourceComponentId: ctx.id,
-                    context: {'inputType': 'do', 'inputText': text},
-                  ),
-                ),
+                onSubmit: (text) => _dispatch(node, 'textInput', {
+                  'inputType': 'do',
+                  'inputText': text,
+                }),
               ),
             ],
           ),
@@ -245,14 +252,12 @@ class GameCatalogItems {
 
   // -- clarifyQuestion -------------------------------------------------------
 
-  static CatalogItem _clarifyQuestionItem() {
-    return CatalogItem(
+  static ComponentImplementation _clarifyQuestionItem() {
+    return ComponentImplementation(
       name: 'clarifyQuestion',
-      dataSchema: S.object(properties: {'question': S.string()}),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final question = data['question'] as String? ?? '';
+      schema: S.object(properties: {'question': S.string()}),
+      builder: (context, node, props, buildChild) {
+        final question = props.string('question') ?? '';
 
         return VnOverlayContainer(
           child: Column(
@@ -289,13 +294,10 @@ class GameCatalogItems {
               const SizedBox(height: 12),
               _VnTextInput(
                 hint: t.trpg.clarifyHint,
-                onSubmit: (text) => ctx.dispatchEvent(
-                  UserActionEvent(
-                    name: 'clarifyAnswer',
-                    sourceComponentId: ctx.id,
-                    context: {'inputType': 'clarify_answer', 'inputText': text},
-                  ),
-                ),
+                onSubmit: (text) => _dispatch(node, 'clarifyAnswer', {
+                  'inputType': 'clarify_answer',
+                  'inputText': text,
+                }),
               ),
             ],
           ),
@@ -306,17 +308,15 @@ class GameCatalogItems {
 
   // -- repairConfirm ---------------------------------------------------------
 
-  static CatalogItem _repairConfirmItem() {
-    return CatalogItem(
+  static ComponentImplementation _repairConfirmItem() {
+    return ComponentImplementation(
       name: 'repairConfirm',
-      dataSchema: S.object(
+      schema: S.object(
         properties: {'contradiction': S.string(), 'proposed_fix': S.string()},
       ),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final contradiction = data['contradiction'] as String? ?? '';
-        final proposedFix = data['proposed_fix'] as String? ?? '';
+      builder: (context, node, props, buildChild) {
+        final contradiction = props.string('contradiction') ?? '';
+        final proposedFix = props.string('proposed_fix') ?? '';
 
         return VnOverlayContainer(
           child: Column(
@@ -357,30 +357,18 @@ class GameCatalogItems {
                 children: [
                   VnChoiceButton(
                     text: t.trpg.repairReject,
-                    onPressed: () => ctx.dispatchEvent(
-                      UserActionEvent(
-                        name: 'reject',
-                        sourceComponentId: ctx.id,
-                        context: {
-                          'inputType': 'clarify_answer',
-                          'inputText': 'reject',
-                        },
-                      ),
-                    ),
+                    onPressed: () => _dispatch(node, 'reject', {
+                      'inputType': 'clarify_answer',
+                      'inputText': 'reject',
+                    }),
                   ),
                   const SizedBox(width: 8),
                   VnChoiceButton(
                     text: t.trpg.repairAccept,
-                    onPressed: () => ctx.dispatchEvent(
-                      UserActionEvent(
-                        name: 'accept',
-                        sourceComponentId: ctx.id,
-                        context: {
-                          'inputType': 'clarify_answer',
-                          'inputText': 'accept',
-                        },
-                      ),
-                    ),
+                    onPressed: () => _dispatch(node, 'accept', {
+                      'inputType': 'clarify_answer',
+                      'inputText': 'accept',
+                    }),
                   ),
                 ],
               ),
@@ -393,15 +381,12 @@ class GameCatalogItems {
 
   // -- continueButton --------------------------------------------------------
 
-  static CatalogItem _continueOrInputItem() {
-    return CatalogItem(
+  static ComponentImplementation _continueOrInputItem() {
+    return ComponentImplementation(
       name: 'continueOrInput',
-      dataSchema: S.object(properties: {'hint': S.string()}),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        final hint = data is Map<String, dynamic>
-            ? data['hint'] as String? ?? t.trpg.inputHint
-            : t.trpg.inputHint;
+      schema: S.object(properties: {'hint': S.string()}),
+      builder: (context, node, props, buildChild) {
+        final hint = props.string('hint') ?? t.trpg.inputHint;
 
         return VnOverlayContainer(
           child: Column(
@@ -411,25 +396,19 @@ class GameCatalogItems {
               Center(
                 child: VnChoiceButton(
                   text: t.trpg.continueButton,
-                  onPressed: () => ctx.dispatchEvent(
-                    UserActionEvent(
-                      name: 'continue',
-                      sourceComponentId: ctx.id,
-                      context: {'inputType': 'do', 'inputText': 'continue'},
-                    ),
-                  ),
+                  onPressed: () => _dispatch(node, 'continue', {
+                    'inputType': 'do',
+                    'inputText': 'continue',
+                  }),
                 ),
               ),
               const SizedBox(height: 12),
               _VnTextInput(
                 hint: hint,
-                onSubmit: (text) => ctx.dispatchEvent(
-                  UserActionEvent(
-                    name: 'textInput',
-                    sourceComponentId: ctx.id,
-                    context: {'inputType': 'do', 'inputText': text},
-                  ),
-                ),
+                onSubmit: (text) => _dispatch(node, 'textInput', {
+                  'inputType': 'do',
+                  'inputText': text,
+                }),
               ),
             ],
           ),
@@ -440,22 +419,19 @@ class GameCatalogItems {
 
   // -- continueButton --------------------------------------------------------
 
-  static CatalogItem _continueButtonItem() {
-    return CatalogItem(
+  static ComponentImplementation _continueButtonItem() {
+    return ComponentImplementation(
       name: 'continueButton',
-      dataSchema: S.object(properties: {}),
-      widgetBuilder: (ctx) {
+      schema: S.object(properties: {}),
+      builder: (context, node, props, buildChild) {
         return VnOverlayContainer(
           child: Center(
             child: VnChoiceButton(
               text: t.trpg.continueButton,
-              onPressed: () => ctx.dispatchEvent(
-                UserActionEvent(
-                  name: 'continue',
-                  sourceComponentId: ctx.id,
-                  context: {'inputType': 'do', 'inputText': 'continue'},
-                ),
-              ),
+              onPressed: () => _dispatch(node, 'continue', {
+                'inputType': 'do',
+                'inputText': 'continue',
+              }),
             ),
           ),
         );
@@ -465,25 +441,20 @@ class GameCatalogItems {
 
   // -- textInput -------------------------------------------------------------
 
-  static CatalogItem _textInputItem() {
-    return CatalogItem(
+  static ComponentImplementation _textInputItem() {
+    return ComponentImplementation(
       name: 'textInput',
-      dataSchema: S.object(properties: {'hint': S.string()}),
-      widgetBuilder: (ctx) {
-        final data = ctx.data;
-        if (data is! Map<String, dynamic>) return const SizedBox.shrink();
-        final hint = data['hint'] as String? ?? t.trpg.inputHint;
+      schema: S.object(properties: {'hint': S.string()}),
+      builder: (context, node, props, buildChild) {
+        final hint = props.string('hint') ?? t.trpg.inputHint;
 
         return VnOverlayContainer(
           child: _VnTextInput(
             hint: hint,
-            onSubmit: (text) => ctx.dispatchEvent(
-              UserActionEvent(
-                name: 'textInput',
-                sourceComponentId: ctx.id,
-                context: {'inputType': 'do', 'inputText': text},
-              ),
-            ),
+            onSubmit: (text) => _dispatch(node, 'textInput', {
+              'inputType': 'do',
+              'inputText': text,
+            }),
           ),
         );
       },

@@ -1,5 +1,5 @@
 name: core_genui
-description: GenUI SDK integration with custom SSE ContentGenerator
+description: A2UI SDK integration with custom SSE ContentGenerator
 version: 0.1.0
 publish_to: none
 resolution: workspace
@@ -12,8 +12,9 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # GenUI SDK
-  genui: ^0.7.0
+  # A2UI SDK
+  a2ui_core: ^0.6.0
+  a2ui_flutter: ^0.2.0
   json_schema_builder: ^0.1.3
 
   # State management

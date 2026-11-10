@@ -1,13 +1,13 @@
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
 import 'package:core_api/core_api.dart';
 import 'package:core_auth/core_auth.dart';
 import 'package:core_genui/core_genui.dart';
-import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 /// Provides a [GameContentGenerator] for SSE communication with the GM backend.
 ///
-/// Uses manual Provider because genui types are incompatible with
-/// riverpod_generator.
+/// Uses a manual Provider rather than riverpod_generator.
 final gameContentGeneratorProvider = Provider<GameContentGenerator>((ref) {
   final sseFactory = ref.read(sseClientFactoryProvider);
   final generator = GameContentGenerator(sseClientFactory: sseFactory);
@@ -26,15 +26,21 @@ String _resolveStorageUrl(Ref ref, String path) {
   return supabase.storage.from(bucket).getPublicUrl(objectPath);
 }
 
-/// Provides an [A2uiMessageProcessor] that manages genui surfaces.
+/// Provides the A2UI [MessageProcessor] that manages the game surfaces.
 ///
 /// A2UI event forwarding is handled in `TrpgSessionNotifier` so turn-level
-/// buffering can defer UI updates for future turns.
-final gameProcessorProvider = Provider<A2uiMessageProcessor>((ref) {
-  final catalog = GameCatalogItems.asCatalog(
-    resolveImageUrl: (path) => _resolveStorageUrl(ref, path),
-  );
-  final processor = A2uiMessageProcessor(catalogs: [catalog]);
-  ref.onDispose(processor.dispose);
-  return processor;
-});
+/// buffering can defer UI updates for future turns. Rejected messages are
+/// reported on `processor.model.onError` instead of being thrown.
+final gameProcessorProvider =
+    Provider<MessageProcessor<ComponentImplementation>>((ref) {
+      final catalog = GameCatalogItems.asCatalog(
+        resolveImageUrl: (path) => _resolveStorageUrl(ref, path),
+      );
+      final processor = MessageProcessor<ComponentImplementation>(
+        catalogs: [catalog],
+        validationConfig: ValidationConfig.relaxed,
+        reportErrorsOnly: true,
+      );
+      ref.onDispose(processor.dispose);
+      return processor;
+    });

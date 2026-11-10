@@ -1,12 +1,13 @@
 // ignore_for_file: invalid_use_of_visible_for_testing_member
 import 'dart:async';
 
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
 import 'package:core_api/core_api.dart';
 import 'package:core_auth/core_auth.dart';
 import 'package:core_genui/core_genui.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:mock_supabase_http_client/mock_supabase_http_client.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -97,7 +98,7 @@ ProviderContainer _makeContainer({
         return gen;
       }),
       gameProcessorProvider.overrideWith((ref) {
-        final proc = A2uiMessageProcessor(catalogs: []);
+        final proc = MessageProcessor<ComponentImplementation>(catalogs: []);
         ref.onDispose(proc.dispose);
         return proc;
       }),

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../providers/conversation_provider.dart';
 import '../providers/surface_provider.dart';
+import 'genui_surface_view.dart';
 
-/// A chat UI that combines a [GenUiSurface] list with a text input field.
+/// A chat UI that combines a [GenuiSurfaceView] list with a text input field.
 ///
 /// Displays all active surfaces from the genui conversation and provides
 /// a text field for the user to send messages.
@@ -30,7 +30,7 @@ class _GenuiChatSurfaceState extends ConsumerState<GenuiChatSurface> {
     if (text.isEmpty) return;
 
     final conversation = ref.read(genuiConversationProvider);
-    conversation.sendRequest(UserMessage.text(text));
+    conversation.sendRequest(text);
     _controller.clear();
   }
 
@@ -54,8 +54,8 @@ class _GenuiChatSurfaceState extends ConsumerState<GenuiChatSurface> {
                 itemBuilder: (context, index) {
                   return Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: GenUiSurface(
-                      host: conversation.host,
+                    child: GenuiSurfaceView(
+                      processor: conversation.processor,
                       surfaceId: surfaceIds[index],
                     ),
                   );

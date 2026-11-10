@@ -1,8 +1,8 @@
 import 'package:core_game/core_game.dart';
+import 'package:core_genui/core_genui.dart';
 import 'package:core_i18n/generated/strings.g.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_ui/vn/vn.dart';
 
@@ -276,16 +276,16 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
           // genui surface (choices, roll panel, etc.)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: GenUiSurface(
-              host: session.processor,
+            child: GenuiSurfaceView(
+              processor: session.processor,
               surfaceId: 'game-surface',
               defaultBuilder: (_) => const SizedBox.shrink(),
             ),
           ),
           const SizedBox(height: 8),
           // Narration at bottom
-          GenUiSurface(
-            host: session.processor,
+          GenuiSurfaceView(
+            processor: session.processor,
             surfaceId: 'game-narration',
             defaultBuilder: (_) => const SizedBox.shrink(),
           ),
@@ -300,8 +300,8 @@ class _NovelGameSurfaceState extends ConsumerState<NovelGameSurface> {
       bottom: 0,
       left: 0,
       right: 0,
-      child: GenUiSurface(
-        host: session.processor,
+      child: GenuiSurfaceView(
+        processor: session.processor,
         surfaceId: 'game-surface',
         defaultBuilder: (_) => _FallbackInputBar(onSend: _sendMessage),
       ),

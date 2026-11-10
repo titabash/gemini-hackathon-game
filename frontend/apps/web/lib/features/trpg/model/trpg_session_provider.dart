@@ -1,12 +1,12 @@
 import 'dart:async';
-import 'dart:convert';
 
+import 'package:a2ui_core/a2ui_core.dart';
+import 'package:a2ui_flutter/a2ui_flutter.dart';
 import 'package:core_api/core_api.dart';
 import 'package:core_auth/core_auth.dart';
 import 'package:core_genui/core_genui.dart';
 import 'package:core_utils/core_utils.dart';
 import 'package:flutter/foundation.dart';
-import 'package:genui/genui.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import 'bgm_player_notifier.dart';
@@ -74,8 +74,8 @@ class _TurnStreamEvent {
 
 /// Manages the TRPG session state: messages, streaming, and GM turns.
 ///
-/// Uses [GameContentGenerator] for SSE communication and
-/// [A2uiMessageProcessor] for genui surface management.
+/// Uses [GameContentGenerator] for SSE communication and an A2UI
+/// [MessageProcessor] for game surface management.
 class TrpgSessionNotifier {
   TrpgSessionNotifier(this._ref) {
     // Cache provider references for use in dispose().
@@ -92,8 +92,8 @@ class TrpgSessionNotifier {
   /// Riverpod lifecycle callbacks such as [dispose].
   late final BgmPlayerNotifier _bgmPlayer;
 
-  /// Cached [A2uiMessageProcessor] instance – same rationale as [_bgmPlayer].
-  late final A2uiMessageProcessor _processor;
+  /// Cached [MessageProcessor] instance – same rationale as [_bgmPlayer].
+  late final MessageProcessor<ComponentImplementation> _processor;
 
   final _messagesNotifier = ValueNotifier<List<TrpgMessage>>([]);
   final _isProcessingNotifier = ValueNotifier<bool>(false);
@@ -107,6 +107,7 @@ class TrpgSessionNotifier {
   final _pendingChangesNotifier = ValueNotifier<List<ChangeEvent>>([]);
 
   final _subscriptions = <StreamSubscription<dynamic>>[];
+  final _processorSubscriptions = <Subscription>[];
 
   /// Whether the session has already been initialised.
   bool _initialised = false;
@@ -176,8 +177,8 @@ class TrpgSessionNotifier {
   ValueListenable<List<ChangeEvent>> get pendingChanges =>
       _pendingChangesNotifier;
 
-  /// The [A2uiMessageProcessor] that manages genui surfaces.
-  A2uiMessageProcessor get processor => _processor;
+  /// The A2UI [MessageProcessor] that manages the game surfaces.
+  MessageProcessor<ComponentImplementation> get processor => _processor;
 
   /// Initialise (or re-initialise) for a new session.
   Future<void> initSession(String sessionId) async {
@@ -478,26 +479,27 @@ class TrpgSessionNotifier {
   /// Used as a fallback when the A2UI event was not received (restore scenarios).
   void _ensureChoiceSurface(List<Map<String, dynamic>> choices) {
     if (choices.isEmpty) return;
-    final proc = _ref.read(gameProcessorProvider);
-    proc.handleMessage(
-      A2uiMessage.fromJson({
-        'surfaceUpdate': {
-          'surfaceId': 'game-surface',
-          'components': [
-            {
-              'id': 'root',
-              'component': {
-                'choiceGroup': {'choices': choices, 'allowFreeInput': true},
-              },
-            },
-          ],
-        },
-      }),
+    final version = A2uiProtocolVersion.v0_9.jsonValue;
+    _processA2ui(
+      CreateSurfaceMessage(
+        version: version,
+        surfaceId: 'game-surface',
+        catalogId: GameCatalogItems.catalogId,
+      ),
     );
-    proc.handleMessage(
-      A2uiMessage.fromJson({
-        'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'},
-      }),
+    _processA2ui(
+      UpdateComponentsMessage(
+        version: version,
+        surfaceId: 'game-surface',
+        components: [
+          {
+            'id': 'root',
+            'component': 'choiceGroup',
+            'choices': choices,
+            'allowFreeInput': true,
+          },
+        ],
+      ),
     );
     _hasSurface = true;
   }
@@ -543,7 +545,7 @@ class TrpgSessionNotifier {
     }
   }
 
-  /// Set up listeners for GameContentGenerator and A2uiMessageProcessor.
+  /// Set up listeners for GameContentGenerator and the A2UI processor.
   void _setupSubscriptions() {
     _cancelSubscriptions();
 
@@ -601,8 +603,12 @@ class TrpgSessionNotifier {
         ),
       ),
       generator.errorStream.listen(_onError),
-      proc.surfaceUpdates.listen(_onSurfaceUpdate),
-      proc.onSubmit.listen(_onUiInteraction),
+    ]);
+    _processorSubscriptions.addAll([
+      proc.model.onSurfaceCreated.subscribe(_onSurfaceCreated),
+      proc.model.onSurfaceDeleted.subscribe(_onSurfaceDeleted),
+      proc.model.onAction.subscribe(_onUiInteraction),
+      proc.model.onError.subscribe(_onA2uiError),
     ]);
   }
 
@@ -611,6 +617,10 @@ class TrpgSessionNotifier {
       sub.cancel();
     }
     _subscriptions.clear();
+    for (final sub in _processorSubscriptions) {
+      sub.unsubscribe();
+    }
+    _processorSubscriptions.clear();
   }
 
   /// Reset session state so a new session can be started.
@@ -653,10 +663,16 @@ class TrpgSessionNotifier {
     await _ref.read(bgmPlayerProvider).stop();
   }
 
-  /// Remove all active genui surfaces from the processor.
+  /// Remove all active A2UI surfaces from the processor.
   void _clearProcessorSurfaces() {
-    for (final surfaceId in _processor.surfaces.keys.toList()) {
-      _processor.handleMessage(SurfaceDeletion(surfaceId: surfaceId));
+    final ids = _processor.model.allSurfaces.map((s) => s.id).toList();
+    for (final surfaceId in ids) {
+      _processor.processMessages(
+        DeleteSurfaceMessage(
+          version: A2uiProtocolVersion.v0_9.jsonValue,
+          surfaceId: surfaceId,
+        ),
+      );
     }
   }
 
@@ -864,7 +880,7 @@ class TrpgSessionNotifier {
   void _applyTurnStreamEvent(_TurnStreamEvent event) {
     switch (event.kind) {
       case _TurnStreamEventKind.a2ui:
-        _applyA2ui(event.payload as A2uiMessage);
+        _applyA2ui(event.payload as AgentToRendererMessage);
         return;
       case _TurnStreamEventKind.text:
         _applyText(event.payload as String);
@@ -895,22 +911,44 @@ class TrpgSessionNotifier {
     _updateGmMessage(_textBuffer.toString());
   }
 
-  void _applyA2ui(A2uiMessage message) {
-    _ref.read(gameProcessorProvider).handleMessage(message);
+  void _applyA2ui(AgentToRendererMessage message) {
+    _processA2ui(message);
 
     // Synchronously track game-surface presence.
-    // The async _onSurfaceUpdate handler also updates _hasSurface, but during
-    // synchronous replay of buffered events the microtask hasn't fired yet.
-    // Without this, onPagingComplete() may read a stale _hasSurface and choose
-    // the wrong displayMode (input instead of surface).
+    // The _onSurfaceCreated/_onSurfaceDeleted handlers also update
+    // _hasSurface; this keeps onPagingComplete() from reading a stale value
+    // during synchronous replay of buffered events and choosing the wrong
+    // displayMode (input instead of surface).
     switch (message) {
-      case BeginRendering(:final surfaceId) when surfaceId == 'game-surface':
+      case CreateSurfaceMessage(:final surfaceId)
+          when surfaceId == 'game-surface':
         _hasSurface = true;
-      case SurfaceDeletion(:final surfaceId) when surfaceId == 'game-surface':
+      case DeleteSurfaceMessage(:final surfaceId)
+          when surfaceId == 'game-surface':
         _hasSurface = false;
       default:
         break;
     }
+  }
+
+  /// Applies [message] to the A2UI processor.
+  ///
+  /// A `createSurface` for a surface that already exists replaces that
+  /// surface, as a repeated `surfaceUpdate` + `beginRendering` did with the
+  /// A2UI v0.8 messages genui handled. The processor rejects a second
+  /// `createSurface` for the same ID.
+  void _processA2ui(AgentToRendererMessage message) {
+    final proc = _ref.read(gameProcessorProvider);
+    if (message is CreateSurfaceMessage &&
+        proc.model.getSurface(message.surfaceId) != null) {
+      proc.processMessages(
+        DeleteSurfaceMessage(
+          version: message.version,
+          surfaceId: message.surfaceId,
+        ),
+      );
+    }
+    proc.processMessages(message);
   }
 
   void _applyImage(String path) {
@@ -1162,26 +1200,32 @@ class TrpgSessionNotifier {
     sendTurn(sessionId: sessionId, inputType: 'do', inputText: 'continue');
   }
 
-  void _onSurfaceUpdate(GenUiUpdate update) {
-    switch (update) {
-      case SurfaceAdded(:final surfaceId):
-        Logger.debug('_onSurfaceUpdate: SurfaceAdded($surfaceId)');
-        if (surfaceId == 'game-surface') {
-          _hasSurface = true;
-          if (_isProcessingNotifier.value) {
-            _isAwaitingUserActionNotifier.value = true;
-          }
-        }
-      case SurfaceRemoved(:final surfaceId):
-        Logger.debug('_onSurfaceUpdate: SurfaceRemoved($surfaceId)');
-        if (surfaceId == 'game-surface') _hasSurface = false;
-      case SurfaceUpdated():
-        break;
+  void _onSurfaceCreated(SurfaceModel<ComponentImplementation> surface) {
+    final surfaceId = surface.id;
+    Logger.debug('_onSurfaceCreated($surfaceId)');
+    if (surfaceId == 'game-surface') {
+      _hasSurface = true;
+      if (_isProcessingNotifier.value) {
+        _isAwaitingUserActionNotifier.value = true;
+      }
     }
   }
 
-  /// Handle user interactions from genui surfaces (choices, roll, etc.).
-  void _onUiInteraction(UserUiInteractionMessage message) {
+  void _onSurfaceDeleted(String surfaceId) {
+    Logger.debug('_onSurfaceDeleted($surfaceId)');
+    if (surfaceId == 'game-surface') _hasSurface = false;
+  }
+
+  /// Logs a message the A2UI processor rejected or a rendering error.
+  void _onA2uiError(A2uiRendererError error) {
+    Logger.warning(
+      'A2UI error on surface ${error.surfaceId}: '
+      '${error.code}: ${error.message}',
+    );
+  }
+
+  /// Handle user interactions from A2UI surfaces (choices, roll, etc.).
+  void _onUiInteraction(A2uiRendererAction action) {
     if (_isSessionEnded) {
       Logger.info('_onUiInteraction: session ended, ignoring');
       return;
@@ -1193,15 +1237,8 @@ class TrpgSessionNotifier {
     }
 
     try {
-      final decoded = jsonDecode(message.text) as Map<String, dynamic>;
-      final userAction = decoded['userAction'] as Map<String, dynamic>?;
-      if (userAction == null) {
-        Logger.info('_onUiInteraction: userAction is null');
-        return;
-      }
-
-      final name = userAction['name'] as String? ?? '';
-      final ctx = userAction['context'] as Map<String, dynamic>? ?? {};
+      final name = action.name;
+      final ctx = action.context;
       final inputType = ctx['inputType'] as String? ?? 'do';
       final inputText = ctx['inputText'] as String? ?? '';
 
@@ -1223,7 +1260,7 @@ class TrpgSessionNotifier {
         inputText: inputText,
       );
     } catch (e, st) {
-      Logger.error('Failed to parse UI interaction', e, st);
+      Logger.error('Failed to handle UI interaction', e, st);
     }
   }
 

@@ -13,7 +13,7 @@ Backend (Python FastAPI)
   ↓
 TrpgSessionNotifier
   ├── NodePlayer          # SceneNode を1つずつ表示管理
-  ├── A2uiMessageProcessor (gameProcessorProvider)  # game-surface 管理
+  ├── MessageProcessor (gameProcessorProvider)  # A2UI game-surface 管理
   ├── _isProcessingNotifier   # バックエンド処理中フラグ
   ├── _hasSurface             # game-surface が準備済みフラグ
   ├── _willAutoContinue       # 自動進行フラグ
@@ -26,7 +26,7 @@ TrpgSessionNotifier
 |--------|------|
 | `paging` | ユーザーが節を読み進めている |
 | `processing` | バックエンド処理待ち |
-| `surface` | genui surface（choiceGroup など）表示中 |
+| `surface` | A2UI surface（choiceGroup など）表示中 |
 | `input` | テキスト入力待ち |
 
 ## CRITICAL: resolvePostPagingMode の優先順位
@@ -59,7 +59,7 @@ static NovelDisplayMode resolvePostPagingMode({
 ログで確認できる症状：
 ```
 onPagingComplete: replaying next buffered turn  ← 複数回
-_onSurfaceUpdate: SurfaceAdded(game-surface)    ← surface は作成されている
+_onSurfaceCreated(game-surface)                 ← surface は作成されている
 onPagingComplete: resolved → NovelDisplayMode.processing, isProcessing=true, hasSurface=true
 ← hasSurface=true なのに processing になっている → BUG
 ```
@@ -69,15 +69,14 @@ onPagingComplete: resolved → NovelDisplayMode.processing, isProcessing=true, h
 ```dart
 bool _hasSurface = false;
 
-// ✅ game-surface の SurfaceAdded/Updated で true に設定
-void _onSurfaceUpdate(GenUiUpdate update) {
-  switch (update) {
-    case SurfaceAdded(:final surfaceId):
-      if (surfaceId == 'game-surface') _hasSurface = true;
-    case SurfaceRemoved(:final surfaceId):
-      if (surfaceId == 'game-surface') _hasSurface = false;
-    // ...
-  }
+// ✅ processor.model.onSurfaceCreated / onSurfaceDeleted で更新
+void _onSurfaceCreated(SurfaceModel<ComponentImplementation> surface) {
+  if (surface.id == 'game-surface') _hasSurface = true;
+  // ...
+}
+
+void _onSurfaceDeleted(String surfaceId) {
+  if (surfaceId == 'game-surface') _hasSurface = false;
 }
 
 // ✅ sendTurn() でリセット（新しいターン開始時）
@@ -182,14 +181,13 @@ void onPagingComplete() {
 # 1ターンのイベント順序
 nodesReady         ← NodePlayer にノードをロード
 stateUpdate        ← Flame/UI の状態更新
-a2ui: game-npcs    ← NPC ギャラリー（surfaceUpdate + beginRendering）
-a2ui: game-narration ← ナレーションパネル（surfaceUpdate + beginRendering）
-a2ui: game-surface ← 選択肢/ボタン（surfaceUpdate + beginRendering）← _hasSurface=true に
+a2ui: game-npcs    ← NPC ギャラリー（createSurface + updateComponents）
+a2ui: game-narration ← ナレーションパネル（createSurface + updateComponents）
+a2ui: game-surface ← 選択肢/ボタン（createSurface + updateComponents）← _hasSurface=true に
 done               ← ターン完了
 
 # _hasSurface が true になるタイミング
-_onSurfaceUpdate(SurfaceAdded('game-surface')) 受信時
-= surfaceUpdate + beginRendering の両方受信後
+game-surface の createSurface 処理時（_applyA2ui と _onSurfaceCreated）
 ```
 
 ## `_ensureChoiceSurface` - 復旧シナリオ用フォールバック
@@ -200,23 +198,21 @@ NodePlayer の choice ノードデータから直接 surface を再構築する�
 ```dart
 void _ensureChoiceSurface(List<Map<String, dynamic>> choices) {
   if (choices.isEmpty) return;
-  final proc = _ref.read(gameProcessorProvider);
-  // surfaceUpdate で surface を定義
-  proc.handleMessage(A2uiMessage.fromJson({
-    'surfaceUpdate': {
-      'surfaceId': 'game-surface',
-      'components': [{
-        'id': 'root',
-        'component': {
-          'choiceGroup': {'choices': choices, 'allowFreeInput': true},
-        },
-      }],
-    },
-  }));
-  // beginRendering で表示を開始
-  proc.handleMessage(A2uiMessage.fromJson({
-    'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'},
-  }));
+  final version = A2uiProtocolVersion.v0_9.jsonValue;
+  // createSurface で surface を作成（既存の game-surface は置き換える）
+  _processA2ui(CreateSurfaceMessage(
+    version: version,
+    surfaceId: 'game-surface',
+    catalogId: GameCatalogItems.catalogId,
+  ));
+  // updateComponents で root コンポーネントを定義
+  _processA2ui(UpdateComponentsMessage(
+    version: version,
+    surfaceId: 'game-surface',
+    components: [
+      {'id': 'root', 'component': 'choiceGroup', 'choices': choices, 'allowFreeInput': true},
+    ],
+  ));
   _hasSurface = true;  // フラグを手動で立てる
 }
 ```
@@ -249,8 +245,9 @@ void _restoreChoiceSurface(Map<String, dynamic> output) {
 
 ### choice が表示されない場合のチェックリスト
 
-1. **ログ確認**: `_onSurfaceUpdate: SurfaceAdded(game-surface)` が出ているか？
+1. **ログ確認**: `_onSurfaceCreated(game-surface)` が出ているか？
    - 出ていない → バックエンドの `genui_bridge_service.py` の `_build_surface_properties` を確認
+   - `A2UI error on surface ...` の警告ログも確認（processor が拒否したメッセージ。catalogId の不一致やスキーマ違反など）
    - 特に `decision.nodes` のアクセスを確認（`decision.choices` は存在しない）
 
 2. **ログ確認**: `onPagingComplete: resolved → NovelDisplayMode.processing, isProcessing=true, hasSurface=true` が出ていないか？

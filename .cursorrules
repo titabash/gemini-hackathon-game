@@ -18,7 +18,7 @@
 - **Database**: Drizzle ORM (TypeScript), PostgreSQL, Supabase
 - **Edge Functions**: Deno, Supabase Edge Functions
 - **Game Engine**: Flame 1.35.1, flame_riverpod 5.5.2
-- **Generative UI**: genui 0.7.0 (A2UI Protocol, SSE)
+- **Generative UI**: a2ui_core 0.6 + a2ui_flutter 0.2 (A2UI v0.9, SSE)
 - **GM Agent**: Google ADK (output_schema=GmDecisionResponse)
 - **モノレポ**: Melos
 

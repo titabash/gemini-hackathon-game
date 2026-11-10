@@ -8,14 +8,14 @@ part of 'content_generator_provider.dart';
 
 // GENERATED CODE - DO NOT MODIFY BY HAND
 // ignore_for_file: type=lint, type=warning
-/// Provides a [ContentGenerator] backed by the SSE content generator.
+/// Provides the configuration of the SSE content generator.
 ///
 /// Override [contentGeneratorConfigProvider] to customise the endpoint.
 
 @ProviderFor(contentGeneratorConfig)
 final contentGeneratorConfigProvider = ContentGeneratorConfigProvider._();
 
-/// Provides a [ContentGenerator] backed by the SSE content generator.
+/// Provides the configuration of the SSE content generator.
 ///
 /// Override [contentGeneratorConfigProvider] to customise the endpoint.
 
@@ -27,7 +27,7 @@ final class ContentGeneratorConfigProvider
           ContentGeneratorConfig
         >
     with $Provider<ContentGeneratorConfig> {
-  /// Provides a [ContentGenerator] backed by the SSE content generator.
+  /// Provides the configuration of the SSE content generator.
   ///
   /// Override [contentGeneratorConfigProvider] to customise the endpoint.
   ContentGeneratorConfigProvider._()
@@ -77,11 +77,11 @@ final contentGeneratorProvider = ContentGeneratorProvider._();
 final class ContentGeneratorProvider
     extends
         $FunctionalProvider<
-          ContentGenerator,
-          ContentGenerator,
-          ContentGenerator
+          SseContentGenerator,
+          SseContentGenerator,
+          SseContentGenerator
         >
-    with $Provider<ContentGenerator> {
+    with $Provider<SseContentGenerator> {
   /// Provides the [SseContentGenerator] instance.
   ContentGeneratorProvider._()
     : super(
@@ -99,21 +99,22 @@ final class ContentGeneratorProvider
 
   @$internal
   @override
-  $ProviderElement<ContentGenerator> $createElement($ProviderPointer pointer) =>
-      $ProviderElement(pointer);
+  $ProviderElement<SseContentGenerator> $createElement(
+    $ProviderPointer pointer,
+  ) => $ProviderElement(pointer);
 
   @override
-  ContentGenerator create(Ref ref) {
+  SseContentGenerator create(Ref ref) {
     return contentGenerator(ref);
   }
 
   /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(ContentGenerator value) {
+  Override overrideWithValue(SseContentGenerator value) {
     return $ProviderOverride(
       origin: this,
-      providerOverride: $SyncValueProvider<ContentGenerator>(value),
+      providerOverride: $SyncValueProvider<SseContentGenerator>(value),
     );
   }
 }
 
-String _$contentGeneratorHash() => r'11a49ee9607cf8a218651ac83989e970b2b56cbb';
+String _$contentGeneratorHash() => r'b9797b075d6d5f5c22f65da6be2d8f3759de4b98';

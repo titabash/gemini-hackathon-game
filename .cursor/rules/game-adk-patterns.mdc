@@ -1,5 +1,5 @@
 ---
-description: "Google ADK GM agent, TrpgSession surface priority, and genui game-surface patterns"
+description: "Google ADK GM agent, TrpgSession surface priority, and A2UI game-surface patterns"
 alwaysApply: true
 globs: ["backend-py/**/*.py", "frontend/apps/web/lib/features/trpg/**/*.dart"]
 ---
@@ -77,7 +77,7 @@ static NovelDisplayMode resolvePostPagingMode({
 
 ```
 # 問題のあるパターン
-_onSurfaceUpdate: SurfaceAdded(game-surface)  ← surface は作成されている
+_onSurfaceCreated(game-surface)               ← surface は作成されている
 onPagingComplete: resolved → NovelDisplayMode.processing, isProcessing=true, hasSurface=true
 ↑ hasSurface=true なのに processing → 選択肢UIが表示されない
 ```
@@ -96,7 +96,7 @@ if (_willAutoContinue) {
 }
 ```
 
-## genui game-surface パターン
+## A2UI game-surface パターン
 
 ### Surface ID 一覧
 
@@ -112,11 +112,13 @@ if (_willAutoContinue) {
 nodesReady → stateUpdate → game-npcs A2UI → game-narration A2UI → game-surface A2UI → done
 ```
 
-### surfaceUpdate + beginRendering は必ずセット
+### createSurface + updateComponents は必ずセット
 
 ```dart
-// surfaceUpdate だけでは表示されない。beginRendering とセットで送る
-proc.handleMessage(A2uiMessage.fromJson({'surfaceUpdate': {...}}));
-proc.handleMessage(A2uiMessage.fromJson({'beginRendering': {'surfaceId': 'game-surface', 'root': 'root'}}));
+// A2UI v0.9: createSurface の後に updateComponents で root を送る
+_processA2ui(CreateSurfaceMessage(version: 'v0.9', surfaceId: 'game-surface', catalogId: GameCatalogItems.catalogId));
+_processA2ui(UpdateComponentsMessage(version: 'v0.9', surfaceId: 'game-surface', components: [{'id': 'root', 'component': 'choiceGroup', ...}]));
 _hasSurface = true;  // フラグを手動で立てる
 ```
+
+surface は一度しか作成できないため、バックエンドはターンの最初に `deleteSurface` してから作り直す。
